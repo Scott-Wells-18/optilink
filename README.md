@@ -11,8 +11,23 @@ Built for Australian work — findings are assessed against **AS/NZS 3000** and
 
 ## What it does
 
-**A password on the front door.** One shared office password, set as an
-environment variable. Everything behind it is private.
+**A password on the front door.** The sign-in screen is the OptiLink logo on a
+brushed-metal white, with one password field under it. Enter the password and
+the logo travels up into the header while the sections rise in — one continuous
+move, not a page load.
+
+The password is one shared office password, set as an environment variable.
+Until `APP_PASSWORD` is set it falls back to **`123`** and says so on screen, so
+a fresh deploy can be opened before it is configured.
+
+**A hub you drill into.** Thermal, RCD, B&A and Clients sit as boxes down the
+left. Press one and its branches open to the right with a left-to-right wipe,
+joined by connector lines; press again to close it and step back. Scrolling
+eases in and eases out rather than snapping.
+
+The branches under each section are placeholders for now — three options, each
+with two, each of those with one — so the shape can be judged before the real
+steps go in.
 
 **Reports that save themselves.** Every field writes to the database as you
 type. Close the laptop halfway through a job and pick it up on the next one —
@@ -60,7 +75,7 @@ Print it or save it as a PDF straight from the browser.
 
    | Variable | Value |
    | --- | --- |
-   | `APP_PASSWORD` | The password the office types on the front page. |
+   | `APP_PASSWORD` | The password the office types on the front page. Falls back to `123` if unset. |
    | `SESSION_SECRET` | A long random string. Generate one with `openssl rand -base64 48`. |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — Railway fills this in when you reference the database. |
    | `UPLOAD_DIR` | `/data/uploads` |
@@ -73,11 +88,23 @@ Print it or save it as a PDF straight from the browser.
 6. **Generate a domain.** *Settings → Networking → Generate Domain*, then open
    it and sign in with `APP_PASSWORD`.
 
+### If the deploy fails on startup
+
+`Environment variable not found: DATABASE_URL` means the service has no database
+attached. Add a PostgreSQL database to the Railway project, then set
+`DATABASE_URL` on the app service to `${{Postgres.DATABASE_URL}}` and redeploy.
+
 ### Changing the password later
 
 Update `APP_PASSWORD` in Railway's *Variables* and redeploy. Existing sessions
 stay valid until they expire — to sign everyone out immediately, change
 `SESSION_SECRET` as well.
+
+### The logo
+
+The mark is drawn as SVG so it stays sharp at any size, but it is a stand-in.
+Upload the real artwork under **Settings → Branding** and it replaces the
+drawing everywhere: sign-in screen, header, and the cover of every report.
 
 ---
 
@@ -102,7 +129,12 @@ src/lib/standards/rcd.ts      AS/NZS 3017 trip-time limits and pass/fail logic
 src/lib/standards/thermal.ts  ΔT severity bands and the plain-English wording
 src/lib/report.ts             Priority actions, overall risk, drafted summaries
 src/lib/glossary.ts           Plain-English definitions used in reports
-src/app/(dashboard)/          The dashboard, editor, clients and settings
+src/app/page.tsx              Sign-in + hub, as one screen
+src/app/Gateway.tsx           The sign-in-to-hub transition
+src/components/TreeNav.tsx    The sideways branching navigation
+src/lib/navTree.ts            What sits under each section
+src/lib/useSpringScroll.ts    Ease-in / ease-out scrolling
+src/app/(dashboard)/          Report workspace: editor, clients, settings
 src/app/(dashboard)/reports/[id]/preview/   The printed client report
 src/app/api/                  The JSON endpoints the editor saves to
 ```

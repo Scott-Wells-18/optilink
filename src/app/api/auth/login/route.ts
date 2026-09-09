@@ -43,16 +43,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!process.env.APP_PASSWORD || !process.env.SESSION_SECRET) {
-    return NextResponse.json(
-      {
-        error:
-          "This OptiLink instance is not finished being set up — APP_PASSWORD and SESSION_SECRET need to be configured.",
-      },
-      { status: 500 },
-    );
-  }
-
   let password = "";
   try {
     const body = await request.json();

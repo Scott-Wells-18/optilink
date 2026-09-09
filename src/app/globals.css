@@ -159,3 +159,646 @@ body {
     print-color-adjust: exact;
   }
 }
+
+/* ===========================================================================
+   Gateway — the sign-in screen that becomes the hub
+   =========================================================================== */
+
+:root {
+  --gate-ink: #14324f;
+  --gate-line: rgba(20, 60, 96, 0.16);
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.gate {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* --- the white-with-a-metallic-glaze backdrop --- */
+
+.gate-surface {
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0) 62%),
+    radial-gradient(70% 50% at 6% 96%, rgba(186, 206, 224, 0.5), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(65% 50% at 98% 14%, rgba(178, 220, 243, 0.45), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(
+      108deg,
+      rgba(255, 255, 255, 0) 4%,
+      rgba(255, 255, 255, 0.95) 15%,
+      rgba(219, 229, 238, 0.55) 27%,
+      rgba(255, 255, 255, 0.9) 38%,
+      rgba(255, 255, 255, 0) 49%,
+      rgba(206, 221, 234, 0.5) 62%,
+      rgba(255, 255, 255, 0.92) 74%,
+      rgba(255, 255, 255, 0) 88%
+    ),
+    linear-gradient(178deg, #fdfefe 0%, #f1f4f8 52%, #e7ecf2 100%);
+  animation: gate-sheen 26s var(--ease-soft) infinite alternate;
+}
+
+@keyframes gate-sheen {
+  from {
+    transform: translate3d(-1.6%, -0.8%, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(1.6%, 0.8%, 0) scale(1.05);
+  }
+}
+
+/* A fine grain, so the white reads as brushed metal rather than flat paper. */
+.gate-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- the logo, and its journey to the header --- */
+
+.gate-brandbar {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  transform-origin: top center;
+  transition:
+    transform 1000ms var(--ease-glide),
+    filter 1000ms var(--ease-glide);
+  will-change: transform;
+}
+
+.gate[data-state="locked"] .gate-brandbar {
+  transform: translate(-50%, min(19vh, 150px)) scale(1);
+}
+
+.gate[data-state="open"] .gate-brandbar {
+  transform: translate(-50%, 26px) scale(0.44);
+}
+
+.gate-brand {
+  width: min(560px, 84vw);
+  display: flex;
+  justify-content: center;
+}
+
+.gate-logo-image {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+/* The SVG logo lockup. */
+.ol-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: clamp(30px, 6.2vw, 62px);
+  line-height: 1;
+}
+
+.ol-logo-mark {
+  width: 1.72em;
+  height: 1.72em;
+  flex: none;
+}
+
+.ol-logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14em;
+}
+
+.ol-logo-word {
+  font-size: 1em;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  font-family:
+    "Poppins", "Montserrat", "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+.ol-logo-opti {
+  color: #5c7f99;
+}
+
+.ol-logo-link {
+  color: #12395e;
+}
+
+.ol-logo-tag {
+  font-size: 0.176em;
+  font-weight: 600;
+  letter-spacing: 0.235em;
+  text-transform: uppercase;
+  color: #4d7ba4;
+  padding-left: 0.2em;
+}
+
+/* --- the sign-in card --- */
+
+.gate-card-layer {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  padding-top: min(46vh, 380px);
+  transition:
+    opacity 420ms var(--ease-soft),
+    transform 560ms var(--ease-glide),
+    filter 420ms var(--ease-soft);
+}
+
+.gate[data-state="open"] .gate-card-layer {
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+.gate-card {
+  width: min(330px, 86vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gate-card.is-shaking {
+  animation: gate-shake 460ms var(--ease-soft);
+}
+
+@keyframes gate-shake {
+  10%, 90% { transform: translateX(-4px); }
+  30%, 70% { transform: translateX(6px); }
+  50% { transform: translateX(-3px); }
+}
+
+.gate-field {
+  display: block;
+}
+
+.gate-field-label {
+  display: block;
+  margin-bottom: 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  color: #7590a6;
+}
+
+.gate-input {
+  width: 100%;
+  padding: 14px 18px;
+  text-align: center;
+  font-size: 18px;
+  letter-spacing: 0.34em;
+  color: var(--gate-ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--gate-line);
+  border-radius: 14px;
+  outline: none;
+  box-shadow:
+    inset 0 1px 2px rgba(20, 50, 79, 0.05),
+    0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+}
+
+.gate-input::placeholder {
+  color: #b3c3d0;
+  letter-spacing: 0.24em;
+}
+
+.gate-input:focus {
+  border-color: rgba(27, 117, 188, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 1px 2px rgba(20, 50, 79, 0.04),
+    0 0 0 4px rgba(41, 171, 226, 0.14);
+}
+
+.gate-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 13px 20px;
+  border-radius: 14px;
+  border: none;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, #2ba3dc 0%, #175f9f 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 10px 22px -12px rgba(16, 70, 120, 0.75);
+  cursor: pointer;
+  transition:
+    transform 200ms var(--ease-glide),
+    box-shadow 220ms ease,
+    opacity 200ms ease;
+}
+
+.gate-button svg {
+  width: 15px;
+  height: 15px;
+  transition: transform 260ms var(--ease-glide);
+}
+
+.gate-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 16px 28px -14px rgba(16, 70, 120, 0.8);
+}
+
+.gate-button:hover:not(:disabled) svg {
+  transform: translateX(3px);
+}
+
+.gate-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gate-error {
+  text-align: center;
+  font-size: 13px;
+  color: #b4232a;
+}
+
+.gate-note {
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #8298a9;
+}
+
+.gate-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(20, 60, 96, 0.07);
+  color: #46698a;
+}
+
+/* --- the hub --- */
+
+.gate-hub {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 60, 96, 0.22) transparent;
+  opacity: 0;
+  transform: translateY(26px);
+  pointer-events: none;
+  transition:
+    opacity 620ms var(--ease-soft) 260ms,
+    transform 760ms var(--ease-glide) 260ms;
+}
+
+.gate[data-state="open"] .gate-hub {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.gate-hub::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.gate-hub::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: content-box;
+  background-color: rgba(20, 60, 96, 0.2);
+}
+
+.gate-hub-inner {
+  display: flex;
+  min-width: max-content;
+  min-height: 100%;
+  /* Sits the sections around a third of the way in, so the first couple of
+     levels open into free space rather than straight off the edge. */
+  padding: clamp(140px, 19vh, 200px) clamp(40px, 10vw, 140px) 110px
+    max(28px, calc(30vw - 123px));
+}
+
+.gate-hub-inner > * {
+  margin-block: auto;
+}
+
+/* Skip every transition on the first paint for someone already signed in. */
+.gate[data-instant] .gate-brandbar,
+.gate[data-instant] .gate-card-layer,
+.gate[data-instant] .gate-hub {
+  transition: none !important;
+}
+
+/* ===========================================================================
+   The sideways tree
+   =========================================================================== */
+
+.tree-root {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.tree-branch {
+  display: flex;
+  align-items: center;
+}
+
+/* Each child sits in a row that draws its own piece of the connector. */
+.tree-row {
+  position: relative;
+}
+
+.tree-kid-list > .tree-row {
+  padding-left: 30px;
+}
+
+.tree-kid-list > .tree-row::before,
+.tree-kid-list > .tree-row::after {
+  content: "";
+  position: absolute;
+  background: var(--gate-line);
+}
+
+/* The vertical spine, assembled from one segment per row. */
+.tree-kid-list > .tree-row::before {
+  left: 0;
+  width: 1.5px;
+  top: 0;
+  bottom: 0;
+}
+
+.tree-kid-list > .tree-row:first-child::before {
+  top: 50%;
+}
+
+.tree-kid-list > .tree-row:last-child::before {
+  bottom: 50%;
+}
+
+.tree-kid-list > .tree-row:only-child::before {
+  display: none;
+}
+
+/* The stub from the spine out to the child. */
+.tree-kid-list > .tree-row::after {
+  left: 0;
+  top: 50%;
+  width: 30px;
+  height: 1.5px;
+}
+
+.tree-kids {
+  position: relative;
+  padding-left: 30px;
+  /* Wipes open from the left, and closes the same way. */
+  clip-path: inset(0 100% 0 0);
+  opacity: 0.4;
+  transition:
+    clip-path 520ms var(--ease-glide),
+    opacity 380ms ease;
+}
+
+.tree-kids.is-revealed {
+  clip-path: inset(0 0 0 0);
+  opacity: 1;
+}
+
+/* The stub from the parent across to the spine. */
+.tree-kids::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 30px;
+  height: 1.5px;
+  background: var(--gate-line);
+}
+
+.tree-kid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tree-kid-list > .tree-row {
+  opacity: 0;
+  transform: translateX(-10px);
+  transition:
+    opacity 420ms var(--ease-soft),
+    transform 520ms var(--ease-glide);
+}
+
+.tree-kids.is-revealed > .tree-kid-list > .tree-row {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* --- the boxes --- */
+
+.tree-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 178px;
+  padding: 13px 16px;
+  text-align: left;
+  border-radius: 13px;
+  border: 1px solid var(--gate-line);
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.7) 100%
+  );
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 10px 22px -16px rgba(16, 52, 88, 0.55);
+  color: var(--gate-ink);
+  cursor: pointer;
+  transition:
+    transform 260ms var(--ease-glide),
+    box-shadow 260ms ease,
+    border-color 260ms ease,
+    background 260ms ease;
+}
+
+.tree-node.is-section {
+  min-width: 246px;
+  padding: 17px 20px;
+  border-radius: 15px;
+}
+
+.tree-node:hover {
+  transform: translateX(3px);
+  border-color: rgba(27, 117, 188, 0.34);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 16px 30px -18px rgba(16, 52, 88, 0.7);
+}
+
+.tree-node.is-leaf {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+}
+
+.tree-node.is-leaf:hover {
+  transform: none;
+  border-color: var(--gate-line);
+}
+
+.tree-node.is-open {
+  border-color: rgba(27, 117, 188, 0.42);
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.97) 0%,
+    rgba(232, 244, 251, 0.85) 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 14px 28px -18px rgba(16, 70, 120, 0.65),
+    -3px 0 0 0 #2ba3dc;
+}
+
+.tree-node-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tree-node-label {
+  font-size: 14.5px;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+}
+
+.tree-node.is-section .tree-node-label {
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.tree-node-detail {
+  font-size: 11.5px;
+  color: #7c93a6;
+  letter-spacing: 0.01em;
+}
+
+.tree-node-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #6f93ae;
+  background: rgba(20, 60, 96, 0.05);
+  transition:
+    transform 380ms var(--ease-glide),
+    background 260ms ease,
+    color 260ms ease;
+}
+
+.tree-node-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.tree-node.is-open .tree-node-chevron {
+  transform: rotate(90deg);
+  color: #1a7cc0;
+  background: rgba(43, 163, 220, 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-surface {
+    animation: none;
+  }
+
+  .gate-brandbar,
+  .gate-card-layer,
+  .gate-hub,
+  .tree-kids,
+  .tree-kid-list > .tree-row,
+  .tree-node,
+  .tree-node-chevron {
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Quiet links out of the hub — the report tools, and the way back out. */
+.gate-exits {
+  position: fixed;
+  right: clamp(18px, 3vw, 34px);
+  bottom: clamp(16px, 2.6vh, 26px);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition:
+    opacity 500ms var(--ease-soft) 620ms,
+    transform 620ms var(--ease-glide) 620ms;
+}
+
+.gate[data-state="open"] .gate-exits {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.gate-exit {
+  display: inline-block;
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #8199ab;
+  cursor: pointer;
+  transition:
+    color 220ms ease,
+    background 220ms ease,
+    border-color 220ms ease;
+}
+
+.gate-exit:hover {
+  color: var(--gate-ink);
+  border-color: var(--gate-line);
+  background: rgba(255, 255, 255, 0.66);
+}

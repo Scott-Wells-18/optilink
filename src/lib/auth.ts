@@ -7,6 +7,22 @@
 
 export const SESSION_COOKIE = "optilink_session";
 
+/**
+ * Until APP_PASSWORD / SESSION_SECRET are set on the host, OptiLink falls back
+ * to these so the app still boots and can be looked at. The sign-in screen says
+ * loudly when the fallback is in use.
+ */
+const DEFAULT_PASSWORD = "123";
+const DEFAULT_SECRET = "optilink-unconfigured-session-secret-please-set-SESSION_SECRET";
+
+export function usingDefaultPassword(): boolean {
+  return !process.env.APP_PASSWORD;
+}
+
+export function usingDefaultSecret(): boolean {
+  return !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16;
+}
+
 const encoder = new TextEncoder();
 
 function sessionHours(): number {
@@ -16,12 +32,7 @@ function sessionHours(): number {
 
 function secret(): string {
   const value = process.env.SESSION_SECRET;
-  if (!value || value.length < 16) {
-    throw new Error(
-      "SESSION_SECRET is not set (or is too short). Set it to a long random string.",
-    );
-  }
-  return value;
+  return value && value.length >= 16 ? value : DEFAULT_SECRET;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -92,8 +103,7 @@ export async function verifySessionToken(token: string | undefined): Promise<boo
 
 /** Compares the submitted password against APP_PASSWORD without leaking timing. */
 export async function checkPassword(submitted: string): Promise<boolean> {
-  const expected = process.env.APP_PASSWORD;
-  if (!expected) return false;
+  const expected = process.env.APP_PASSWORD || DEFAULT_PASSWORD;
   // Hash both sides first so the comparison length never depends on the secret.
   const [a, b] = await Promise.all([digest(submitted), digest(expected)]);
   return safeEqual(a, b);
