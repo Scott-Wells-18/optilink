@@ -1,0 +1,298 @@
+// OptiLink — electrical inspection reporting
+// Standards basis: AS/NZS 3000 (Wiring Rules) and AS/NZS 3017 (verification).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Company settings — a single row (id = "singleton") holding branding and the
+// defaults that go on every report.
+// ---------------------------------------------------------------------------
+
+model Settings {
+  id String @id @default("singleton")
+
+  companyName    String  @default("OptiLink")
+  tradingName    String?
+  abn            String?
+  licenceNumber  String?
+  phone          String?
+  email          String?
+  website        String?
+  addressLine1   String?
+  addressLine2   String?
+  suburb         String?
+  state          String? @default("NSW")
+  postcode       String?
+
+  // Branding
+  primaryColour String  @default("#0B3B60")
+  accentColour  String  @default("#F5A623")
+  logoFileId    String?
+  logoMarkFileId String?
+  logo          UploadedFile? @relation("SettingsLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  logoMark      UploadedFile? @relation("SettingsLogoMark", fields: [logoMarkFileId], references: [id], onDelete: SetNull)
+
+  // Report defaults
+  defaultTechnicianName    String?
+  defaultTechnicianLicence String?
+  reportFooterText         String?
+  reportIntroText          String?
+  nextReportNumber         Int     @default(1)
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+model UploadedFile {
+  id           String   @id @default(cuid())
+  originalName String
+  storedName   String   @unique
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  createdAt    DateTime @default(now())
+
+  thermalFor        ThermalFinding[] @relation("ThermalImage")
+  visualFor         ThermalFinding[] @relation("VisualImage")
+  photos            Photo[]
+  observationPhotos Observation[]
+  settingsLogo      Settings[]       @relation("SettingsLogo")
+  settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
+}
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+
+model Client {
+  id           String   @id @default(cuid())
+  name         String
+  contactName  String?
+  email        String?
+  phone        String?
+  addressLine1 String?
+  addressLine2 String?
+  suburb       String?
+  state        String?  @default("NSW")
+  postcode     String?
+  notes        String?
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reports Report[]
+
+  @@index([name])
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+enum ReportStatus {
+  DRAFT
+  IN_REVIEW
+  ISSUED
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+model Report {
+  id        String       @id @default(cuid())
+  reference String       @unique
+  title     String       @default("Electrical inspection report")
+  status    ReportStatus @default(DRAFT)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  siteName     String?
+  siteAddress  String?
+  siteContact  String?
+
+  inspectionDate DateTime?
+  issuedDate     DateTime?
+
+  technicianName    String?
+  technicianLicence String?
+
+  // What was covered, in the electrician's words.
+  scopeOfWork  String?
+  // Auto-drafted then editable by the technician.
+  executiveSummary String?
+  recommendations  String?
+  limitations      String?
+
+  // Conditions on the day — used to sanity-check thermal readings.
+  ambientTempC   Float?
+  weatherNotes   String?
+  equipmentUsed  String?
+
+  // Overall rating. Computed from findings unless overridden.
+  overallRiskOverride RiskLevel?
+
+  // Which optional sections appear in the finished report.
+  includeThermal      Boolean @default(true)
+  includeRcd          Boolean @default(true)
+  includeObservations Boolean @default(true)
+  includePhotos       Boolean @default(true)
+  includeGlossary     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  thermalFindings ThermalFinding[]
+  rcdTests        RcdTest[]
+  observations    Observation[]
+  photos          Photo[]
+
+  @@index([status])
+  @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Thermographic findings
+// ---------------------------------------------------------------------------
+
+enum ThermalBasis {
+  SIMILAR_COMPONENT // ΔT against an equivalent component under similar load
+  AMBIENT           // ΔT against ambient air temperature
+}
+
+model ThermalFinding {
+  id       String @id @default(cuid())
+  reportId String
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int   @default(0)
+
+  location    String? // e.g. "Main switchboard, Row 2"
+  component   String? // e.g. "Circuit 7 — 32 A HRC fuse, A phase"
+  loadAmps    Float?
+  emissivity  Float?  @default(0.95)
+
+  basis          ThermalBasis @default(SIMILAR_COMPONENT)
+  measuredTempC  Float?
+  referenceTempC Float? // similar component, or ambient, depending on basis
+
+  // Severity is normally derived from ΔT; the technician can override it.
+  severityOverride RiskLevel?
+
+  findings          String?
+  recommendedAction String?
+  clientExplanation String? // Overrides the auto-generated plain-English note.
+  rectifiedOnSite   Boolean @default(false)
+
+  thermalImageId String?
+  thermalImage   UploadedFile? @relation("ThermalImage", fields: [thermalImageId], references: [id], onDelete: SetNull)
+  visualImageId  String?
+  visualImage    UploadedFile? @relation("VisualImage", fields: [visualImageId], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// RCD testing — AS/NZS 3017
+// ---------------------------------------------------------------------------
+
+enum RcdKind {
+  TYPE_I   // ≤ 10 mA
+  TYPE_II  // ≤ 30 mA
+  TYPE_III // > 30 mA
+  DELAYED  // S-type / time-delayed
+}
+
+model RcdTest {
+  id       String @id @default(cuid())
+  reportId String
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int   @default(0)
+
+  boardName          String?
+  circuitDescription String?
+  rcdKind            RcdKind @default(TYPE_II)
+  ratedCurrentMa     Float   @default(30)
+  poles              String? // "2P", "4P", RCBO etc.
+  make               String?
+
+  tripTimeRatedMs Float? // at I∆n
+  tripTime5xMs    Float? // at 5 × I∆n
+  rampTripMa      Float? // current at which it let go
+  pushButtonOk    Boolean?
+  notRequired     Boolean @default(false) // e.g. RCD not fitted / not accessible
+
+  resultOverride Boolean? // force pass (true) / fail (false)
+  notes          String?
+
+  @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// General observations / defects
+// ---------------------------------------------------------------------------
+
+model Observation {
+  id       String @id @default(cuid())
+  reportId String
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int   @default(0)
+
+  location          String?
+  description       String?
+  riskLevel         RiskLevel @default(MEDIUM)
+  clauseReference   String?   // e.g. "AS/NZS 3000 Cl 2.3.2"
+  recommendedAction String?
+  clientExplanation String?
+  rectifiedOnSite   Boolean   @default(false)
+
+  photoId String?
+  photo   UploadedFile? @relation(fields: [photoId], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// Photos, including before/after pairs
+// ---------------------------------------------------------------------------
+
+enum PhotoKind {
+  BEFORE
+  AFTER
+  GENERAL
+}
+
+model Photo {
+  id       String @id @default(cuid())
+  reportId String
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int   @default(0)
+
+  kind     PhotoKind @default(GENERAL)
+  // Before/after shots of the same thing share a pairKey so they sit side by side.
+  pairKey  String?
+  title    String?
+  caption  String?
+  location String?
+
+  fileId String
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
