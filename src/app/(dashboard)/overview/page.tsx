@@ -46,7 +46,7 @@ export default async function DashboardPage() {
     statusCounts.map((row) => [row.status, row._count]),
   ) as Record<string, number>;
 
-  const setupNeeded = !settings.logoFileId || !settings.abn || !settings.licenceNumber;
+  const setupNeeded = !settings.abn || !settings.licenceNumber;
 
   return (
     <>
@@ -61,11 +61,11 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
             <div>
               <p className="text-sm font-semibold text-amber-900">
-                Finish setting up your branding
+                Finish setting up your company details
               </p>
               <p className="mt-0.5 text-sm text-amber-800">
-                Add your logo, ABN and licence number so they appear on every
-                report you send out.
+                Add your ABN and licence number so they appear on every report
+                you send out.
               </p>
             </div>
             <Link href="/settings" className="btn-secondary">

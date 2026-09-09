@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Brand tokens. --brand and --accent are overwritten at runtime from the
+   Brand tokens. --brand and --brand-accent are overwritten at runtime from the
    colours saved in Settings, so the whole dashboard and every printed report
    follow the company's branding.
 --------------------------------------------------------------------------- */
 :root {
   --brand: #0b3b60;
-  --accent: #f5a623;
+  --brand-accent: #f5a623;
   --brand-ink: #ffffff;
   --paper: #ffffff;
   --ink: #0f172a;
@@ -18,7 +18,7 @@
 
 @theme inline {
   --color-brand: var(--brand);
-  --color-accent: var(--accent);
+  --color-accent: var(--brand-accent);
   --font-sans: var(--font-app);
 }
 
@@ -68,7 +68,7 @@ body {
   @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm
          font-semibold text-slate-900 shadow-sm transition hover:brightness-105
          disabled:cursor-not-allowed disabled:opacity-50;
-  background: var(--accent);
+  background: var(--brand-accent);
 }
 
 .btn-secondary {
@@ -160,70 +160,222 @@ body {
   }
 }
 
+
 /* ===========================================================================
-   Gateway — the sign-in screen that becomes the hub
+   OptiLink interface — type, surface, motion
    =========================================================================== */
 
-:root {
-  --gate-ink: #14324f;
-  --gate-line: rgba(20, 60, 96, 0.16);
-  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
+
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/poppins-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/poppins-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/poppins-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --font-app: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-brand: "Poppins", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --ink: #0a1d2e;
+  --ink-2: #3d566b;
+  --ink-3: #7b93a6;
+  --ink-4: #a8bccb;
+
+  --hair: rgba(11, 42, 68, 0.1);
+  --hair-soft: rgba(11, 42, 68, 0.06);
+  --hair-strong: rgba(11, 42, 68, 0.17);
+
+  --accent: #1b9bd8;
+  --accent-deep: #14528f;
+  --accent-wash: rgba(27, 155, 216, 0.08);
+
+  /* Layered shadows — a tight contact shadow plus a wide ambient one. */
+  --shadow-rest:
+    0 1px 1px rgba(10, 35, 60, 0.04),
+    0 3px 6px -2px rgba(10, 35, 60, 0.06),
+    0 14px 28px -14px rgba(10, 35, 60, 0.16);
+  --shadow-lift:
+    0 1px 2px rgba(10, 35, 60, 0.05),
+    0 8px 16px -6px rgba(10, 35, 60, 0.1),
+    0 28px 48px -22px rgba(10, 35, 60, 0.26);
+  --shadow-glow:
+    0 1px 2px rgba(10, 35, 60, 0.05),
+    0 10px 22px -8px rgba(20, 82, 143, 0.22),
+    0 0 34px -6px rgba(27, 155, 216, 0.34);
+
+  /* One easing vocabulary, used everywhere. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body {
+  font-family: var(--font-app);
+  font-feature-settings: "cv05" 1, "ss03" 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Brand lockup
+--------------------------------------------------------------------------- */
+
+.ol-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.52em;
+  font-size: clamp(32px, 5.2vw, 58px);
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ol-logo-mark {
+  width: 1.62em;
+  height: 1.62em;
+  flex: none;
+  filter: drop-shadow(0 6px 16px rgba(20, 82, 143, 0.22));
+}
+
+.ol-logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+
+.ol-logo-word {
+  font-family: var(--font-brand);
+  font-size: 1em;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+
+.ol-logo-opti {
+  color: #5d7c93;
+}
+
+.ol-logo-link {
+  color: #113755;
+}
+
+.ol-logo.is-light .ol-logo-opti {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ol-logo.is-light .ol-logo-link {
+  color: #ffffff;
+}
+
+.ol-logo.is-light .ol-logo-tag {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ol-logo.is-light .ol-logo-mark {
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.28));
+}
+
+.ol-logo-tag {
+  font-family: var(--font-brand);
+  font-size: 0.152em;
+  font-weight: 600;
+  letter-spacing: 0.268em;
+  text-transform: uppercase;
+  color: #2a7cb4;
+  padding-left: 0.22em;
+}
+
+/* ---------------------------------------------------------------------------
+   The surface
+--------------------------------------------------------------------------- */
 
 .gate {
   position: relative;
   min-height: 100dvh;
   overflow: hidden;
   isolation: isolate;
+  color: var(--ink);
 }
 
-/* --- the white-with-a-metallic-glaze backdrop --- */
-
+/* Base wash: cool white, brightest under the logo. */
 .gate-surface {
   position: fixed;
-  inset: -20%;
-  z-index: -2;
+  inset: -15%;
+  z-index: -3;
   background:
-    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0) 62%),
-    radial-gradient(70% 50% at 6% 96%, rgba(186, 206, 224, 0.5), rgba(255, 255, 255, 0) 70%),
-    radial-gradient(65% 50% at 98% 14%, rgba(178, 220, 243, 0.45), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(74% 46% at 50% 4%, rgba(214, 240, 252, 0.72), rgba(255, 255, 255, 0) 68%),
+    radial-gradient(58% 44% at 4% 92%, rgba(196, 214, 231, 0.5), rgba(255, 255, 255, 0) 72%),
+    radial-gradient(52% 40% at 98% 76%, rgba(199, 226, 244, 0.44), rgba(255, 255, 255, 0) 72%),
     linear-gradient(
-      108deg,
-      rgba(255, 255, 255, 0) 4%,
-      rgba(255, 255, 255, 0.95) 15%,
-      rgba(219, 229, 238, 0.55) 27%,
-      rgba(255, 255, 255, 0.9) 38%,
-      rgba(255, 255, 255, 0) 49%,
-      rgba(206, 221, 234, 0.5) 62%,
-      rgba(255, 255, 255, 0.92) 74%,
-      rgba(255, 255, 255, 0) 88%
+      104deg,
+      rgba(255, 255, 255, 0) 6%,
+      rgba(255, 255, 255, 0.86) 19%,
+      rgba(222, 232, 241, 0.42) 30%,
+      rgba(255, 255, 255, 0.78) 41%,
+      rgba(255, 255, 255, 0) 53%,
+      rgba(213, 227, 239, 0.4) 66%,
+      rgba(255, 255, 255, 0.82) 78%,
+      rgba(255, 255, 255, 0) 90%
     ),
-    linear-gradient(178deg, #fdfefe 0%, #f1f4f8 52%, #e7ecf2 100%);
-  animation: gate-sheen 26s var(--ease-soft) infinite alternate;
+    linear-gradient(176deg, #fdfeff 0%, #f3f6fa 54%, #e9eef4 100%);
+  animation: gate-drift 34s var(--ease-inout) infinite alternate;
 }
 
-@keyframes gate-sheen {
+@keyframes gate-drift {
   from {
-    transform: translate3d(-1.6%, -0.8%, 0) scale(1.02);
+    transform: translate3d(-1.2%, -0.6%, 0) scale(1.03);
   }
   to {
-    transform: translate3d(1.6%, 0.8%, 0) scale(1.05);
+    transform: translate3d(1.2%, 0.6%, 0) scale(1.06);
   }
 }
 
-/* A fine grain, so the white reads as brushed metal rather than flat paper. */
+/* A measured grid — quiet, but it reads as an instrument rather than a page. */
+.gate-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(11, 42, 68, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 42, 68, 0.045) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(115% 85% at 50% 22%, #000 22%, transparent 82%);
+}
+
 .gate-grain {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.05;
+  opacity: 0.038;
   mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* --- the logo, and its journey to the header --- */
+/* ---------------------------------------------------------------------------
+   Logo travel — sign-in centre stage, then into the header
+--------------------------------------------------------------------------- */
 
 .gate-brandbar {
   position: fixed;
@@ -233,24 +385,22 @@ body {
   display: flex;
   justify-content: center;
   transform-origin: top center;
-  transition:
-    transform 1000ms var(--ease-glide),
-    filter 1000ms var(--ease-glide);
+  transition: transform 1150ms var(--ease-out);
   will-change: transform;
 }
 
 .gate[data-state="locked"] .gate-brandbar {
-  transform: translate(-50%, min(19vh, 150px)) scale(1);
+  transform: translate(-50%, min(17vh, 138px)) scale(1);
 }
 
 .gate[data-state="open"] .gate-brandbar {
-  transform: translate(-50%, 26px) scale(0.44);
+  transform: translate(-50%, 30px) scale(0.4);
 }
 
 .gate-brand {
-  width: min(560px, 84vw);
   display: flex;
   justify-content: center;
+  width: min(640px, 88vw);
 }
 
 .gate-logo-image {
@@ -259,207 +409,189 @@ body {
   object-fit: contain;
 }
 
-/* The SVG logo lockup. */
-.ol-logo {
-  display: flex;
-  align-items: center;
-  gap: 0.6em;
-  font-size: clamp(30px, 6.2vw, 62px);
-  line-height: 1;
-}
 
-.ol-logo-mark {
-  width: 1.72em;
-  height: 1.72em;
-  flex: none;
-}
-
-.ol-logo-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.14em;
-}
-
-.ol-logo-word {
-  font-size: 1em;
-  font-weight: 600;
-  letter-spacing: -0.022em;
-  font-family:
-    "Poppins", "Montserrat", "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-}
-
-.ol-logo-opti {
-  color: #5c7f99;
-}
-
-.ol-logo-link {
-  color: #12395e;
-}
-
-.ol-logo-tag {
-  font-size: 0.176em;
-  font-weight: 600;
-  letter-spacing: 0.235em;
-  text-transform: uppercase;
-  color: #4d7ba4;
-  padding-left: 0.2em;
-}
-
-/* --- the sign-in card --- */
+/* ---------------------------------------------------------------------------
+   Sign in
+--------------------------------------------------------------------------- */
 
 .gate-card-layer {
   position: relative;
   z-index: 20;
   display: flex;
   justify-content: center;
-  padding-top: min(46vh, 380px);
+  padding-top: min(38vh, 322px);
   transition:
-    opacity 420ms var(--ease-soft),
-    transform 560ms var(--ease-glide),
-    filter 420ms var(--ease-soft);
+    opacity 460ms var(--ease-soft),
+    transform 720ms var(--ease-out),
+    filter 460ms var(--ease-soft);
 }
 
 .gate[data-state="open"] .gate-card-layer {
   opacity: 0;
-  transform: translateY(18px) scale(0.97);
-  filter: blur(6px);
+  transform: translateY(22px) scale(0.965);
+  filter: blur(7px);
   pointer-events: none;
 }
 
 .gate-card {
-  width: min(330px, 86vw);
+  width: min(392px, 88vw);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .gate-card.is-shaking {
-  animation: gate-shake 460ms var(--ease-soft);
+  animation: gate-shake 480ms var(--ease-inout);
 }
 
 @keyframes gate-shake {
-  10%, 90% { transform: translateX(-4px); }
-  30%, 70% { transform: translateX(6px); }
-  50% { transform: translateX(-3px); }
+  10%, 90% { transform: translateX(-5px); }
+  30%, 70% { transform: translateX(7px); }
+  50% { transform: translateX(-4px); }
 }
 
-.gate-field {
-  display: block;
-}
-
-.gate-field-label {
-  display: block;
-  margin-bottom: 8px;
-  text-align: center;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.19em;
+.gate-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: #7590a6;
+  color: var(--ink-3);
+}
+
+.gate-eyebrow::before,
+.gate-eyebrow::after {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--hair-strong);
+}
+
+.gate-input-wrap {
+  position: relative;
 }
 
 .gate-input {
   width: 100%;
-  padding: 14px 18px;
+  padding: 19px 22px;
   text-align: center;
-  font-size: 18px;
-  letter-spacing: 0.34em;
-  color: var(--gate-ink);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--gate-line);
-  border-radius: 14px;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.36em;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--hair-strong);
+  border-radius: 16px;
   outline: none;
   box-shadow:
-    inset 0 1px 2px rgba(20, 50, 79, 0.05),
-    0 1px 0 rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+    inset 0 1px 2px rgba(11, 42, 68, 0.05),
+    var(--shadow-rest);
   transition:
-    border-color 220ms ease,
-    box-shadow 220ms ease,
-    background 220ms ease;
+    border-color 300ms var(--ease-soft),
+    box-shadow 340ms var(--ease-soft),
+    background 300ms var(--ease-soft);
 }
 
 .gate-input::placeholder {
-  color: #b3c3d0;
-  letter-spacing: 0.24em;
+  color: var(--ink-4);
+  letter-spacing: 0.26em;
 }
 
 .gate-input:focus {
-  border-color: rgba(27, 117, 188, 0.5);
-  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(27, 155, 216, 0.55);
+  background: #fff;
   box-shadow:
-    inset 0 1px 2px rgba(20, 50, 79, 0.04),
-    0 0 0 4px rgba(41, 171, 226, 0.14);
+    inset 0 1px 2px rgba(11, 42, 68, 0.03),
+    0 0 0 4px rgba(27, 155, 216, 0.13),
+    0 0 30px -6px rgba(27, 155, 216, 0.4);
 }
 
 .gate-button {
+  position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 13px 20px;
-  border-radius: 14px;
+  gap: 11px;
+  padding: 17px 24px;
   border: none;
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
+  border-radius: 16px;
+  font-family: var(--font-app);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   color: #fff;
-  background: linear-gradient(135deg, #2ba3dc 0%, #175f9f 100%);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.35) inset,
-    0 10px 22px -12px rgba(16, 70, 120, 0.75);
   cursor: pointer;
+  background: linear-gradient(135deg, #29a6de 0%, #1668aa 52%, #124f88 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 8px 18px -8px rgba(18, 79, 136, 0.7),
+    0 0 0 0 rgba(27, 155, 216, 0);
   transition:
-    transform 200ms var(--ease-glide),
-    box-shadow 220ms ease,
-    opacity 200ms ease;
+    transform 340ms var(--ease-out),
+    box-shadow 380ms var(--ease-soft),
+    opacity 260ms var(--ease-soft);
 }
 
 .gate-button svg {
   width: 15px;
   height: 15px;
-  transition: transform 260ms var(--ease-glide);
+  transition: transform 380ms var(--ease-out);
 }
 
 .gate-button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.4) inset,
-    0 16px 28px -14px rgba(16, 70, 120, 0.8);
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 14px 26px -10px rgba(18, 79, 136, 0.72),
+    0 0 34px -6px rgba(27, 155, 216, 0.55);
 }
 
 .gate-button:hover:not(:disabled) svg {
-  transform: translateX(3px);
+  transform: translateX(4px);
+}
+
+.gate-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .gate-button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.gate-error {
+.gate-error,
+.gate-note {
   text-align: center;
-  font-size: 13px;
-  color: #b4232a;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.gate-error {
+  color: #b62a30;
 }
 
 .gate-note {
-  text-align: center;
+  color: var(--ink-3);
   font-size: 11.5px;
-  line-height: 1.6;
-  color: #8298a9;
 }
 
 .gate-note code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: rgba(20, 60, 96, 0.07);
-  color: #46698a;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(11, 42, 68, 0.06);
+  color: var(--ink-2);
 }
 
-/* --- the hub --- */
+/* ---------------------------------------------------------------------------
+   The hub
+--------------------------------------------------------------------------- */
 
 .gate-hub {
   position: fixed;
@@ -468,13 +600,13 @@ body {
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(20, 60, 96, 0.22) transparent;
+  scrollbar-color: rgba(11, 42, 68, 0.2) transparent;
   opacity: 0;
-  transform: translateY(26px);
+  transform: translateY(30px);
   pointer-events: none;
   transition:
-    opacity 620ms var(--ease-soft) 260ms,
-    transform 760ms var(--ease-glide) 260ms;
+    opacity 760ms var(--ease-soft) 300ms,
+    transform 980ms var(--ease-out) 300ms;
 }
 
 .gate[data-state="open"] .gate-hub {
@@ -484,294 +616,54 @@ body {
 }
 
 .gate-hub::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 
 .gate-hub::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
+  border: 3.5px solid transparent;
   border-radius: 8px;
   background-clip: content-box;
-  background-color: rgba(20, 60, 96, 0.2);
+  background-color: rgba(11, 42, 68, 0.18);
 }
 
 .gate-hub-inner {
   display: flex;
   min-width: max-content;
   min-height: 100%;
-  /* Sits the sections around a third of the way in, so the first couple of
-     levels open into free space rather than straight off the edge. */
-  padding: clamp(140px, 19vh, 200px) clamp(40px, 10vw, 140px) 110px
-    max(28px, calc(30vw - 123px));
+  padding: clamp(168px, 22vh, 232px) clamp(56px, 12vw, 180px) 128px
+    max(32px, calc(27vw - 165px));
 }
 
 .gate-hub-inner > * {
   margin-block: auto;
 }
 
-/* Skip every transition on the first paint for someone already signed in. */
 .gate[data-instant] .gate-brandbar,
 .gate[data-instant] .gate-card-layer,
-.gate[data-instant] .gate-hub {
+.gate[data-instant] .gate-hub,
+.gate[data-instant] .gate-exits {
   transition: none !important;
 }
 
-/* ===========================================================================
-   The sideways tree
-   =========================================================================== */
+/* ---------------------------------------------------------------------------
+   Exits
+--------------------------------------------------------------------------- */
 
-.tree-root {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  align-items: flex-start;
-}
-
-.tree-branch {
-  display: flex;
-  align-items: center;
-}
-
-/* Each child sits in a row that draws its own piece of the connector. */
-.tree-row {
-  position: relative;
-}
-
-.tree-kid-list > .tree-row {
-  padding-left: 30px;
-}
-
-.tree-kid-list > .tree-row::before,
-.tree-kid-list > .tree-row::after {
-  content: "";
-  position: absolute;
-  background: var(--gate-line);
-}
-
-/* The vertical spine, assembled from one segment per row. */
-.tree-kid-list > .tree-row::before {
-  left: 0;
-  width: 1.5px;
-  top: 0;
-  bottom: 0;
-}
-
-.tree-kid-list > .tree-row:first-child::before {
-  top: 50%;
-}
-
-.tree-kid-list > .tree-row:last-child::before {
-  bottom: 50%;
-}
-
-.tree-kid-list > .tree-row:only-child::before {
-  display: none;
-}
-
-/* The stub from the spine out to the child. */
-.tree-kid-list > .tree-row::after {
-  left: 0;
-  top: 50%;
-  width: 30px;
-  height: 1.5px;
-}
-
-.tree-kids {
-  position: relative;
-  padding-left: 30px;
-  /* Wipes open from the left, and closes the same way. */
-  clip-path: inset(0 100% 0 0);
-  opacity: 0.4;
-  transition:
-    clip-path 520ms var(--ease-glide),
-    opacity 380ms ease;
-}
-
-.tree-kids.is-revealed {
-  clip-path: inset(0 0 0 0);
-  opacity: 1;
-}
-
-/* The stub from the parent across to the spine. */
-.tree-kids::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 30px;
-  height: 1.5px;
-  background: var(--gate-line);
-}
-
-.tree-kid-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.tree-kid-list > .tree-row {
-  opacity: 0;
-  transform: translateX(-10px);
-  transition:
-    opacity 420ms var(--ease-soft),
-    transform 520ms var(--ease-glide);
-}
-
-.tree-kids.is-revealed > .tree-kid-list > .tree-row {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-/* --- the boxes --- */
-
-.tree-node {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 178px;
-  padding: 13px 16px;
-  text-align: left;
-  border-radius: 13px;
-  border: 1px solid var(--gate-line);
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.7) 100%
-  );
-  backdrop-filter: blur(12px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 10px 22px -16px rgba(16, 52, 88, 0.55);
-  color: var(--gate-ink);
-  cursor: pointer;
-  transition:
-    transform 260ms var(--ease-glide),
-    box-shadow 260ms ease,
-    border-color 260ms ease,
-    background 260ms ease;
-}
-
-.tree-node.is-section {
-  min-width: 246px;
-  padding: 17px 20px;
-  border-radius: 15px;
-}
-
-.tree-node:hover {
-  transform: translateX(3px);
-  border-color: rgba(27, 117, 188, 0.34);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.95) inset,
-    0 16px 30px -18px rgba(16, 52, 88, 0.7);
-}
-
-.tree-node.is-leaf {
-  cursor: default;
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: none;
-}
-
-.tree-node.is-leaf:hover {
-  transform: none;
-  border-color: var(--gate-line);
-}
-
-.tree-node.is-open {
-  border-color: rgba(27, 117, 188, 0.42);
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.97) 0%,
-    rgba(232, 244, 251, 0.85) 100%
-  );
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.95) inset,
-    0 14px 28px -18px rgba(16, 70, 120, 0.65),
-    -3px 0 0 0 #2ba3dc;
-}
-
-.tree-node-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.tree-node-label {
-  font-size: 14.5px;
-  font-weight: 620;
-  letter-spacing: -0.005em;
-}
-
-.tree-node.is-section .tree-node-label {
-  font-size: 19px;
-  font-weight: 650;
-}
-
-.tree-node-detail {
-  font-size: 11.5px;
-  color: #7c93a6;
-  letter-spacing: 0.01em;
-}
-
-.tree-node-chevron {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  color: #6f93ae;
-  background: rgba(20, 60, 96, 0.05);
-  transition:
-    transform 380ms var(--ease-glide),
-    background 260ms ease,
-    color 260ms ease;
-}
-
-.tree-node-chevron svg {
-  width: 13px;
-  height: 13px;
-}
-
-.tree-node.is-open .tree-node-chevron {
-  transform: rotate(90deg);
-  color: #1a7cc0;
-  background: rgba(43, 163, 220, 0.15);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gate-surface {
-    animation: none;
-  }
-
-  .gate-brandbar,
-  .gate-card-layer,
-  .gate-hub,
-  .tree-kids,
-  .tree-kid-list > .tree-row,
-  .tree-node,
-  .tree-node-chevron {
-    transition-duration: 1ms !important;
-  }
-}
-
-/* Quiet links out of the hub — the report tools, and the way back out. */
 .gate-exits {
   position: fixed;
-  right: clamp(18px, 3vw, 34px);
-  bottom: clamp(16px, 2.6vh, 26px);
+  right: clamp(20px, 3vw, 40px);
+  bottom: clamp(18px, 3vh, 32px);
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(12px);
   pointer-events: none;
   transition:
-    opacity 500ms var(--ease-soft) 620ms,
-    transform 620ms var(--ease-glide) 620ms;
+    opacity 620ms var(--ease-soft) 760ms,
+    transform 760ms var(--ease-out) 760ms;
 }
 
 .gate[data-state="open"] .gate-exits {
@@ -782,23 +674,377 @@ body {
 
 .gate-exit {
   display: inline-block;
-  padding: 7px 13px;
-  border-radius: 9px;
+  padding: 9px 15px;
   border: 1px solid transparent;
+  border-radius: 11px;
   background: none;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: #8199ab;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
   cursor: pointer;
   transition:
-    color 220ms ease,
-    background 220ms ease,
-    border-color 220ms ease;
+    color 300ms var(--ease-soft),
+    background 300ms var(--ease-soft),
+    border-color 300ms var(--ease-soft),
+    box-shadow 300ms var(--ease-soft);
 }
 
 .gate-exit:hover {
-  color: var(--gate-ink);
-  border-color: var(--gate-line);
-  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink);
+  border-color: var(--hair);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: var(--shadow-rest);
+}
+
+/* ===========================================================================
+   The tree
+   =========================================================================== */
+
+.tree-root {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  align-items: flex-start;
+}
+
+.tree-branch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  will-change: transform;
+}
+
+/* --- connectors -----------------------------------------------------------
+   Drawn with pseudo-elements and revealed by scaling, so the lines grow out
+   from the parent instead of appearing all at once.
+-------------------------------------------------------------------------- */
+
+.tree-kids {
+  position: relative;
+  padding-left: 46px;
+}
+
+/* Closing: leave the flow immediately so the layout can settle back while
+   these branches wipe out over the top. */
+.tree-kids.is-closing {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Stub from the parent across to the spine. */
+.tree-kids::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 46px;
+  height: 1px;
+  background: var(--hair-strong);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 420ms var(--ease-out), background 400ms var(--ease-soft);
+}
+
+.tree-kids.is-revealed::before {
+  transform: scaleX(1);
+}
+
+.tree-kid-list {
+  --kid-gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kid-gap);
+}
+
+.tree-kid-list > .tree-row {
+  position: relative;
+  padding-left: 46px;
+}
+
+/* Spine, assembled from one segment per row. */
+.tree-kid-list > .tree-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  /* Overhang by half the gap each way so the segments join into one spine. */
+  top: calc(var(--kid-gap) / -2);
+  bottom: calc(var(--kid-gap) / -2);
+  width: 1px;
+  background: var(--hair-strong);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 480ms var(--ease-out) 180ms, background 400ms var(--ease-soft);
+}
+
+.tree-kid-list > .tree-row:first-child::before {
+  top: 50%;
+  transform-origin: top center;
+}
+
+.tree-kid-list > .tree-row:last-child::before {
+  bottom: 50%;
+  transform-origin: bottom center;
+}
+
+.tree-kid-list > .tree-row:first-child:last-child::before {
+  display: none;
+}
+
+.tree-kid-list > .tree-row:only-child::before {
+  display: none;
+}
+
+/* Stub from the spine out to each child. */
+.tree-kid-list > .tree-row::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 46px;
+  height: 1px;
+  background: var(--hair-strong);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out), background 400ms var(--ease-soft);
+}
+
+.tree-kids.is-revealed > .tree-kid-list > .tree-row::before {
+  transform: scaleY(1);
+}
+
+.tree-kids.is-revealed > .tree-kid-list > .tree-row::after {
+  transform: scaleX(1);
+  transition-delay: calc(280ms + var(--stagger, 0ms));
+}
+
+/* The live path lights up. */
+.tree-kids.is-active::before,
+.tree-kids.is-active > .tree-kid-list > .tree-row::before,
+.tree-kids.is-active > .tree-kid-list > .tree-row::after {
+  background: rgba(27, 155, 216, 0.55);
+  box-shadow: 0 0 8px rgba(27, 155, 216, 0.4);
+}
+
+/* The stub out to a child that is itself closed stays quiet. */
+.tree-kids.is-active > .tree-kid-list > .tree-row.is-offpath::after {
+  background: var(--hair);
+  box-shadow: none;
+}
+
+/* --- the card itself ----------------------------------------------------- */
+
+.tree-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 268px;
+  padding: 19px 22px 19px 24px;
+  text-align: left;
+  border: 1px solid var(--hair);
+  border-radius: 16px;
+  background: linear-gradient(168deg, #ffffff 0%, #fbfdfe 100%);
+  box-shadow: var(--shadow-rest);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    transform 420ms var(--ease-out),
+    box-shadow 420ms var(--ease-soft),
+    border-color 380ms var(--ease-soft),
+    opacity 420ms var(--ease-soft),
+    filter 420ms var(--ease-soft),
+    background 380ms var(--ease-soft);
+}
+
+/* The rail down the left edge — the only strong colour on a resting card. */
+.tree-node::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition:
+    opacity 420ms var(--ease-soft),
+    transform 520ms var(--ease-out);
+}
+
+.tree-node.is-section {
+  min-width: 366px;
+  gap: 26px;
+  padding: 26px 28px 26px 30px;
+  border-radius: 18px;
+}
+
+.tree-node:hover:not(.is-leaf):not(.is-dimmed) {
+  transform: translateX(4px);
+  border-color: rgba(27, 155, 216, 0.3);
+  box-shadow: var(--shadow-lift);
+}
+
+.tree-node:hover:not(.is-leaf):not(.is-dimmed)::before {
+  opacity: 0.4;
+  transform: scaleY(0.8);
+}
+
+.tree-node.is-open {
+  border-color: rgba(27, 155, 216, 0.42);
+  background: linear-gradient(168deg, #ffffff 0%, #f3fafd 100%);
+  box-shadow: var(--shadow-glow);
+}
+
+.tree-node.is-open::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Everything off the chosen path recedes. */
+.tree-node.is-dimmed {
+  opacity: 0.32;
+  filter: saturate(0.15);
+  box-shadow: none;
+  border-color: var(--hair-soft);
+  cursor: pointer;
+}
+
+.tree-node.is-leaf {
+  cursor: default;
+  background: linear-gradient(168deg, #ffffff 0%, #f7fafc 100%);
+  border-style: dashed;
+  border-color: var(--hair-strong);
+  box-shadow: 0 1px 1px rgba(10, 35, 60, 0.03);
+}
+
+.tree-node:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--shadow-lift),
+    0 0 0 3px rgba(27, 155, 216, 0.32);
+}
+
+/* --- card contents ------------------------------------------------------- */
+
+.tree-node-index {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--ink-4);
+  transition: color 380ms var(--ease-soft);
+}
+
+.tree-node.is-open .tree-node-index {
+  color: var(--accent);
+}
+
+.tree-node-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tree-node-label {
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  line-height: 1.25;
+}
+
+.tree-node.is-section .tree-node-label {
+  font-family: var(--font-brand);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+
+.tree-node-detail {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.tree-node.is-section .tree-node-detail {
+  font-size: 13px;
+}
+
+.tree-node-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--ink-3);
+  background: rgba(11, 42, 68, 0.045);
+  transition:
+    transform 520ms var(--ease-out),
+    background 380ms var(--ease-soft),
+    color 380ms var(--ease-soft);
+}
+
+.tree-node.is-section .tree-node-chevron {
+  width: 32px;
+  height: 32px;
+}
+
+.tree-node-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tree-node.is-open .tree-node-chevron {
+  transform: rotate(90deg);
+  color: #fff;
+  background: linear-gradient(140deg, var(--accent), var(--accent-deep));
+  box-shadow: 0 0 16px -3px rgba(27, 155, 216, 0.7);
+}
+
+/* --- reveal -------------------------------------------------------------- */
+
+.tree-kids > .tree-kid-list > .tree-row > .tree-branch {
+  opacity: 0;
+  transform: translateX(-18px);
+  transition:
+    opacity 520ms var(--ease-soft),
+    transform 680ms var(--ease-out);
+}
+
+.tree-kids.is-revealed > .tree-kid-list > .tree-row > .tree-branch {
+  opacity: 1;
+  transform: translateX(0);
+  transition-delay: calc(320ms + var(--stagger, 0ms));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-surface {
+    animation: none;
+  }
+
+  .gate-brandbar,
+  .gate-card-layer,
+  .gate-hub,
+  .gate-exits,
+  .tree-node,
+  .tree-node::before,
+  .tree-node-chevron,
+  .tree-kids::before,
+  .tree-kid-list > .tree-row::before,
+  .tree-kid-list > .tree-row::after,
+  .tree-kids > .tree-kid-list > .tree-row > .tree-branch {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
 }

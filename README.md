@@ -102,9 +102,14 @@ stay valid until they expire — to sign everyone out immediately, change
 
 ### The logo
 
-The mark is drawn as SVG so it stays sharp at any size, but it is a stand-in.
-Upload the real artwork under **Settings → Branding** and it replaces the
-drawing everywhere: sign-in screen, header, and the cover of every report.
+The OptiLink lockup is built into the app as SVG — sign-in screen, header,
+sidebar and the cover of every report — so nothing has to be uploaded and it
+stays sharp at any size. `public/brand/optilink-mark.svg` is the standalone
+file. Uploading artwork under **Settings → Branding** replaces it everywhere if
+you would rather use the original file.
+
+Inter and Poppins are self-hosted from `public/fonts`, so the build never
+reaches out to a font CDN and the type renders the same on every machine.
 
 ---
 

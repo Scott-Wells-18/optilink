@@ -71,9 +71,10 @@ export function Gateway({
       data-instant={instant ? "true" : undefined}
     >
       <div className="gate-surface" aria-hidden />
+      <div className="gate-grid" aria-hidden />
       <div className="gate-grain" aria-hidden />
 
-      <div className="gate-brandbar" aria-hidden={!open}>
+      <div className="gate-brandbar">
         <div className="gate-brand">{brand}</div>
       </div>
 
@@ -143,8 +144,9 @@ function SignInCard({
 
   return (
     <form onSubmit={submit} className={`gate-card ${shake ? "is-shaking" : ""}`}>
-      <label className="gate-field">
-        <span className="gate-field-label">Password</span>
+      <p className="gate-eyebrow">Secure access</p>
+
+      <div className="gate-input-wrap">
         <input
           type="password"
           autoComplete="current-password"
@@ -155,8 +157,9 @@ function SignInCard({
           onChange={(event) => setPassword(event.target.value)}
           placeholder="••••••"
           className="gate-input"
+          aria-label="Password"
         />
-      </label>
+      </div>
 
       <button type="submit" className="gate-button" disabled={busy || !password || disabled}>
         <span>{busy ? "Opening" : "Enter"}</span>

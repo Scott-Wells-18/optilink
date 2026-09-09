@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSettings } from "@/lib/settings";
 import { BrandStyle } from "@/components/BrandStyle";
 import { NavLinks } from "@/components/NavLinks";
+import { Logo } from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +33,7 @@ export default async function DashboardLayout({
                 className="h-9 w-auto max-w-[170px] object-contain object-left"
               />
             ) : (
-              <span className="text-xl font-bold tracking-tight">
-                {settings.companyName}
-              </span>
+              <Logo size={21} tone="light" tagline={false} />
             )}
           </Link>
 

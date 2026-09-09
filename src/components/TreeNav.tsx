@@ -1,18 +1,56 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { TreeNode } from "@/lib/navTree";
 import { easeIntoView } from "@/lib/useSpringScroll";
 
 /**
- * A sideways tree. Pressing a node opens its branches to the right with a
- * left-to-right wipe; pressing it again closes them, which is how you go back.
+ * A sideways tree. Pressing a node opens its branches to the right; pressing it
+ * again closes them, which is how you step back. One branch is open per level,
+ * and everything off that path fades back.
  *
- * `openPath` holds the id chosen at each depth, so only one branch per level is
- * open at a time and the tree stays readable.
+ * Opening a branch changes the height of the row it sits in, which would
+ * otherwise shunt its neighbours around with a hard cut. Every position is
+ * measured before the change and again after, and the difference is played back
+ * as a transform — so anything that has to move, glides.
  */
 
-const REVEAL_MS = 520;
+const REVEAL_MS = 560;
+const FLIP_MS = 700;
+const FLIP_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
+
+type Registration = {
+  /** Measured to work out how far this node travelled. */
+  card: HTMLElement;
+  /** Moved to play that travel back. */
+  row: HTMLElement;
+  parentId: string | null;
+  depth: number;
+};
+
+type TreeContextValue = {
+  openPath: string[];
+  toggle: (depth: number, id: string) => void;
+  register: (id: string, registration: Registration | null) => void;
+  scrollerRef: RefObject<HTMLElement | null>;
+};
+
+const TreeContext = createContext<TreeContextValue | null>(null);
+
+function useTree() {
+  const value = useContext(TreeContext);
+  if (!value) throw new Error("Tree components must be rendered inside TreeNav");
+  return value;
+}
 
 export function TreeNav({
   nodes,
@@ -22,117 +60,225 @@ export function TreeNav({
   scrollerRef: RefObject<HTMLElement | null>;
 }) {
   const [openPath, setOpenPath] = useState<string[]>([]);
+  const registry = useRef(new Map<string, Registration>());
+  const before = useRef<Map<string, DOMRect> | null>(null);
 
-  function toggle(depth: number, id: string) {
+  const register = useCallback((id: string, registration: Registration | null) => {
+    if (registration) registry.current.set(id, registration);
+    else registry.current.delete(id);
+  }, []);
+
+  const toggle = useCallback((depth: number, id: string) => {
+    // Snapshot where everything is before React changes the layout.
+    const snapshot = new Map<string, DOMRect>();
+    for (const [key, entry] of registry.current) {
+      snapshot.set(key, entry.card.getBoundingClientRect());
+    }
+    before.current = snapshot;
+
     setOpenPath((current) =>
       current[depth] === id ? current.slice(0, depth) : [...current.slice(0, depth), id],
     );
-  }
+  }, []);
+
+  useLayoutEffect(() => {
+    const snapshot = before.current;
+    before.current = null;
+    if (!snapshot) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    // Measure everything first — reading positions after starting an animation
+    // would return the animated values, not the settled ones.
+    const after = new Map<string, DOMRect>();
+    for (const [id, entry] of registry.current) {
+      after.set(id, entry.card.getBoundingClientRect());
+    }
+
+    // Shallowest first, so a child's shift can be expressed relative to the
+    // parent that already carries part of it.
+    const ordered = [...registry.current.entries()].sort(
+      (a, b) => a[1].depth - b[1].depth,
+    );
+
+    const travelled = new Map<string, { dx: number; dy: number }>();
+    for (const [id, entry] of ordered) {
+      const from = snapshot.get(id);
+      const to = after.get(id);
+      if (!from || !to) continue;
+
+      const total = { dx: from.left - to.left, dy: from.top - to.top };
+      travelled.set(id, total);
+
+      // Transforms nest, so only animate the part the parent has not covered.
+      const inherited = entry.parentId ? travelled.get(entry.parentId) : undefined;
+      const dx = total.dx - (inherited?.dx ?? 0);
+      const dy = total.dy - (inherited?.dy ?? 0);
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+
+      entry.row.animate(
+        [
+          { transform: `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: FLIP_MS, easing: FLIP_EASING },
+      );
+    }
+  }, [openPath]);
 
   return (
-    <div className="tree-root">
-      {nodes.map((node) => (
-        <div className="tree-row" key={node.id}>
-          <Branch
-            node={node}
-            depth={0}
-            openPath={openPath}
-            onToggle={toggle}
-            scrollerRef={scrollerRef}
-          />
-        </div>
-      ))}
-    </div>
+    <TreeContext.Provider value={{ openPath, toggle, register, scrollerRef }}>
+      <div className="tree-root">
+        {nodes.map((node, index) => (
+          <div className="tree-row" key={node.id}>
+            <Branch node={node} depth={0} index={index} parentId={null} onPath />
+          </div>
+        ))}
+      </div>
+    </TreeContext.Provider>
   );
 }
 
 function Branch({
   node,
   depth,
-  openPath,
-  onToggle,
-  scrollerRef,
+  index,
+  parentId,
+  onPath,
 }: {
   node: TreeNode;
   depth: number;
-  openPath: string[];
-  onToggle: (depth: number, id: string) => void;
-  scrollerRef: RefObject<HTMLElement | null>;
+  index: number;
+  parentId: string | null;
+  /** False once an ancestor was passed over in favour of a sibling. */
+  onPath: boolean;
 }) {
+  const { openPath, toggle, register, scrollerRef } = useTree();
+  const rowRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLButtonElement>(null);
+  const kidsRef = useRef<HTMLDivElement>(null);
+
   const isOpen = openPath[depth] === node.id;
+  const siblingChosen = Boolean(openPath[depth]) && !isOpen;
+  const dimmed = !onPath || siblingChosen;
+
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
-  const branchRef = useRef<HTMLDivElement>(null);
 
-  // Children stay mounted through the closing wipe, then come out of the tree.
-  const [mounted, setMounted] = useState(isOpen);
+  /**
+   * Children have to be in the DOM during the same commit that opens them,
+   * otherwise the measurement above runs against a layout that has not changed
+   * yet and nothing animates. `keepOpen` only extends their life on the way
+   * out, for the closing wipe.
+   */
+  const [keepOpen, setKeepOpen] = useState(isOpen);
   const [revealed, setRevealed] = useState(isOpen);
+  const mounted = isOpen || keepOpen;
+  const closing = mounted && !isOpen;
+
+  useEffect(() => {
+    const row = rowRef.current;
+    const card = cardRef.current;
+    if (!row || !card) return;
+    register(node.id, { card, row, parentId, depth });
+    return () => register(node.id, null);
+  }, [register, node.id, parentId, depth]);
 
   useEffect(() => {
     if (isOpen) {
-      setMounted(true);
+      setKeepOpen(true);
       const raf = requestAnimationFrame(() => setRevealed(true));
       return () => cancelAnimationFrame(raf);
     }
     setRevealed(false);
-    const timer = setTimeout(() => setMounted(false), REVEAL_MS);
+    const timer = setTimeout(() => setKeepOpen(false), REVEAL_MS);
     return () => clearTimeout(timer);
   }, [isOpen]);
 
-  // Once the branches are out, bring them into view if they opened off-screen.
+  // Bring newly opened branches into view once they have drawn.
   useEffect(() => {
-    if (!revealed || !scrollerRef.current || !branchRef.current) return;
+    if (!revealed) return;
     const timer = setTimeout(() => {
-      if (scrollerRef.current && branchRef.current) {
-        easeIntoView(scrollerRef.current, branchRef.current);
-      }
-    }, REVEAL_MS * 0.55);
+      const scroller = scrollerRef.current;
+      const kids = kidsRef.current;
+      if (scroller && kids) easeIntoView(scroller, kids);
+    }, REVEAL_MS * 0.7);
     return () => clearTimeout(timer);
   }, [revealed, scrollerRef]);
 
-  return (
-    <div className="tree-branch" ref={branchRef}>
-      <button
-        type="button"
-        className={`tree-node ${depth === 0 ? "is-section" : ""} ${isOpen ? "is-open" : ""} ${
-          hasChildren ? "" : "is-leaf"
-        }`}
-        onClick={() => hasChildren && onToggle(depth, node.id)}
-        aria-expanded={hasChildren ? isOpen : undefined}
-      >
-        <span className="tree-node-body">
-          <span className="tree-node-label">{node.label}</span>
-          {node.detail ? <span className="tree-node-detail">{node.detail}</span> : null}
-        </span>
-        {hasChildren ? (
-          <span className="tree-node-chevron" aria-hidden>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        ) : null}
-      </button>
+  const label = depth === 0 ? String(index + 1).padStart(2, "0") : String(index + 1);
 
-      {hasChildren && mounted ? (
-        <div className={`tree-kids ${revealed ? "is-revealed" : ""}`}>
-          <div className="tree-kid-list">
-            {children.map((child, index) => (
-              <div
-                className="tree-row"
-                key={child.id}
-                style={{ transitionDelay: `${revealed ? index * 70 : 0}ms` }}
-              >
-                <Branch
-                  node={child}
-                  depth={depth + 1}
-                  openPath={openPath}
-                  onToggle={onToggle}
-                  scrollerRef={scrollerRef}
-                />
-              </div>
-            ))}
+  return (
+    <div className="tree-branch" ref={rowRef}>
+        <button
+          type="button"
+          ref={cardRef}
+          className={[
+            "tree-node",
+            depth === 0 ? "is-section" : "",
+            isOpen ? "is-open" : "",
+            hasChildren ? "" : "is-leaf",
+            dimmed ? "is-dimmed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => hasChildren && toggle(depth, node.id)}
+          aria-expanded={hasChildren ? isOpen : undefined}
+        >
+          <span className="tree-node-index">{label}</span>
+          <span className="tree-node-body">
+            <span className="tree-node-label">{node.label}</span>
+            {node.detail ? <span className="tree-node-detail">{node.detail}</span> : null}
+          </span>
+          {hasChildren ? (
+            <span className="tree-node-chevron" aria-hidden>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          ) : null}
+        </button>
+
+        {hasChildren && mounted ? (
+          <div
+            ref={kidsRef}
+            className={[
+              "tree-kids",
+              revealed && !closing ? "is-revealed" : "",
+              revealed && !closing && !dimmed ? "is-active" : "",
+              // Taken out of flow on the way out, so the row collapses now and
+              // the siblings glide back while the branches wipe away.
+              closing ? "is-closing" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <div className="tree-kid-list">
+              {children.map((child, childIndex) => {
+                const childChosen = openPath[depth + 1];
+                return (
+                  <div
+                    className={`tree-row ${
+                      childChosen && childChosen !== child.id ? "is-offpath" : ""
+                    }`}
+                    key={child.id}
+                    style={
+                      {
+                        "--stagger": `${childIndex * 80}ms`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <Branch
+                      node={child}
+                      depth={depth + 1}
+                      index={childIndex}
+                      parentId={node.id}
+                      onPath={onPath && !siblingChosen}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
       ) : null}
     </div>
   );

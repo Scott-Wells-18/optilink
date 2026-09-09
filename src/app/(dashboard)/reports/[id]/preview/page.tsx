@@ -12,6 +12,7 @@ import { RISK_META, RISK_ORDER } from "@/lib/risk";
 import { relevantGlossary } from "@/lib/glossary";
 import { companyAddress, getSettings, type AppSettings } from "@/lib/settings";
 import { thermalBandTable } from "@/lib/standards/thermal";
+import { Logo } from "@/components/Logo";
 import { PrintBar } from "./PrintBar";
 
 export const dynamic = "force-dynamic";
@@ -84,9 +85,7 @@ function Cover({
               className="h-16 w-auto max-w-[220px] object-contain object-left"
             />
           ) : (
-            <p className="text-2xl font-bold" style={{ color: "var(--brand)" }}>
-              {settings.companyName}
-            </p>
+            <Logo size={34} />
           )}
           <div className="mt-3 text-xs leading-relaxed text-slate-500">
             {settings.licenceNumber ? <p>Electrical licence {settings.licenceNumber}</p> : null}

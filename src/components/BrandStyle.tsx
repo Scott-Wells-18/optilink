@@ -14,7 +14,7 @@ export function BrandStyle({
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: `:root{--brand:${safePrimary};--accent:${safeAccent};}`,
+        __html: `:root{--brand:${safePrimary};--brand-accent:${safeAccent};}`,
       }}
     />
   );
