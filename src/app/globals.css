@@ -2483,3 +2483,290 @@ body {
 .issue-chip.is-cause {
   --issue-colour: #14528f;
 }
+
+/* --- temperatures, and what they rank as --------------------------------- */
+
+.issue-temps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.issue-temp {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 116px;
+}
+
+.issue-temp span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.issue-temp input {
+  width: 100%;
+  padding: 9px 12px;
+  font-family: var(--font-app);
+  font-size: 14px;
+  color: var(--ink);
+  border: 1px solid var(--hair-strong);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 240ms var(--ease-soft), box-shadow 240ms var(--ease-soft);
+}
+
+.issue-temp input:focus {
+  border-color: rgba(27, 155, 216, 0.5);
+  box-shadow: 0 0 0 3px rgba(27, 155, 216, 0.12);
+}
+
+.issue-rise {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 14px;
+  border-left: 3px solid var(--band, var(--hair-strong));
+}
+
+.issue-rise span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.issue-rise strong {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--band, var(--ink-3));
+}
+
+.issue-rise em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--band, var(--ink-4));
+}
+
+.issue-pick-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.issue-pick-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.issue-pick-note {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-4);
+}
+
+.board-finding-marks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.board-finding-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-finding-rank em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.board-finding-priority {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--band, var(--ink-4));
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+/* --- edit and download, beside a row ------------------------------------- */
+
+/* The pencil rides with the remove control, tucked in beside it. */
+.tree-edit {
+  position: absolute;
+  top: -8px;
+  right: 18px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  box-shadow: var(--shadow-rest);
+  transition:
+    opacity 240ms var(--ease-soft),
+    transform 300ms var(--ease-out),
+    color 240ms var(--ease-soft),
+    border-color 240ms var(--ease-soft);
+}
+
+.tree-edit svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tree-card-wrap:hover > .tree-edit,
+.tree-edit:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tree-edit:hover {
+  border-color: rgba(27, 155, 216, 0.5);
+  color: var(--accent);
+}
+
+/*
+ * The download sits outside the card, beside the chevron — a button cannot
+ * hold another button, so it rides alongside rather than inside.
+ */
+.tree-download {
+  align-self: center;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-left: 10px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-3);
+  cursor: pointer;
+  box-shadow: var(--shadow-rest);
+  transition:
+    color 240ms var(--ease-soft),
+    border-color 240ms var(--ease-soft),
+    background 240ms var(--ease-soft);
+}
+
+.tree-download svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tree-download:hover {
+  border-color: rgba(27, 155, 216, 0.55);
+  background: var(--accent);
+  color: #fff;
+}
+
+.tree-download.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* --- contacts on the site form ------------------------------------------- */
+
+.dialog-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dialog-contacts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-add-contact {
+  border: 1px dashed var(--hair-strong);
+  border-radius: 9px;
+  padding: 5px 11px;
+  background: #fff;
+  font-family: var(--font-app);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 220ms var(--ease-soft), color 220ms var(--ease-soft);
+}
+
+.dialog-add-contact:hover {
+  border-style: solid;
+  border-color: rgba(27, 155, 216, 0.5);
+  color: var(--accent);
+}
+
+.dialog-contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog-contact {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 12px 13px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: #fbfdfe;
+}
+
+.dialog-contact-row {
+  display: flex;
+  gap: 7px;
+}
+
+.dialog-contact-row .dialog-input {
+  min-width: 0;
+}
+
+.dialog-contact-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dialog-contact-remove:hover {
+  color: #b62a30;
+  border-color: rgba(182, 42, 48, 0.4);
+}

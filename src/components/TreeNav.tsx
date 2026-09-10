@@ -355,6 +355,41 @@ function Branch({
           </button>
           )}
 
+          {node.onDownload ? (
+            <button
+              type="button"
+              className="tree-download"
+              aria-label={`Download the report for ${node.label}`}
+              title="Download the report"
+              onClick={(event) => {
+                event.stopPropagation();
+                node.onDownload?.();
+              }}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                <path d="M8 2.5v8m0 0L5 7.5M8 10.5l3-3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3 12v.5A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V12" strokeLinecap="round" />
+              </svg>
+            </button>
+          ) : null}
+
+          {node.onEdit ? (
+            <button
+              type="button"
+              className="tree-edit"
+              aria-label={`Edit ${node.label}`}
+              title="Edit"
+              onClick={(event) => {
+                event.stopPropagation();
+                node.onEdit?.();
+              }}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                <path d="M11.2 2.6a1.4 1.4 0 0 1 2 2L6 11.8l-2.6.6.6-2.6z" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : null}
+
           {node.onRemove ? (
             <button
               type="button"

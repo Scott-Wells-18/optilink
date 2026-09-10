@@ -30,6 +30,10 @@ export async function GET() {
               board: true,
             },
           },
+          contacts: {
+            orderBy: { createdAt: "asc" },
+            select: { id: true, name: true, email: true, phone: true },
+          },
           inspections: {
             orderBy: { createdAt: "asc" },
             select: {

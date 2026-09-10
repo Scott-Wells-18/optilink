@@ -15,6 +15,7 @@ import { BoardLegend } from "@/components/BoardLegend";
 import { IssueDialog } from "@/components/IssueDialog";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { usePersisted } from "@/lib/session";
+import { bandFor, priorityFor, priorityLabel, temperatureRise } from "@/lib/priority";
 import {
   BOARD_SLOT,
   CAUSE_LABELS,
@@ -41,6 +42,8 @@ type Issue = {
   type: IssueType;
   cause: IssueCause | null;
   recommendations: string[];
+  refTemp: number | null;
+  hotTemp: number | null;
   note: string | null;
   photos: { id: string; kind: PhotoKind; fileId: string }[];
 };
@@ -280,8 +283,11 @@ export function BoardViewer({
                 {selectedIssues.map((issue) => (
                   <article className="board-finding" key={issue.id}>
                     <div className="board-finding-head">
-                      <span className={`issue-chip is-${issue.type.toLowerCase()}`}>
-                        {ISSUE_LABELS[issue.type]}
+                      <span className="board-finding-marks">
+                        <span className={`issue-chip is-${issue.type.toLowerCase()}`}>
+                          {ISSUE_LABELS[issue.type]}
+                        </span>
+                        <Rank issue={issue} />
                       </span>
                       <button
                         type="button"
@@ -353,6 +359,18 @@ export function BoardViewer({
         />
       ) : null}
     </div>
+  );
+}
+
+/** The temperature rise and what it ranks as, beside a saved finding. */
+function Rank({ issue }: { issue: Issue }) {
+  const rise = temperatureRise(issue.refTemp, issue.hotTemp);
+  const band = bandFor(priorityFor(issue.type, rise));
+  return (
+    <span className="board-finding-rank" style={{ "--band": band.colour } as React.CSSProperties}>
+      {rise === null ? null : <em>{rise}°C rise</em>}
+      <span className="board-finding-priority">{priorityLabel(band.priority)}</span>
+    </span>
   );
 }
 

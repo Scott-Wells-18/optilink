@@ -24,6 +24,10 @@ export type TreeNode = {
    * picker, and picking a day saves it.
    */
   editDate?: { value: string; onSave: (value: string) => void };
+  /** Shows a pencil beside the remove control. */
+  onEdit?: () => void;
+  /** Shows a download button beside the chevron. */
+  onDownload?: () => void;
 };
 
 function placeholderBranches(prefix: string): TreeNode[] {

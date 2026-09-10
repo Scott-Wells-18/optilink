@@ -27,6 +27,8 @@ export async function POST(request: Request) {
       type?: string;
       cause?: string;
       recommendations?: string[];
+      refTemp?: number;
+      hotTemp?: number;
       note?: string;
       photos?: PhotoInput[];
     };
@@ -54,6 +56,12 @@ export async function POST(request: Request) {
       return badRequest("Pick at least one recommendation.");
     }
 
+    const refTemp = Number.isFinite(body.refTemp) ? (body.refTemp as number) : null;
+    const hotTemp = Number.isFinite(body.hotTemp) ? (body.hotTemp as number) : null;
+    if (needsSurvey(type) && (refTemp === null || hotTemp === null)) {
+      return badRequest("Both temperatures are needed to rank this.");
+    }
+
     const issue = await prisma.issue.create({
       data: {
         inspectionId: body.inspectionId,
@@ -62,6 +70,8 @@ export async function POST(request: Request) {
         type,
         cause,
         recommendations,
+        refTemp,
+        hotTemp,
         note: body.note?.trim().slice(0, 2000) || null,
         photos: { create: photos },
       },

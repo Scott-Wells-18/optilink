@@ -113,8 +113,24 @@ model Site {
 
   equipment   Equipment[]
   inspections Inspection[]
+  contacts    Contact[]
 
   @@index([clientId])
+}
+
+/** Who to speak to at a site. A site can have several. */
+model Contact {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  name  String
+  email String?
+  phone String?
+
+  createdAt DateTime @default(now())
+
+  @@index([siteId])
 }
 
 enum EquipmentKind {
@@ -189,8 +205,16 @@ enum IssueType {
 
 /** What is behind a rising temperature. */
 enum IssueCause {
+  // Switchboards
   INTERNAL_HEATING
   TERMINAL_CONNECTION
+  // Motors
+  BEARING
+  OVERLOAD
+  VENTILATION
+  ALIGNMENT
+  MOTOR_TERMINAL
+  WINDING
 }
 
 /** One finding, against one position on one piece of equipment. */
@@ -207,6 +231,14 @@ model Issue {
 
   type  IssueType
   cause IssueCause?
+
+  /**
+   * Off the thermogram, in °C: the reference away from the hot spot, and the
+   * hot spot itself. The difference between them is the temperature rise, and
+   * the rise is what sets the priority — so both are kept and neither is.
+   */
+  refTemp Float?
+  hotTemp Float?
 
   /**
    * What to do about it, as keys into the catalogue in lib/issues — the words

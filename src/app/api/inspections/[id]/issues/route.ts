@@ -19,6 +19,8 @@ export async function GET(
         type: true,
         cause: true,
         recommendations: true,
+        refTemp: true,
+        hotTemp: true,
         note: true,
         photos: {
           orderBy: { createdAt: "asc" },

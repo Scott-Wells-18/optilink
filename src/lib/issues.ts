@@ -56,16 +56,54 @@ export const ISSUE_NOTES: Record<IssueType, string> = {
 
 /* --- what is behind a rising temperature, and what to do about it --------- */
 
-export type IssueCause = "INTERNAL_HEATING" | "TERMINAL_CONNECTION";
+export type IssueCause =
+  | "INTERNAL_HEATING"
+  | "TERMINAL_CONNECTION"
+  | "BEARING"
+  | "OVERLOAD"
+  | "VENTILATION"
+  | "ALIGNMENT"
+  | "MOTOR_TERMINAL"
+  | "WINDING";
 
-export const ISSUE_CAUSES: readonly IssueCause[] = [
+/** What can be behind heat in a board. */
+export const BOARD_CAUSES: readonly IssueCause[] = [
   "INTERNAL_HEATING",
   "TERMINAL_CONNECTION",
 ];
 
+/** And in a motor, which runs hot for reasons a breaker never does. */
+export const MOTOR_CAUSES: readonly IssueCause[] = [
+  "BEARING",
+  "OVERLOAD",
+  "VENTILATION",
+  "ALIGNMENT",
+  "MOTOR_TERMINAL",
+  "WINDING",
+];
+
+export const ISSUE_CAUSES: readonly IssueCause[] = [...BOARD_CAUSES, ...MOTOR_CAUSES];
+
 export const CAUSE_LABELS: Record<IssueCause, string> = {
   INTERNAL_HEATING: "Internal heating",
   TERMINAL_CONNECTION: "Terminal connection",
+  BEARING: "Bearing",
+  OVERLOAD: "Overloading",
+  VENTILATION: "Ventilation and cooling",
+  ALIGNMENT: "Alignment or coupling",
+  MOTOR_TERMINAL: "Terminal connection",
+  WINDING: "Winding or insulation",
+};
+
+export const CAUSE_NOTES: Record<IssueCause, string> = {
+  INTERNAL_HEATING: "Heat forming inside the device itself.",
+  TERMINAL_CONNECTION: "Heat at the termination rather than in the device.",
+  BEARING: "Running hot at the bearing housing.",
+  OVERLOAD: "Drawing more current than the circuit is rated for.",
+  VENTILATION: "Cooling air blocked, or the fan not doing its job.",
+  ALIGNMENT: "Shaft, coupling or belts pulling the motor out of true.",
+  MOTOR_TERMINAL: "Heat in the motor terminal box.",
+  WINDING: "Heat spread through the frame, from the windings.",
 };
 
 /** Only a rising temperature is worked through to a cause and a fix. */
@@ -79,6 +117,24 @@ export function needsSurvey(type: IssueType): boolean {
  * "replace the contactor" — and that is only known where it is shown.
  */
 const RECOMMENDATIONS: Record<string, (device: string) => string> = {
+  LUBRICATION_CHECK: () => "Conduct an inspection and lubrication check on the bearing",
+  REPLACE_BEARING: () => "Replace bearing if required",
+  MONITOR_EQUIPMENT: () => "Continue to monitor this equipment regularly",
+  MEASURE_CURRENT: () => "Measure running current and compare it against the motor nameplate rating",
+  CHECK_DRIVEN_LOAD: () => "Check the driven load for binding or excessive duty",
+  CHECK_OVERLOAD_SETTING: () => "Confirm the overload protection is correctly rated and working",
+  CLEAN_COOLING: () => "Clean the cooling fins, fan and air paths of dust and debris",
+  CHECK_FAN: () => "Check the cooling fan and shroud for damage",
+  CHECK_CLEARANCE: () => "Confirm there is adequate clearance and airflow around the motor",
+  CHECK_ALIGNMENT: () => "Check shaft alignment and coupling condition",
+  CHECK_BELTS: () => "Check belt tension and pulley alignment",
+  CHECK_MOUNTS: () => "Check mounting bolts and the foundation for movement",
+  RETERMINATE_MOTOR: () => "Disconnect, inspect and reterminate the motor terminal connections",
+  INSULATION_TEST: () => "Carry out insulation resistance testing on the windings",
+  PHASE_BALANCE: () => "Compare phase currents for imbalance",
+  REWIND_OR_REPLACE: () => "Arrange a rewind or replacement if testing confirms a fault",
+  MONITOR_VISUAL_THERMAL: () =>
+    "Continue to monitor through regular visual and thermographic inspections",
   REPLACE_DEVICE: (device) => `Replace the ${device}`,
   DISCONNECT_INSPECT: () => "Disconnect all cables and inspect for heat degradation damage",
   CLEAN_RETERMINATE: () => "Clean and reterminate",
@@ -94,6 +150,27 @@ const RECOMMENDATIONS: Record<string, (device: string) => string> = {
 };
 
 const BY_CAUSE: Record<IssueCause, string[]> = {
+  BEARING: ["LUBRICATION_CHECK", "REPLACE_BEARING", "MONITOR_EQUIPMENT"],
+  OVERLOAD: [
+    "MEASURE_CURRENT",
+    "CHECK_DRIVEN_LOAD",
+    "CHECK_OVERLOAD_SETTING",
+    "MONITOR_EQUIPMENT",
+  ],
+  VENTILATION: ["CLEAN_COOLING", "CHECK_FAN", "CHECK_CLEARANCE", "MONITOR_EQUIPMENT"],
+  ALIGNMENT: ["CHECK_ALIGNMENT", "CHECK_BELTS", "CHECK_MOUNTS", "MONITOR_EQUIPMENT"],
+  MOTOR_TERMINAL: [
+    "RETERMINATE_MOTOR",
+    "CUT_BACK_CABLING",
+    "CLEAN_CONDUCTORS",
+    "MONITOR_EQUIPMENT",
+  ],
+  WINDING: [
+    "INSULATION_TEST",
+    "PHASE_BALANCE",
+    "REWIND_OR_REPLACE",
+    "MONITOR_EQUIPMENT",
+  ],
   INTERNAL_HEATING: [
     "REPLACE_DEVICE",
     "DISCONNECT_INSPECT",
@@ -113,6 +190,14 @@ const BY_CAUSE: Record<IssueCause, string[]> = {
 };
 
 export const RECOMMENDATION_KEYS: readonly string[] = Object.keys(RECOMMENDATIONS);
+
+/** Which causes are on offer, given what is being reported on. */
+export function causesFor(device: string): readonly IssueCause[] {
+  return device === "motor" ? MOTOR_CAUSES : BOARD_CAUSES;
+}
+
+/** What a repaired or replaced finding always says. */
+export const REPAIRED_RECOMMENDATION = "MONITOR_VISUAL_THERMAL";
 
 /** What is on offer for a cause, worded for the device it is about. */
 export function recommendationsFor(

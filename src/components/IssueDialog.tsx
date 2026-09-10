@@ -4,10 +4,11 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
   CAUSE_LABELS,
-  ISSUE_CAUSES,
+  CAUSE_NOTES,
   ISSUE_LABELS,
   ISSUE_NOTES,
   POSITION_ISSUE_TYPES,
+  causesFor,
   needsSurvey,
   photoSlotsFor,
   recommendationsFor,
@@ -15,6 +16,7 @@ import {
   type IssueType,
   type PhotoKind,
 } from "@/lib/issues";
+import { bandFor, priorityFor, priorityLabel, temperatureRise } from "@/lib/priority";
 import { uploadImage } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
@@ -65,6 +67,8 @@ export function IssueDialog({
     {},
   );
   const [cause, setCause] = usePersisted<IssueCause | null>(`${key}:cause`, null);
+  const [refTemp, setRefTemp] = usePersisted(`${key}:ref`, "");
+  const [hotTemp, setHotTemp] = usePersisted(`${key}:hot`, "");
   const [picks, setPicks] = usePersisted<string[]>(`${key}:picks`, []);
   /** The survey is a second page, reached once the photos are in. */
   const [onSurvey, setOnSurvey] = usePersisted(`${key}:survey`, false);
@@ -72,7 +76,7 @@ export function IssueDialog({
   const [error, setError] = useState<string | null>(null);
 
   function forget() {
-    for (const part of ["type", "photos", "cause", "picks", "survey"]) {
+    for (const part of ["type", "photos", "cause", "picks", "survey", "ref", "hot"]) {
       clearSession(`${key}:${part}`);
     }
   }
@@ -96,10 +100,19 @@ export function IssueDialog({
   const survey = type !== null && needsSurvey(type);
   const photosIn =
     type !== null && slots.every((entry) => (photos[entry.kind]?.length ?? 0) > 0);
+  const ref = Number.parseFloat(refTemp);
+  const hot = Number.parseFloat(hotTemp);
+  const rise = temperatureRise(
+    Number.isFinite(ref) ? ref : null,
+    Number.isFinite(hot) ? hot : null,
+  );
+  const band = type ? bandFor(priorityFor(type, rise)) : null;
+
   /** Everything the first page needs before it can be left. */
-  const pageDone = photosIn && (!survey || cause !== null);
+  const pageDone = photosIn && (!survey || (cause !== null && rise !== null));
   const ready = survey ? pageDone && picks.length > 0 : photosIn;
   const options = cause ? recommendationsFor(cause, device) : [];
+  const causes = causesFor(device);
 
   async function add(kindWanted: PhotoKind, files: FileList | null) {
     if (!files?.length) return;
@@ -143,6 +156,8 @@ export function IssueDialog({
         type,
         cause: survey ? cause : undefined,
         recommendations: survey ? picks : undefined,
+        refTemp: survey ? ref : undefined,
+        hotTemp: survey ? hot : undefined,
         photos: slots.flatMap((entry) =>
           (photos[entry.kind] ?? []).map((photo) => ({
             kind: entry.kind,
@@ -269,26 +284,78 @@ export function IssueDialog({
             )}
 
             {survey && !onSurvey ? (
-              <section className="issue-survey">
-                <h3 className="board-section-title">What is behind it</h3>
-                <p className="issue-empty">One of the two.</p>
-                <div className="issue-picks">
-                  {ISSUE_CAUSES.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`issue-pick ${cause === option ? "is-on" : ""}`}
-                      onClick={() => {
-                        setCause(option);
-                        setPicks([]);
-                      }}
+              <>
+                <section className="issue-survey">
+                  <h3 className="board-section-title">Temperatures</h3>
+                  <p className="issue-empty">
+                    Off the thermogram, in °C. The rise between them sets the priority.
+                  </p>
+                  <div className="issue-temps">
+                    <label className="issue-temp">
+                      <span>Ref temp</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={refTemp}
+                        placeholder="54.1"
+                        onChange={(event) => setRefTemp(event.target.value)}
+                      />
+                    </label>
+                    <label className="issue-temp">
+                      <span>R1 temp</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={hotTemp}
+                        placeholder="105.1"
+                        onChange={(event) => setHotTemp(event.target.value)}
+                      />
+                    </label>
+                    <div
+                      className="issue-rise"
+                      style={
+                        rise !== null && band
+                          ? ({ "--band": band.colour } as React.CSSProperties)
+                          : undefined
+                      }
                     >
-                      <span className="issue-pick-mark is-one" aria-hidden />
-                      {CAUSE_LABELS[option]}
-                    </button>
-                  ))}
-                </div>
-              </section>
+                      <span>Rise</span>
+                      <strong>{rise === null ? "—" : `${rise}°C`}</strong>
+                      {rise !== null && band ? (
+                        <em>
+                          {band.band} · {priorityLabel(band.priority)}
+                        </em>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="issue-survey">
+                  <h3 className="board-section-title">What is behind it</h3>
+                  <p className="issue-empty">One of them.</p>
+                  <div className="issue-picks">
+                    {causes.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`issue-pick ${cause === option ? "is-on" : ""}`}
+                        onClick={() => {
+                          setCause(option);
+                          setPicks([]);
+                        }}
+                      >
+                        <span className="issue-pick-mark is-one" aria-hidden />
+                        <span className="issue-pick-body">
+                          <span className="issue-pick-label">{CAUSE_LABELS[option]}</span>
+                          <span className="issue-pick-note">{CAUSE_NOTES[option]}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </>
             ) : null}
 
             {survey && onSurvey ? (

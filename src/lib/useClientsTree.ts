@@ -5,6 +5,7 @@ import type { TreeNode } from "@/lib/navTree";
 import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/board";
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 import { usePersisted } from "@/lib/session";
+import type { Contact, ContactInput } from "@/lib/contacts";
 
 /**
  * Clients → sites → contacts, loaded from the database and turned into tree
@@ -43,6 +44,7 @@ type SiteRecord = {
   name: string;
   location: string | null;
   equipment: EquipmentRecord[];
+  contacts: Contact[];
   inspections: InspectionRecord[];
 };
 
@@ -51,6 +53,8 @@ type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
 export type DialogField = {
   name: string;
   label: string;
+  /** Filled in when the form is opened to change something. */
+  value?: string;
   placeholder?: string;
   type?: string;
   required?: boolean;
@@ -62,8 +66,12 @@ export type DialogSpec = {
   submitLabel: string;
   fields: DialogField[];
   endpoint: string;
+  /** POST to create, PATCH to change something that is already there. */
+  method?: "POST" | "PATCH";
   /** Sent alongside the form values, e.g. which client a site belongs to. */
   extra: Record<string, string>;
+  /** Present on the site form: the people to speak to, edited in place. */
+  contacts?: ContactInput[];
 };
 
 /** `enabled` gates the first load until someone has actually signed in. */
@@ -126,10 +134,10 @@ export function useClientsTree(enabled: boolean) {
   }, [enabled, refresh]);
 
   const submit = useCallback(
-    async (values: Record<string, string>) => {
+    async (values: Record<string, unknown>) => {
       if (!dialog) return;
       const response = await fetch(dialog.endpoint, {
-        method: "POST",
+        method: dialog.method ?? "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...dialog.extra, ...values }),
       });
@@ -273,6 +281,23 @@ export function useClientsTree(enabled: boolean) {
             site.location?.trim() ||
             countLabel(site.equipment.length, "item", "items"),
           onRemove: () => void remove(`/api/sites/${site.id}`, site.name),
+          onEdit: () =>
+            setDialog({
+              title: site.name,
+              submitLabel: "Save site",
+              endpoint: `/api/sites/${site.id}`,
+              method: "PATCH",
+              extra: {},
+              contacts: site.contacts.map((contact) => ({
+                name: contact.name,
+                email: contact.email ?? "",
+                phone: contact.phone ?? "",
+              })),
+              fields: SITE_FIELDS.map((field) => ({
+                ...field,
+                value: field.name === "name" ? site.name : site.location ?? "",
+              })),
+            }),
           children: [
             ...site.equipment.map<TreeNode>((item) => equipmentNode(item, site)),
             {
@@ -295,10 +320,8 @@ export function useClientsTree(enabled: boolean) {
               submitLabel: "Add site",
               endpoint: "/api/sites",
               extra: { clientId: client.id },
-              fields: [
-                { name: "name", label: "Site name", required: true, placeholder: "e.g. Warehouse 3" },
-                { name: "location", label: "Site location", placeholder: "e.g. 22 Industry Way, Botany" },
-              ],
+              contacts: [],
+              fields: SITE_FIELDS,
             }),
         },
       ],
@@ -394,6 +417,7 @@ export function useClientsTree(enabled: boolean) {
                     },
                     onRemove: () =>
                       void remove(`/api/inspections/${inspection.id}`, title),
+                    onDownload: () => downloadReport(inspection.id),
                     children: site.equipment.filter(inThermal).map((item) => {
                       const found = inspection.issues.filter(
                         (issue) => issue.equipmentId === item.id,
@@ -475,6 +499,23 @@ export function useClientsTree(enabled: boolean) {
     error,
   };
 }
+
+/**
+ * The report comes back as a file, so the browser is handed the URL rather
+ * than the bytes — it saves it the same way it would any other download.
+ */
+function downloadReport(inspectionId: string) {
+  window.open(`/api/inspections/${inspectionId}/report`, "_blank", "noopener");
+}
+
+const SITE_FIELDS: DialogField[] = [
+  { name: "name", label: "Site name", required: true, placeholder: "e.g. Warehouse 3" },
+  {
+    name: "location",
+    label: "Site location",
+    placeholder: "e.g. 22 Industry Way, Botany",
+  },
+];
 
 function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;

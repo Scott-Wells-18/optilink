@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DialogSpec } from "@/lib/useClientsTree";
 import { clearSession, usePersisted } from "@/lib/session";
+import type { ContactInput } from "@/lib/contacts";
 
 /** The pop-up behind every "add new" tile. */
 export function AddDialog({
@@ -12,12 +13,21 @@ export function AddDialog({
 }: {
   spec: DialogSpec;
   onClose: () => void;
-  onSubmit: (values: Record<string, string>) => Promise<void>;
+  onSubmit: (values: Record<string, unknown>) => Promise<void>;
 }) {
   // Keyed by which form this is, so half-typed details survive a reload but
   // never leak into a different form.
   const stateKey = `form:${spec.endpoint}:${spec.title}`;
-  const [values, setValues] = usePersisted<Record<string, string>>(stateKey, {});
+  const [values, setValues] = usePersisted<Record<string, string>>(
+    stateKey,
+    Object.fromEntries(
+      spec.fields.filter((field) => field.value).map((field) => [field.name, field.value!]),
+    ),
+  );
+  const [contacts, setContacts] = usePersisted<ContactInput[]>(
+    `${stateKey}:contacts`,
+    spec.contacts ?? [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -38,7 +48,14 @@ export function AddDialog({
 
   function close() {
     clearSession(stateKey);
+    clearSession(`${stateKey}:contacts`);
     onClose();
+  }
+
+  function editContact(index: number, part: Partial<ContactInput>) {
+    setContacts((current) =>
+      current.map((entry, at) => (at === index ? { ...entry, ...part } : entry)),
+    );
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -47,8 +64,9 @@ export function AddDialog({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(values);
+      await onSubmit(spec.contacts ? { ...values, contacts } : values);
       clearSession(stateKey);
+      clearSession(`${stateKey}:contacts`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "That could not be saved.");
       setBusy(false);
@@ -97,6 +115,66 @@ export function AddDialog({
             </label>
           ))}
         </div>
+
+        {spec.contacts ? (
+          <section className="dialog-contacts">
+            <div className="dialog-contacts-head">
+              <span className="dialog-label">Contacts</span>
+              <button
+                type="button"
+                className="dialog-add-contact"
+                onClick={() =>
+                  setContacts((current) => [...current, { name: "", email: "", phone: "" }])
+                }
+              >
+                + Add new
+              </button>
+            </div>
+
+            {contacts.length === 0 ? (
+              <p className="issue-empty">Nobody yet — optional.</p>
+            ) : (
+              <ol className="dialog-contact-list">
+                {contacts.map((contact, index) => (
+                  <li className="dialog-contact" key={index}>
+                    <button
+                      type="button"
+                      className="dialog-contact-remove"
+                      aria-label="Remove contact"
+                      onClick={() =>
+                        setContacts((current) => current.filter((_, at) => at !== index))
+                      }
+                    >
+                      ×
+                    </button>
+                    <input
+                      className="dialog-input"
+                      placeholder="Name"
+                      value={contact.name ?? ""}
+                      onChange={(event) => editContact(index, { name: event.target.value })}
+                    />
+                    <div className="dialog-contact-row">
+                      <input
+                        className="dialog-input"
+                        type="email"
+                        placeholder="Email"
+                        value={contact.email ?? ""}
+                        onChange={(event) => editContact(index, { email: event.target.value })}
+                      />
+                      <input
+                        className="dialog-input"
+                        type="tel"
+                        placeholder="Phone"
+                        value={contact.phone ?? ""}
+                        onChange={(event) => editContact(index, { phone: event.target.value })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        ) : null}
 
         {error ? <p className="dialog-error">{error}</p> : null}
 
