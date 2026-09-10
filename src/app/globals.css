@@ -1324,6 +1324,7 @@ body {
 }
 
 .board-head {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -1650,6 +1651,7 @@ body {
 }
 
 .board-foot {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1841,10 +1843,12 @@ body {
 /* --- section tabs, Chrome style ------------------------------------------- */
 
 .board-tabs {
+  flex: none;
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  padding: 0 24px;
+  min-height: 46px;
+  padding: 6px 24px 0;
   border-bottom: 1px solid var(--hair);
   background: #f7fafc;
   overflow-x: auto;
@@ -1871,9 +1875,11 @@ body {
 }
 
 .board-tab.is-active {
+  margin-bottom: -1px;
+  padding-bottom: 1px;
   background: #fff;
   border-color: var(--hair);
-  box-shadow: 0 -1px 0 var(--accent) inset;
+  box-shadow: 0 2px 0 var(--accent) inset;
 }
 
 .board-tab.is-unnamed .board-tab-name {
