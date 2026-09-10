@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
@@ -87,9 +86,6 @@ export function Gateway({
       </main>
 
       <nav className="gate-exits" aria-hidden={!open}>
-        <Link href="/overview" className="gate-exit">
-          Report workspace
-        </Link>
         <form action="/api/auth/logout" method="post">
           <button type="submit" className="gate-exit">
             Sign out

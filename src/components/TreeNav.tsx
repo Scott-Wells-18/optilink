@@ -27,6 +27,8 @@ import { easeIntoView } from "@/lib/useSpringScroll";
 const REVEAL_MS = 560;
 /** The tree slides aside first; branches start drawing part-way through. */
 const SLIDE_LEAD_MS = 220;
+/** Width of the gutter the connecting curves are drawn in. */
+const LINK_WIDTH = 92;
 const FLIP_MS = 700;
 const FLIP_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -208,6 +210,7 @@ function Branch({
   }, [revealed, scrollerRef]);
 
   const label = depth === 0 ? String(index + 1).padStart(2, "0") : String(index + 1);
+  const links = useLinkGeometry(cardRef, kidsRef, mounted, children.length);
 
   return (
     <div className="tree-branch" ref={rowRef}>
@@ -254,6 +257,30 @@ function Branch({
               .filter(Boolean)
               .join(" ")}
           >
+            <svg
+              className="tree-links"
+              width={LINK_WIDTH}
+              height={links.height}
+              viewBox={`0 0 ${LINK_WIDTH} ${Math.max(links.height, 1)}`}
+              fill="none"
+              aria-hidden
+            >
+              {links.paths.map((d, linkIndex) => (
+                <path
+                  key={linkIndex}
+                  d={d}
+                  pathLength={1}
+                  className={
+                    openPath[depth + 1] &&
+                    openPath[depth + 1] !== children[linkIndex]?.id
+                      ? "tree-link is-offpath"
+                      : "tree-link"
+                  }
+                  style={{ transitionDelay: `${linkIndex * 70}ms` }}
+                />
+              ))}
+            </svg>
+
             <div className="tree-kid-list">
               {children.map((child, childIndex) => {
                 const childChosen = openPath[depth + 1];
@@ -284,4 +311,71 @@ function Branch({
       ) : null}
     </div>
   );
+}
+
+
+/**
+ * Works out where each connecting curve has to start and finish.
+ *
+ * The curves are drawn as one SVG per branch rather than as borders on each
+ * row, so every line is the same weight and none of them can overlap.
+ */
+function useLinkGeometry(
+  cardRef: RefObject<HTMLElement | null>,
+  kidsRef: RefObject<HTMLElement | null>,
+  mounted: boolean,
+  childCount: number,
+) {
+  const [links, setLinks] = useState<{ paths: string[]; height: number }>({
+    paths: [],
+    height: 0,
+  });
+
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    const kids = kidsRef.current;
+    if (!mounted || !card || !kids || childCount === 0) {
+      setLinks({ paths: [], height: 0 });
+      return;
+    }
+
+    function measure() {
+      const cardBox = card!.getBoundingClientRect();
+      const kidsBox = kids!.getBoundingClientRect();
+      const rows = kids!.querySelectorAll<HTMLElement>(":scope > .tree-kid-list > .tree-row");
+
+      // Where the curve leaves the parent card, in the gutter's coordinates.
+      const from = cardBox.top + cardBox.height / 2 - kidsBox.top;
+
+      let lowest = from;
+      const paths: string[] = [];
+
+      rows.forEach((row) => {
+        const target = row.querySelector<HTMLElement>(".tree-node") ?? row;
+        const box = target.getBoundingClientRect();
+        const to = box.top + box.height / 2 - kidsBox.top;
+        lowest = Math.max(lowest, to);
+        const bend = LINK_WIDTH * 0.55;
+        paths.push(
+          `M 0 ${from.toFixed(1)} C ${bend} ${from.toFixed(1)}, ${(
+            LINK_WIDTH - bend
+          ).toFixed(1)} ${to.toFixed(1)}, ${LINK_WIDTH} ${to.toFixed(1)}`,
+        );
+      });
+
+      setLinks({ paths, height: Math.ceil(lowest) + 2 });
+    }
+
+    measure();
+
+    // Re-measure when a branch below changes the stack height.
+    const observer = new ResizeObserver(measure);
+    observer.observe(kids);
+    for (const row of kids.querySelectorAll(":scope > .tree-kid-list > .tree-row")) {
+      observer.observe(row);
+    }
+    return () => observer.disconnect();
+  }, [cardRef, kidsRef, mounted, childCount]);
+
+  return links;
 }

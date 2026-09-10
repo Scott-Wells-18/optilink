@@ -259,7 +259,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.52em;
-  font-size: clamp(32px, 5.2vw, 58px);
+  font-size: clamp(30px, 4.4vw, 52px);
   line-height: 1;
   white-space: nowrap;
   max-width: 100%;
@@ -299,7 +299,7 @@ body {
   font-weight: 400;
   letter-spacing: 0.213em;
   text-transform: uppercase;
-  color: #1b75bc;
+  color: #231f20;
   padding-left: 0.16em;
 }
 
@@ -351,13 +351,18 @@ body {
 
 .gate-brand {
   display: flex;
+  align-items: center;
   justify-content: center;
-  width: min(640px, 88vw);
+  /* Sized by height, so any uploaded artwork lands at the same scale
+     regardless of how wide the file happens to be. */
+  height: 104px;
+  max-width: min(560px, 86vw);
 }
 
 .gate-logo-image {
-  width: 100%;
-  height: auto;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
   object-fit: contain;
 }
 
@@ -583,7 +588,7 @@ body {
   display: flex;
   min-width: max-content;
   min-height: 100%;
-  padding: clamp(168px, 22vh, 232px) clamp(56px, 12vw, 180px) 128px
+  padding: clamp(168px, 22vh, 232px) clamp(56px, 12vw, 180px) max(220px, 42vh)
     max(32px, calc(27vw - 165px));
 }
 
@@ -680,10 +685,6 @@ body {
   will-change: transform;
 }
 
-/* --- connectors -----------------------------------------------------------
-   Drawn with pseudo-elements and revealed by scaling, so the lines grow out
-   from the parent instead of appearing all at once.
--------------------------------------------------------------------------- */
 
 /*
  * Zero height on purpose: the branches still take up width, so the tree can be
@@ -693,7 +694,40 @@ body {
 .tree-kids {
   position: relative;
   height: 0;
-  padding-left: 46px;
+  padding-left: 92px;
+}
+
+/* One SVG per branch, so every curve is the same weight and none overlap. */
+.tree-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tree-link {
+  stroke: #1b9bd8;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition:
+    stroke-dashoffset 620ms var(--ease-out),
+    stroke 400ms var(--ease-soft),
+    opacity 400ms var(--ease-soft);
+}
+
+.tree-kids.is-revealed .tree-link {
+  stroke-dashoffset: 0;
+}
+
+.tree-link.is-offpath {
+  stroke: #c9d4dd;
+}
+
+.tree-kids:not(.is-active) .tree-link {
+  stroke: #c9d4dd;
 }
 
 /* Closing: leave the flow immediately so the layout can settle back while
@@ -705,11 +739,6 @@ body {
   pointer-events: none;
 }
 
-/* Line the first child up with the middle of the parent card. */
-.tree-branch.is-section-branch > .tree-kids > .tree-kid-list {
-  margin-top: 10px;
-}
-
 .tree-kid-list {
   --kid-gap: 20px;
   display: flex;
@@ -719,76 +748,6 @@ body {
 
 .tree-kid-list > .tree-row {
   position: relative;
-  padding-left: 46px;
-}
-
-/* Spine, assembled from one segment per row. */
-.tree-kid-list > .tree-row::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  /* Overhang by half the gap each way so the segments join into one spine. */
-  top: calc(var(--kid-gap) / -2);
-  bottom: calc(var(--kid-gap) / -2);
-  width: 1px;
-  background: var(--hair-strong);
-  transform: scaleY(0);
-  transform-origin: center;
-  transition: transform 480ms var(--ease-out) 180ms, background 400ms var(--ease-soft);
-}
-
-.tree-kid-list > .tree-row:first-child::before {
-  top: 50%;
-  transform-origin: top center;
-}
-
-.tree-kid-list > .tree-row:last-child::before {
-  bottom: 50%;
-  transform-origin: bottom center;
-}
-
-.tree-kid-list > .tree-row:first-child:last-child::before {
-  display: none;
-}
-
-.tree-kid-list > .tree-row:only-child::before {
-  display: none;
-}
-
-/* Stub from the spine out to each child. */
-.tree-kid-list > .tree-row::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 46px;
-  height: 1px;
-  background: var(--hair-strong);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 400ms var(--ease-out), background 400ms var(--ease-soft);
-}
-
-.tree-kids.is-revealed > .tree-kid-list > .tree-row::before {
-  transform: scaleY(1);
-}
-
-.tree-kids.is-revealed > .tree-kid-list > .tree-row::after {
-  transform: scaleX(1);
-  transition-delay: calc(280ms + var(--stagger, 0ms));
-}
-
-/* The live path lights up. */
-.tree-kids.is-active > .tree-kid-list > .tree-row::before,
-.tree-kids.is-active > .tree-kid-list > .tree-row::after {
-  background: rgba(27, 155, 216, 0.55);
-  box-shadow: 0 0 8px rgba(27, 155, 216, 0.4);
-}
-
-/* The stub out to a child that is itself closed stays quiet. */
-.tree-kids.is-active > .tree-kid-list > .tree-row.is-offpath::after {
-  background: var(--hair);
-  box-shadow: none;
 }
 
 /* --- the card itself ----------------------------------------------------- */
@@ -814,25 +773,6 @@ body {
     opacity 420ms var(--ease-soft),
     filter 420ms var(--ease-soft),
     background 380ms var(--ease-soft);
-}
-
-/* Stub out of an open card, across to the spine. */
-.tree-node::after {
-  content: "";
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  width: 46px;
-  height: 1px;
-  background: rgba(27, 155, 216, 0.55);
-  box-shadow: 0 0 8px rgba(27, 155, 216, 0.4);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 420ms var(--ease-out);
-}
-
-.tree-node.is-open::after {
-  transform: scaleX(1);
 }
 
 /* The rail down the left edge — the only strong colour on a resting card. */
@@ -1014,9 +954,7 @@ body {
   .tree-node,
   .tree-node::before,
   .tree-node-chevron,
-  .tree-kids::before,
-  .tree-kid-list > .tree-row::before,
-  .tree-kid-list > .tree-row::after,
+  .tree-link,
   .tree-kids > .tree-kid-list > .tree-row > .tree-branch {
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;

@@ -5,6 +5,11 @@ import { useEffect, type RefObject } from "react";
 /**
  * Scrolling that eases in and eases out.
  *
+ * This deliberately still applies when the system asks for reduced motion:
+ * it smooths the steps between wheel notches rather than adding movement, and
+ * an abrupt jump is not the gentler option. Decorative animation elsewhere
+ * still backs off.
+ *
  * A wheel notch nudges a target; every frame the actual scroll position is
  * pulled toward that target by a critically damped spring, so movement builds
  * up gently and settles gently instead of snapping. Touch scrolling is left
@@ -15,7 +20,7 @@ import { useEffect, type RefObject } from "react";
  * Stiff enough to keep up with the wheel — the spring is here to smooth the
  * steps between notches, not to add a delay.
  */
-const STIFFNESS = 620;
+const STIFFNESS = 300;
 const DAMPING = 2 * Math.sqrt(STIFFNESS); // critically damped: no overshoot
 const LINE_HEIGHT = 40;
 const PAGE_HEIGHT = 800;
@@ -29,9 +34,6 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
     const target = ref.current;
     if (!target) return;
     const element: HTMLElement = target;
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (reduced.matches) return;
 
     const y: Axis = { target: element.scrollTop, current: element.scrollTop, velocity: 0 };
     const x: Axis = { target: element.scrollLeft, current: element.scrollLeft, velocity: 0 };
