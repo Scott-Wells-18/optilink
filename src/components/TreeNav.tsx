@@ -29,6 +29,18 @@ const REVEAL_MS = 560;
 const SLIDE_LEAD_MS = 220;
 /** Width of the gutter the connecting curves are drawn in. */
 const LINK_WIDTH = 92;
+/**
+ * Curves run a little way underneath the cards at both ends. Cards paint over
+ * the top, so a card nudging sideways on hover can never leave a gap.
+ */
+const LINK_TUCK = 16;
+/**
+ * How far above the parent's centre the first child sits. Fixed at every level
+ * so the first curve always has the same gentle rise, whatever size the cards.
+ */
+const FIRST_CHILD_LIFT = 13;
+/** Clear space left below the lowest card once scrolled to the bottom. */
+const BOTTOM_ROOM = 76;
 const FLIP_MS = 700;
 const FLIP_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -66,6 +78,7 @@ export function TreeNav({
   const [openPath, setOpenPath] = useState<string[]>([]);
   const registry = useRef(new Map<string, Registration>());
   const before = useRef<Map<string, DOMRect> | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const register = useCallback((id: string, registration: Registration | null) => {
     if (registration) registry.current.set(id, registration);
@@ -84,6 +97,27 @@ export function TreeNav({
       current[depth] === id ? current.slice(0, depth) : [...current.slice(0, depth), id],
     );
   }, []);
+
+  /**
+   * Branches hang out of the bottom of the tree without adding height to it,
+   * which is what stops them shoving the sections around — but it also means
+   * the scroller has nothing to scroll to. Pad the tree to reach past whatever
+   * is hanging lowest, and leave a little room under it.
+   */
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    // Read from the DOM, not the registry: branches register in a passive
+    // effect, which has not run yet for anything that opened this commit.
+    root.style.paddingBottom = "0px";
+    const rootBottom = root.getBoundingClientRect().bottom;
+    let lowest = rootBottom;
+    for (const card of root.querySelectorAll(".tree-node")) {
+      lowest = Math.max(lowest, card.getBoundingClientRect().bottom);
+    }
+    root.style.paddingBottom = `${Math.round(lowest - rootBottom) + BOTTOM_ROOM}px`;
+  });
 
   useLayoutEffect(() => {
     const snapshot = before.current;
@@ -109,6 +143,7 @@ export function TreeNav({
       const from = snapshot.get(id);
       const to = after.get(id);
       if (!from || !to) continue;
+      if (entry.row.closest(".tree-kids.is-closing")) continue;
 
       const total = { dx: from.left - to.left, dy: from.top - to.top };
       travelled.set(id, total);
@@ -131,7 +166,10 @@ export function TreeNav({
 
   return (
     <TreeContext.Provider value={{ openPath, toggle, register, scrollerRef }}>
-      <div className={`tree-root ${openPath.length === 0 ? "is-idle" : "is-engaged"}`}>
+      <div
+        ref={rootRef}
+        className={`tree-root ${openPath.length === 0 ? "is-idle" : "is-engaged"}`}
+      >
         {nodes.map((node, index) => (
           <div className="tree-row" key={node.id}>
             <Branch node={node} depth={0} index={index} parentId={null} onPath />
@@ -340,12 +378,25 @@ function useLinkGeometry(
     }
 
     function measure() {
+      const list = kids!.querySelector<HTMLElement>(":scope > .tree-kid-list");
+      const rows = kids!.querySelectorAll<HTMLElement>(":scope > .tree-kid-list > .tree-row");
+      const firstCard = rows[0]?.querySelector<HTMLElement>(".tree-node");
+
+      // Sit the first child a fixed distance above the parent's centre, so the
+      // opening curve reads the same at every level regardless of card size.
+      if (list && firstCard) {
+        const lift =
+          (card!.offsetHeight - firstCard.offsetHeight) / 2 - FIRST_CHILD_LIFT;
+        list.style.marginTop = `${Math.round(lift)}px`;
+      }
+
       const cardBox = card!.getBoundingClientRect();
       const kidsBox = kids!.getBoundingClientRect();
-      const rows = kids!.querySelectorAll<HTMLElement>(":scope > .tree-kid-list > .tree-row");
 
       // Where the curve leaves the parent card, in the gutter's coordinates.
       const from = cardBox.top + cardBox.height / 2 - kidsBox.top;
+      const startX = -LINK_TUCK;
+      const endX = LINK_WIDTH + LINK_TUCK;
 
       let lowest = from;
       const paths: string[] = [];
@@ -355,11 +406,11 @@ function useLinkGeometry(
         const box = target.getBoundingClientRect();
         const to = box.top + box.height / 2 - kidsBox.top;
         lowest = Math.max(lowest, to);
-        const bend = LINK_WIDTH * 0.55;
+        const bend = LINK_WIDTH * 0.52;
         paths.push(
-          `M 0 ${from.toFixed(1)} C ${bend} ${from.toFixed(1)}, ${(
+          `M ${startX} ${from.toFixed(1)} C ${bend} ${from.toFixed(1)}, ${(
             LINK_WIDTH - bend
-          ).toFixed(1)} ${to.toFixed(1)}, ${LINK_WIDTH} ${to.toFixed(1)}`,
+          ).toFixed(1)} ${to.toFixed(1)}, ${endX} ${to.toFixed(1)}`,
         );
       });
 

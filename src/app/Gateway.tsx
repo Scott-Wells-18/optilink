@@ -138,8 +138,6 @@ function SignInCard({
 
   return (
     <form onSubmit={submit} className={`gate-card ${shake ? "is-shaking" : ""}`}>
-      <p className="gate-eyebrow">Secure access</p>
-
       <div className="gate-input-wrap">
         <input
           type="password"
@@ -149,26 +147,28 @@ function SignInCard({
           disabled={disabled}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          placeholder="••••••"
+          placeholder="Password"
           className="gate-input"
           aria-label="Password"
         />
+        <button
+          type="submit"
+          className="gate-submit"
+          disabled={busy || !password || disabled}
+          aria-label="Sign in"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M3 8h9m0 0-3.5-3.5M12 8l-3.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
-
-      <button type="submit" className="gate-button" disabled={busy || !password || disabled}>
-        <span>{busy ? "Opening" : "Enter"}</span>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-          <path d="M2 8h11m0 0-4-4m4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
 
       {error ? <p className="gate-error">{error}</p> : null}
 
       {defaultPassword ? (
         <p className="gate-note">
-          Running on the temporary password <code>123</code>. Set{" "}
-          <code>APP_PASSWORD</code> and <code>SESSION_SECRET</code> on the host
-          before this goes anywhere real.
+          Temporary password <code>123</code> — set <code>APP_PASSWORD</code> and{" "}
+          <code>SESSION_SECRET</code> on the host.
         </p>
       ) : null}
     </form>
