@@ -166,8 +166,11 @@ model Inspection {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** Optional — falls back to the date it was started. */
+  /** Optional — falls back to the date of the survey. */
   name String?
+
+  /** The day it was carried out. Starts as today; changed by hand after. */
+  date DateTime @default(now()) @db.Date
 
   createdAt DateTime @default(now())
 

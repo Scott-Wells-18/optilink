@@ -19,6 +19,8 @@ import {
   type Numbering,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
+import { MainSwitchRow } from "@/components/MainSwitchRow";
+import { clearSession, usePersisted } from "@/lib/session";
 
 /**
  * Draws a switchboard the way it actually looks: two columns of positions, one
@@ -32,18 +34,25 @@ export function BoardEditor({
   title,
   initialName,
   initialBoard,
+  stateKey,
   onCancel,
   onSave,
 }: {
   title: string;
   initialName: string;
   initialBoard?: Board;
+  /** Where an unsaved drawing is kept, so a reload does not lose it. */
+  stateKey: string;
   onCancel: () => void;
   onSave: (name: string, board: Board) => Promise<void>;
 }) {
-  const [name, setName] = useState(initialName);
-  const [board, setBoard] = useState<Board>(initialBoard ?? createBoard());
-  const [activeId, setActiveId] = useState(
+  const [name, setName] = usePersisted(`${stateKey}:name`, initialName);
+  const [board, setBoard] = usePersisted<Board>(
+    `${stateKey}:board`,
+    initialBoard ?? createBoard(),
+  );
+  const [activeId, setActiveId] = usePersisted(
+    `${stateKey}:tab`,
     (initialBoard ?? createBoard()).sections[0]?.id ?? "",
   );
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -57,11 +66,24 @@ export function BoardEditor({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
+      if (event.key === "Escape") cancel();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // cancel() only drops the draft and calls the prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCancel]);
+
+  function forget() {
+    clearSession(`${stateKey}:name`);
+    clearSession(`${stateKey}:board`);
+    clearSession(`${stateKey}:tab`);
+  }
+
+  function cancel() {
+    forget();
+    onCancel();
+  }
 
   /** Applies a change to whichever section is on screen. */
   function editActive(change: (section: BoardSection) => BoardSection) {
@@ -147,6 +169,7 @@ export function BoardEditor({
     setError(null);
     try {
       await onSave(name.trim(), board);
+      forget();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "That could not be saved.");
       setBusy(false);
@@ -160,7 +183,7 @@ export function BoardEditor({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={title}>
-      <button className="dialog-scrim" onClick={onCancel} aria-label="Close" tabIndex={-1} />
+      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
 
       <div className="board">
         <header className="board-head">
@@ -183,6 +206,8 @@ export function BoardEditor({
             <BoardLegend />
           </div>
         </header>
+
+        <MainSwitchRow />
 
         <nav className="board-tabs" aria-label="Board sections">
           {board.sections.map((section) => {
@@ -355,7 +380,7 @@ export function BoardEditor({
             </p>
           ) : null}
           <div className="dialog-actions">
-            <button type="button" className="dialog-cancel" onClick={onCancel}>
+            <button type="button" className="dialog-cancel" onClick={cancel}>
               Cancel
             </button>
             <button

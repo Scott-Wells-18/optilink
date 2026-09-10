@@ -35,7 +35,7 @@ export async function GET() {
             select: {
               id: true,
               name: true,
-              createdAt: true,
+              date: true,
               issues: { select: { id: true, equipmentId: true, slot: true, type: true } },
             },
           },

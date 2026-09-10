@@ -13,7 +13,9 @@ import { ChooseKindDialog } from "@/components/ChooseKindDialog";
 import { BoardEditor } from "@/components/BoardEditor";
 import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
+import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
+import { clearAllSession } from "@/lib/session";
 
 /**
  * Sign-in and the hub are one screen, not two pages. On a correct password the
@@ -141,6 +143,7 @@ export function Gateway({
           slot={clients.motorIssue.slot}
           where={clients.motorIssue.where}
           kind="Motor"
+          types={ITEM_ISSUE_TYPES}
           onCancel={clients.closeMotorIssue}
           onSaved={clients.closeMotorIssue}
         />
@@ -151,13 +154,14 @@ export function Gateway({
           title={clients.boardEditor.title}
           initialName={clients.boardEditor.name}
           initialBoard={clients.boardEditor.board}
+          stateKey={`board:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
           onCancel={clients.closeBoardEditor}
           onSave={clients.saveBoard}
         />
       ) : null}
 
       <nav className="gate-exits" aria-hidden={!open}>
-        <form action="/api/auth/logout" method="post">
+        <form action="/api/auth/logout" method="post" onSubmit={clearAllSession}>
           <button type="submit" className="gate-exit">
             Sign out
           </button>

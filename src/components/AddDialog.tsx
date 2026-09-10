@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { DialogSpec } from "@/lib/useClientsTree";
+import { clearSession, usePersisted } from "@/lib/session";
 
 /** The pop-up behind every "add new" tile. */
 export function AddDialog({
@@ -13,7 +14,10 @@ export function AddDialog({
   onClose: () => void;
   onSubmit: (values: Record<string, string>) => Promise<void>;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  // Keyed by which form this is, so half-typed details survive a reload but
+  // never leak into a different form.
+  const stateKey = `form:${spec.endpoint}:${spec.title}`;
+  const [values, setValues] = usePersisted<Record<string, string>>(stateKey, {});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -24,11 +28,18 @@ export function AddDialog({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // close() only reads refs and props that do not change while open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
+
+  function close() {
+    clearSession(stateKey);
+    onClose();
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -37,6 +48,7 @@ export function AddDialog({
     setError(null);
     try {
       await onSubmit(values);
+      clearSession(stateKey);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "That could not be saved.");
       setBusy(false);
@@ -48,7 +60,7 @@ export function AddDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={spec.title}>
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
       <form className="dialog" onSubmit={handleSubmit}>
         <h2 className="dialog-title">{spec.title}</h2>
 
@@ -89,7 +101,7 @@ export function AddDialog({
         {error ? <p className="dialog-error">{error}</p> : null}
 
         <div className="dialog-actions">
-          <button type="button" className="dialog-cancel" onClick={onClose}>
+          <button type="button" className="dialog-cancel" onClick={close}>
             Cancel
           </button>
           <button type="submit" className="dialog-confirm" disabled={busy || !ready}>

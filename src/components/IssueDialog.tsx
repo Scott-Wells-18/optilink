@@ -5,12 +5,13 @@ import { useEffect, useState } from "react";
 import {
   ISSUE_LABELS,
   ISSUE_NOTES,
-  ISSUE_TYPES,
+  POSITION_ISSUE_TYPES,
   photoSlotsFor,
   type IssueType,
   type PhotoKind,
 } from "@/lib/issues";
 import { uploadImage } from "@/components/ImageUpload";
+import { clearSession, usePersisted } from "@/lib/session";
 
 /**
  * Reporting what was found at one position: pick what it is, then photograph
@@ -26,6 +27,9 @@ export function IssueDialog({
   slot,
   where,
   kind,
+  title = "Report issue",
+  types = POSITION_ISSUE_TYPES,
+  fixedType = null,
   onCancel,
   onSaved,
 }: {
@@ -36,21 +40,43 @@ export function IssueDialog({
   where: string;
   /** Breaker, RCD, contactor — or absent for a motor. */
   kind?: string;
+  title?: string;
+  /** Which findings are on offer here. */
+  types?: readonly IssueType[];
+  /** Set when there is nothing to choose — dust ingress off the board. */
+  fixedType?: IssueType | null;
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [type, setType] = useState<IssueType | null>(null);
-  const [photos, setPhotos] = useState<Partial<Record<PhotoKind, Pending[]>>>({});
-  const [note, setNote] = useState("");
+  // Photos are already on the server by the time they are held here, so all
+  // that has to survive a reload are their ids and what was picked.
+  const key = `issue:${inspectionId}:${equipmentId}:${slot}`;
+  const [type, setType] = usePersisted<IssueType | null>(`${key}:type`, fixedType);
+  const [photos, setPhotos] = usePersisted<Partial<Record<PhotoKind, Pending[]>>>(
+    `${key}:photos`,
+    {},
+  );
   const [busy, setBusy] = useState<PhotoKind | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  function forget() {
+    clearSession(`${key}:type`);
+    clearSession(`${key}:photos`);
+  }
+
+  function cancel() {
+    forget();
+    onCancel();
+  }
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
+      if (event.key === "Escape") cancel();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // cancel() only drops the draft and calls the prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCancel]);
 
   const slots = type ? photoSlotsFor(type) : [];
@@ -97,7 +123,6 @@ export function IssueDialog({
         equipmentId,
         slot,
         type,
-        note: note.trim() || undefined,
         photos: slots.flatMap((entry) =>
           (photos[entry.kind] ?? []).map((photo) => ({
             kind: entry.kind,
@@ -114,6 +139,7 @@ export function IssueDialog({
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload.error ?? "That finding could not be saved.");
       }
+      forget();
       onSaved();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Save failed.");
@@ -123,11 +149,11 @@ export function IssueDialog({
 
   return (
     <div className="dialog-layer is-stacked" role="dialog" aria-modal aria-label="Report issue">
-      <button className="dialog-scrim" onClick={onCancel} aria-label="Close" tabIndex={-1} />
+      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
 
       <div className="dialog is-issue">
         <div className="issue-head">
-          <h2 className="dialog-title">Report issue</h2>
+          <h2 className="dialog-title">{title}</h2>
           <p className="board-section-note">
             {where}
             {kind ? <span className="issue-kind">{kind}</span> : null}
@@ -136,7 +162,7 @@ export function IssueDialog({
 
         {type === null ? (
           <div className="issue-types">
-            {ISSUE_TYPES.map((option) => (
+            {types.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -150,21 +176,23 @@ export function IssueDialog({
           </div>
         ) : (
           <>
-            <div className="issue-chosen">
-              <span className={`issue-chip is-${type.toLowerCase()}`}>
-                {ISSUE_LABELS[type]}
-              </span>
-              <button
-                type="button"
-                className="issue-change"
-                onClick={() => {
-                  setType(null);
-                  setPhotos({});
-                }}
-              >
-                Change
-              </button>
-            </div>
+            {fixedType ? null : (
+              <div className="issue-chosen">
+                <span className={`issue-chip is-${type.toLowerCase()}`}>
+                  {ISSUE_LABELS[type]}
+                </span>
+                <button
+                  type="button"
+                  className="issue-change"
+                  onClick={() => {
+                    setType(null);
+                    setPhotos({});
+                  }}
+                >
+                  Change
+                </button>
+              </div>
+            )}
 
             <div className="issue-slots">
               {slots.map((entry) => {
@@ -218,22 +246,13 @@ export function IssueDialog({
               })}
             </div>
 
-            <label className="issue-note">
-              <span className="board-section-title">Note</span>
-              <textarea
-                rows={2}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Optional — anything the photos do not show."
-              />
-            </label>
           </>
         )}
 
         {error ? <p className="dialog-error">{error}</p> : null}
 
         <div className="dialog-actions">
-          <button type="button" className="dialog-cancel" onClick={onCancel}>
+          <button type="button" className="dialog-cancel" onClick={cancel}>
             Cancel
           </button>
           {type !== null ? (

@@ -13,7 +13,16 @@ import {
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
 import { IssueDialog } from "@/components/IssueDialog";
-import { ISSUE_LABELS, type IssueType, type PhotoKind } from "@/lib/issues";
+import { MainSwitchRow } from "@/components/MainSwitchRow";
+import { usePersisted } from "@/lib/session";
+import {
+  BOARD_SLOT,
+  ISSUE_LABELS,
+  MAIN_SWITCH_SLOT,
+  POSITION_ISSUE_TYPES,
+  type IssueType,
+  type PhotoKind,
+} from "@/lib/issues";
 
 /**
  * The board as drawn, read only, for reporting what an inspection turned up.
@@ -44,10 +53,14 @@ export function BoardViewer({
   board: Board;
   onClose: () => void;
 }) {
+  const key = `view:${inspectionId}:${equipmentId}`;
   const [issues, setIssues] = useState<Issue[]>([]);
-  const [slot, setSlot] = useState<string | null>(null);
-  const [reporting, setReporting] = useState(false);
-  const [activeId, setActiveId] = useState(board.sections[0]?.id ?? "");
+  const [slot, setSlot] = usePersisted<string | null>(`${key}:slot`, null);
+  const [reporting, setReporting] = usePersisted(`${key}:reporting`, false);
+  const [activeId, setActiveId] = usePersisted(
+    `${key}:tab`,
+    board.sections[0]?.id ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -94,14 +107,26 @@ export function BoardViewer({
   const countFor = (kind: "cell" | "extra", index: number) =>
     issues.filter((issue) => issue.slot === slotKey(active.id, kind, index)).length;
 
-  const selected = slot ? cellForSlot(board, slot) : null;
+  const dustFindings = issues.filter((issue) => issue.slot === BOARD_SLOT).length;
   const selectedIssues = slot ? issues.filter((issue) => issue.slot === slot) : [];
+
+  /**
+   * What is being reported on. The main switch and the board itself are not
+   * positions on the grid, so they answer for themselves rather than through a
+   * cell — and dust is only ever reported against the board.
+   */
+  const picked: Picked | null =
+    slot === MAIN_SWITCH_SLOT
+      ? { title: "Main switch", kind: "Main switch", where: "Main switch", fixedType: null }
+      : slot === BOARD_SLOT
+        ? { title: "Dust ingress", kind: null, where: name, fixedType: "DUST_INGRESS" }
+        : slot
+          ? pickedCell(board, slot)
+          : null;
 
   const rows = Array.from({ length: active.rows }, (_, row) =>
     Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
   );
-
-  const where = slot && selected ? describeSlot(board, slot, selected) : "";
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={name}>
@@ -117,9 +142,25 @@ export function BoardViewer({
             </p>
           </div>
           <div className="board-head-side">
+            <button
+              type="button"
+              className={`board-dust ${slot === BOARD_SLOT ? "is-picked" : ""}`}
+              onClick={() => setSlot(BOARD_SLOT)}
+            >
+              Report dust ingress
+              {dustFindings > 0 ? (
+                <span className="board-cell-count">{dustFindings}</span>
+              ) : null}
+            </button>
             <BoardLegend />
           </div>
         </header>
+
+        <MainSwitchRow
+          findings={issues.filter((issue) => issue.slot === MAIN_SWITCH_SLOT).length}
+          picked={slot === MAIN_SWITCH_SLOT}
+          onPick={() => setSlot(MAIN_SWITCH_SLOT)}
+        />
 
         {board.sections.length > 1 ? (
           <nav className="board-tabs" aria-label="Board sections">
@@ -188,13 +229,15 @@ export function BoardViewer({
           </section>
         </div>
 
-        {slot && selected ? (
+        {slot && picked ? (
           <section className="board-picked">
             <div className="board-picked-head">
               <div>
                 <p className="board-picked-title">
-                  {selected.label || "Unnamed"}{" "}
-                  <span className="board-picked-kind">{STATE_LABELS[selected.state]}</span>
+                  {picked.title}{" "}
+                  {picked.kind ? (
+                    <span className="board-picked-kind">{picked.kind}</span>
+                  ) : null}
                 </p>
                 <p className="board-section-note">
                   {selectedIssues.length
@@ -207,7 +250,7 @@ export function BoardViewer({
                 className="dialog-confirm"
                 onClick={() => setReporting(true)}
               >
-                Report issue
+                {picked.fixedType ? "Report dust ingress" : "Report issue"}
               </button>
             </div>
 
@@ -229,7 +272,6 @@ export function BoardViewer({
                         Remove
                       </button>
                     </div>
-                    {issue.note ? <p className="board-finding-note">{issue.note}</p> : null}
                     <div className="board-picked-photos">
                       {issue.photos.map((photo) => (
                         <figure key={photo.id} className="board-photo">
@@ -240,7 +282,9 @@ export function BoardViewer({
                             height={210}
                           />
                           {photo.kind === "PLAIN" ? null : (
-                            <figcaption>{photo.kind === "THERMAL" ? "Thermal" : "Visual"}</figcaption>
+                            <figcaption>
+                              {photo.kind === "THERMAL" ? "Thermal" : "Visual"}
+                            </figcaption>
                           )}
                         </figure>
                       ))}
@@ -261,13 +305,16 @@ export function BoardViewer({
         </footer>
       </div>
 
-      {reporting && slot && selected ? (
+      {reporting && slot && picked ? (
         <IssueDialog
           inspectionId={inspectionId}
           equipmentId={equipmentId}
           slot={slot}
-          where={where}
-          kind={STATE_LABELS[selected.state]}
+          where={picked.where}
+          kind={picked.kind ?? undefined}
+          title={picked.fixedType ? "Report dust ingress" : "Report issue"}
+          types={POSITION_ISSUE_TYPES}
+          fixedType={picked.fixedType}
           onCancel={() => setReporting(false)}
           onSaved={() => {
             setReporting(false);
@@ -319,6 +366,27 @@ function ViewCell({
       {findings > 0 ? <span className="board-cell-count">{findings}</span> : null}
     </div>
   );
+}
+
+type Picked = {
+  title: string;
+  /** Breaker, RCD, contactor — or nothing, when it is not a device. */
+  kind: string | null;
+  /** How the report names the place it is filed against. */
+  where: string;
+  /** Set when there is nothing to choose. */
+  fixedType: IssueType | null;
+};
+
+function pickedCell(board: Board, slot: string): Picked | null {
+  const cell = cellForSlot(board, slot);
+  if (!cell) return null;
+  return {
+    title: cell.label || "Unnamed",
+    kind: STATE_LABELS[cell.state],
+    where: describeSlot(board, slot, cell),
+    fixedType: null,
+  };
 }
 
 function cellForSlot(board: Board, slot: string): BoardCell | null {

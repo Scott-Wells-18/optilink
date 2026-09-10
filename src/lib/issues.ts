@@ -20,6 +20,19 @@ export const ISSUE_TYPES: readonly IssueType[] = [
   "REPAIRED",
 ];
 
+/**
+ * Dust is a state of the whole enclosure, not of one way in it, so it is
+ * reported once from the board rather than offered against every position.
+ */
+export const POSITION_ISSUE_TYPES: readonly IssueType[] = [
+  "RISING_TEMPERATURE",
+  "TERMINATION_ISSUE",
+  "REPAIRED",
+];
+
+/** A motor is reported on whole, so everything is on the table there. */
+export const ITEM_ISSUE_TYPES: readonly IssueType[] = ISSUE_TYPES;
+
 export const ISSUE_LABELS: Record<IssueType, string> = {
   DUST_INGRESS: "Dust ingress",
   RISING_TEMPERATURE: "Rising temperature",
@@ -49,3 +62,9 @@ export function photoSlotsFor(type: IssueType): PhotoSlot[] {
 
 /** The slot key used for a motor, which has no positions to pick from. */
 export const MOTOR_SLOT = "motor";
+
+/** Dust ingress is filed against the board itself, not a position on it. */
+export const BOARD_SLOT = "board";
+
+/** The main switch sits above the sections and belongs to none of them. */
+export const MAIN_SWITCH_SLOT = "main";

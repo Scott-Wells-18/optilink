@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { TreeNode } from "@/lib/navTree";
 import { easeIntoView } from "@/lib/useSpringScroll";
+import { usePersisted } from "@/lib/session";
 
 /**
  * A sideways tree. Pressing a node opens its branches to the right; pressing it
@@ -75,7 +76,7 @@ export function TreeNav({
   nodes: TreeNode[];
   scrollerRef: RefObject<HTMLElement | null>;
 }) {
-  const [openPath, setOpenPath] = useState<string[]>([]);
+  const [openPath, setOpenPath] = usePersisted<string[]>("path", []);
   const registry = useRef(new Map<string, Registration>());
   const before = useRef<Map<string, DOMRect> | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -196,7 +197,8 @@ function Branch({
 }) {
   const { openPath, toggle, register, scrollerRef } = useTree();
   const rowRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  const [editingDate, setEditingDate] = useState(false);
   const kidsRef = useRef<HTMLDivElement>(null);
 
   const isOpen = openPath[depth] === node.id;
@@ -280,13 +282,53 @@ function Branch({
   return (
     <div className="tree-branch" ref={rowRef}>
         <div className={`tree-card-wrap ${state}`}>
+          {editingDate && node.editDate ? (
+            /* A button cannot hold an input, so the card becomes a plain box
+               for as long as the date is being changed. */
+            <div
+              ref={cardRef as RefObject<HTMLDivElement | null>}
+              className={`tree-node ${state} is-editing`}
+            >
+              <span className="tree-node-index" aria-hidden>
+                {label}
+              </span>
+              <span className="tree-node-body">
+                <input
+                  type="date"
+                  autoFocus
+                  className="tree-node-date"
+                  defaultValue={node.editDate.value}
+                  aria-label="Inspection date"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setEditingDate(false);
+                    if (event.key === "Enter") {
+                      const value = (event.target as HTMLInputElement).value;
+                      if (value) node.editDate?.onSave(value);
+                      setEditingDate(false);
+                    }
+                  }}
+                  onBlur={(event) => {
+                    const value = event.target.value;
+                    if (value && value !== node.editDate?.value) {
+                      node.editDate?.onSave(value);
+                    }
+                    setEditingDate(false);
+                  }}
+                />
+                {node.detail ? <span className="tree-node-detail">{node.detail}</span> : null}
+              </span>
+            </div>
+          ) : (
           <button
             type="button"
-            ref={cardRef}
+            ref={cardRef as RefObject<HTMLButtonElement | null>}
             className={`tree-node ${state}`}
             onClick={() => {
               if (opensPanel) node.onActivate?.();
               else if (hasChildren) toggle(depth, node.id);
+            }}
+            onDoubleClick={() => {
+              if (node.editDate) setEditingDate(true);
             }}
             aria-expanded={hasChildren ? isOpen : undefined}
           >
@@ -311,6 +353,7 @@ function Branch({
               </span>
             ) : null}
           </button>
+          )}
 
           {node.onRemove ? (
             <button

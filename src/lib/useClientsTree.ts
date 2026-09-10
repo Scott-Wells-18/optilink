@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TreeNode } from "@/lib/navTree";
 import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/board";
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
+import { usePersisted } from "@/lib/session";
 
 /**
  * Clients → sites → contacts, loaded from the database and turned into tree
@@ -32,7 +33,8 @@ type IssueRecord = {
 type InspectionRecord = {
   id: string;
   name: string | null;
-  createdAt: string;
+  /** The day it was carried out, as an ISO date. */
+  date: string;
   issues: IssueRecord[];
 };
 
@@ -99,12 +101,12 @@ export type BoardSpec = {
 
 export function useClientsTree(enabled: boolean) {
   const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [dialog, setDialog] = useState<DialogSpec | null>(null);
-  const [info, setInfo] = useState<InfoSpec | null>(null);
-  const [chooser, setChooser] = useState<ChooserSpec | null>(null);
-  const [boardEditor, setBoardEditor] = useState<BoardSpec | null>(null);
-  const [viewer, setViewer] = useState<ViewerSpec | null>(null);
-  const [motorIssue, setMotorIssue] = useState<MotorIssueSpec | null>(null);
+  const [dialog, setDialog] = usePersisted<DialogSpec | null>("dialog", null);
+  const [info, setInfo] = usePersisted<InfoSpec | null>("info", null);
+  const [chooser, setChooser] = usePersisted<ChooserSpec | null>("chooser", null);
+  const [boardEditor, setBoardEditor] = usePersisted<BoardSpec | null>("editor", null);
+  const [viewer, setViewer] = usePersisted<ViewerSpec | null>("viewer", null);
+  const [motorIssue, setMotorIssue] = usePersisted<MotorIssueSpec | null>("motor", null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -327,7 +329,23 @@ export function useClientsTree(enabled: boolean) {
     return clientNodes;
   }, [clients, remove, equipmentNode]);
 
-  /** Starting a survey needs no form — the date it began names it. */
+  const setInspectionDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/inspections/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Starting a survey needs no form — today's date names it. */
   const startInspection = useCallback(
     async (siteId: string) => {
       const response = await fetch("/api/inspections", {
@@ -369,7 +387,11 @@ export function useClientsTree(enabled: boolean) {
                   return {
                     id: `inspection:${inspection.id}`,
                     label: title,
-                    detail: inspectionDetail(inspection),
+                    detail: countLabel(inspection.issues.length, "finding", "findings"),
+                    editDate: {
+                      value: isoDate(inspection.date),
+                      onSave: (value) => void setInspectionDate(inspection.id, value),
+                    },
                     onRemove: () =>
                       void remove(`/api/inspections/${inspection.id}`, title),
                     children: site.equipment.filter(inThermal).map((item) => {
@@ -423,7 +445,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startInspection],
+    [clients, remove, startInspection, setInspectionDate],
   );
 
   return {
@@ -472,26 +494,20 @@ function describeItem(item: EquipmentRecord): string | null {
   return parts.join("\n\n") || null;
 }
 
-/** A survey is named by hand, or else by the day it was started. */
-function inspectionTitle(inspection: { name: string | null; createdAt: string }): string {
+/** A survey is named by hand, or else by the day it was carried out. */
+function inspectionTitle(inspection: { name: string | null; date: string }): string {
   return (
     inspection.name?.trim() ||
-    new Date(inspection.createdAt).toLocaleDateString("en-AU", {
+    new Date(inspection.date).toLocaleDateString("en-AU", {
       day: "numeric",
       month: "short",
       year: "numeric",
+      timeZone: "UTC",
     })
   );
 }
 
-/** Time of day and what was found — enough to tell two same-day runs apart. */
-function inspectionDetail(inspection: {
-  createdAt: string;
-  issues: unknown[];
-}): string {
-  const time = new Date(inspection.createdAt).toLocaleTimeString("en-AU", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${time}  ·  ${countLabel(inspection.issues.length, "finding", "findings")}`;
+/** "2026-09-10" — what a date input expects, and what the API takes back. */
+function isoDate(value: string): string {
+  return new Date(value).toISOString().slice(0, 10);
 }

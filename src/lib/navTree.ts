@@ -19,6 +19,11 @@ export type TreeNode = {
   onActivate?: () => void;
   /** Present on rows that can be deleted. Shows a remove control on hover. */
   onRemove?: () => void;
+  /**
+   * A label that is a date. Double-clicking the row swaps it for a date
+   * picker, and picking a day saves it.
+   */
+  editDate?: { value: string; onSave: (value: string) => void };
 };
 
 function placeholderBranches(prefix: string): TreeNode[] {
