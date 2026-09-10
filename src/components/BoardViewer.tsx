@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   COLUMNS,
   STATE_LABELS,
   isDevice,
+  legacySlotKey,
   positionNumber,
+  slotKey,
   type Board,
   type BoardCell,
 } from "@/lib/board";
@@ -34,6 +36,7 @@ export function BoardViewer({
 }) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [slot, setSlot] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState(board.sections[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,11 +92,34 @@ export function BoardViewer({
     if (response.ok) await refresh();
   }
 
-  const countFor = (key: string) => photos.filter((photo) => photo.slot === key).length;
-  const selected = slot ? cellForSlot(board, slot) : null;
-  const selectedPhotos = slot ? photos.filter((photo) => photo.slot === slot) : [];
+  const active = useMemo(
+    () => board.sections.find((section) => section.id === activeId) ?? board.sections[0],
+    [board.sections, activeId],
+  );
+  const isFirstSection = board.sections[0]?.id === active.id;
 
-  const rows = Array.from({ length: board.rows }, (_, row) =>
+  /**
+   * Photos pinned before boards had sections carry no section prefix, so the
+   * first section answers to both spellings.
+   */
+  const countFor = (kind: "cell" | "extra", index: number) => {
+    const key = slotKey(active.id, kind, index);
+    const legacy = legacySlotKey(kind, index);
+    return photos.filter(
+      (photo) => photo.slot === key || (isFirstSection && photo.slot === legacy),
+    ).length;
+  };
+
+  const selected = slot ? cellForSlot(board, slot) : null;
+  const selectedPhotos = slot
+    ? photos.filter(
+        (photo) =>
+          photo.slot === slot ||
+          (isFirstSection && photo.slot === stripSection(slot)),
+      )
+    : [];
+
+  const rows = Array.from({ length: active.rows }, (_, row) =>
     Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
   );
 
@@ -112,20 +138,42 @@ export function BoardViewer({
           </div>
         </header>
 
+        {board.sections.length > 1 ? (
+          <nav className="board-tabs" aria-label="Board sections">
+            {board.sections.map((section) => (
+              <div
+                key={section.id}
+                className={`board-tab ${section.id === active.id ? "is-active" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="board-tab-name"
+                  onClick={() => {
+                    setActiveId(section.id);
+                    setSlot(null);
+                  }}
+                >
+                  {section.name.trim() || "Unnamed section"}
+                </button>
+              </div>
+            ))}
+          </nav>
+        ) : null}
+
         <div className="board-body">
-          {board.extras.length > 0 ? (
+          {active.extras.length > 0 ? (
             <section className="board-extras">
               <div className="board-section-head">
                 <h3 className="board-section-title">Additional</h3>
               </div>
               <div className="board-extra-row">
-                {board.extras.map((cell, index) => (
+                {active.extras.map((cell, index) => (
                   <ViewCell
                     key={index}
                     cell={cell}
-                    slot={`extra:${index}`}
-                    active={slot === `extra:${index}`}
-                    photos={countFor(`extra:${index}`)}
+                    slot={slotKey(active.id, "extra", index)}
+                    active={slot === slotKey(active.id, "extra", index)}
+                    photos={countFor("extra", index)}
                     onPick={setSlot}
                   />
                 ))}
@@ -143,11 +191,11 @@ export function BoardViewer({
                   {indexes.map((index) => (
                     <ViewCell
                       key={index}
-                      cell={board.cells[index]}
-                      number={positionNumber(board, index)}
-                      slot={`cell:${index}`}
-                      active={slot === `cell:${index}`}
-                      photos={countFor(`cell:${index}`)}
+                      cell={active.cells[index]}
+                      number={positionNumber(active, index, board.numbering)}
+                      slot={slotKey(active.id, "cell", index)}
+                      active={slot === slotKey(active.id, "cell", index)}
+                      photos={countFor("cell", index)}
                       onPick={setSlot}
                     />
                   ))}
@@ -265,8 +313,15 @@ function ViewCell({
 }
 
 function cellForSlot(board: Board, slot: string): BoardCell | null {
-  const [kind, raw] = slot.split(":");
+  const [sectionId, kind, raw] = slot.split(":");
+  const section = board.sections.find((entry) => entry.id === sectionId);
   const index = Number(raw);
-  if (Number.isNaN(index)) return null;
-  return kind === "extra" ? (board.extras[index] ?? null) : (board.cells[index] ?? null);
+  if (!section || Number.isNaN(index)) return null;
+  return kind === "extra" ? (section.extras[index] ?? null) : (section.cells[index] ?? null);
+}
+
+/** "sectionId:cell:3" → "cell:3", for photos pinned before sections existed. */
+function stripSection(slot: string): string {
+  const parts = slot.split(":");
+  return parts.length === 3 ? `${parts[1]}:${parts[2]}` : slot;
 }

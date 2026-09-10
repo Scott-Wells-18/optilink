@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   COLUMNS,
   MAX_ROWS,
+  MAX_SECTIONS,
   MIN_ROWS,
   STATE_LABELS,
   createBoard,
+  createSection,
   emptyCell,
   nextState,
   positionNumber,
   withRows,
   type Board,
+  type BoardSection,
   type CellState,
   type Numbering,
 } from "@/lib/board";
@@ -19,7 +22,10 @@ import {
 /**
  * Draws a switchboard the way it actually looks: two columns of positions, one
  * click per position to walk it through nothing → blank → breaker → RCD, and a
- * strip at the top for RCDs that live outside the grid.
+ * strip for devices sitting outside the grid.
+ *
+ * A board can hold several sections — lighting, power, and so on — each its own
+ * run of positions behind its own tab.
  */
 export function BoardEditor({
   title,
@@ -36,8 +42,17 @@ export function BoardEditor({
 }) {
   const [name, setName] = useState(initialName);
   const [board, setBoard] = useState<Board>(initialBoard ?? createBoard());
+  const [activeId, setActiveId] = useState(
+    (initialBoard ?? createBoard()).sections[0]?.id ?? "",
+  );
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const active = useMemo(
+    () => board.sections.find((section) => section.id === activeId) ?? board.sections[0],
+    [board.sections, activeId],
+  );
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -47,41 +62,86 @@ export function BoardEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  /** Applies a change to whichever section is on screen. */
+  function editActive(change: (section: BoardSection) => BoardSection) {
+    setBoard((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === active.id ? change(section) : section,
+      ),
+    }));
+  }
+
   function cycleCell(index: number) {
-    setBoard((current) => {
-      const cells = [...current.cells];
+    editActive((section) => {
+      const cells = [...section.cells];
       cells[index] = { ...cells[index], state: nextState(cells[index].state) };
-      return { ...current, cells };
+      return { ...section, cells };
     });
   }
 
   function labelCell(index: number, label: string) {
-    setBoard((current) => {
-      const cells = [...current.cells];
+    editActive((section) => {
+      const cells = [...section.cells];
       cells[index] = { ...cells[index], label };
-      return { ...current, cells };
+      return { ...section, cells };
     });
   }
 
   function cycleExtra(index: number) {
-    setBoard((current) => {
-      const extras = [...current.extras];
+    editActive((section) => {
+      const extras = [...section.extras];
       // Contactors only exist out here, so this cycle has the extra stop.
       extras[index] = { ...extras[index], state: nextState(extras[index].state, true) };
-      return { ...current, extras };
+      return { ...section, extras };
     });
   }
 
   function labelExtra(index: number, label: string) {
-    setBoard((current) => {
-      const extras = [...current.extras];
+    editActive((section) => {
+      const extras = [...section.extras];
       extras[index] = { ...extras[index], label };
-      return { ...current, extras };
+      return { ...section, extras };
     });
   }
 
+  function addSection() {
+    if (board.sections.length >= MAX_SECTIONS) return;
+    const section = createSection();
+    setBoard((current) => ({ ...current, sections: [...current.sections, section] }));
+    setActiveId(section.id);
+    setRenaming(section.id);
+  }
+
+  function removeSection(id: string) {
+    if (board.sections.length <= 1) return;
+    const section = board.sections.find((entry) => entry.id === id);
+    if (
+      section &&
+      !window.confirm(`Remove ${section.name || "this section"} and everything drawn on it?`)
+    ) {
+      return;
+    }
+    setBoard((current) => {
+      const sections = current.sections.filter((entry) => entry.id !== id);
+      if (id === activeId) setActiveId(sections[0].id);
+      return { ...current, sections };
+    });
+  }
+
+  function renameSection(id: string, value: string) {
+    setBoard((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === id ? { ...section, name: value } : section,
+      ),
+    }));
+  }
+
+  const unnamed = board.sections.filter((section) => !section.name.trim());
+
   async function save() {
-    if (!name.trim() || busy) return;
+    if (!name.trim() || unnamed.length > 0 || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -93,7 +153,7 @@ export function BoardEditor({
   }
 
   // Laid out row by row, so the two columns stay level with each other.
-  const rows = Array.from({ length: board.rows }, (_, row) =>
+  const rows = Array.from({ length: active.rows }, (_, row) =>
     Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
   );
 
@@ -116,23 +176,97 @@ export function BoardEditor({
           <div className="board-head-side">
             <NumberingPicker
               value={board.numbering}
-              rows={board.rows}
+              rows={active.rows}
               onChange={(numbering) => setBoard((current) => ({ ...current, numbering }))}
             />
             <Legend />
           </div>
         </header>
 
+        <nav className="board-tabs" aria-label="Board sections">
+          {board.sections.map((section) => {
+            const isActive = section.id === active.id;
+            return (
+              <div
+                key={section.id}
+                className={`board-tab ${isActive ? "is-active" : ""} ${
+                  section.name.trim() ? "" : "is-unnamed"
+                }`}
+              >
+                {renaming === section.id ? (
+                  <input
+                    autoFocus
+                    className="board-tab-input"
+                    value={section.name}
+                    placeholder="Section name"
+                    aria-label="Section name"
+                    onChange={(event) => renameSection(section.id, event.target.value)}
+                    onBlur={() => setRenaming(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="board-tab-name"
+                      onClick={() => setActiveId(section.id)}
+                      onDoubleClick={() => setRenaming(section.id)}
+                    >
+                      {section.name.trim() || "Unnamed section"}
+                    </button>
+                    {isActive ? (
+                      <button
+                        type="button"
+                        className="board-tab-rename"
+                        aria-label="Rename section"
+                        onClick={() => setRenaming(section.id)}
+                      >
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                          <path d="M11 2.5 13.5 5 6 12.5l-3 .5.5-3z" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    ) : null}
+                    {board.sections.length > 1 ? (
+                      <button
+                        type="button"
+                        className="board-tab-close"
+                        aria-label="Remove section"
+                        onClick={() => removeSection(section.id)}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          {board.sections.length < MAX_SECTIONS ? (
+            <button
+              type="button"
+              className="board-tab-add"
+              onClick={addSection}
+              aria-label="Add a section"
+              title="Add a section"
+            >
+              +
+            </button>
+          ) : null}
+        </nav>
+
         <div className="board-body">
           <section className="board-extras">
             <div className="board-section-head">
-              <h3 className="board-section-title">Additional RCDs</h3>
+              <h3 className="board-section-title">Additional</h3>
               <p className="board-section-note">
                 Anything outside the grid — beside the board, or up by the main switch.
               </p>
             </div>
             <div className="board-extra-row">
-              {board.extras.map((cell, index) => (
+              {active.extras.map((cell, index) => (
                 <Cell
                   key={index}
                   state={cell.state}
@@ -140,9 +274,9 @@ export function BoardEditor({
                   onCycle={() => cycleExtra(index)}
                   onLabel={(value) => labelExtra(index, value)}
                   onRemove={() =>
-                    setBoard((current) => ({
-                      ...current,
-                      extras: current.extras.filter((_, i) => i !== index),
+                    editActive((section) => ({
+                      ...section,
+                      extras: section.extras.filter((_, i) => i !== index),
                     }))
                   }
                 />
@@ -151,9 +285,9 @@ export function BoardEditor({
                 type="button"
                 className="board-add-extra"
                 onClick={() =>
-                  setBoard((current) => ({
-                    ...current,
-                    extras: [...current.extras, emptyCell()],
+                  editActive((section) => ({
+                    ...section,
+                    extras: [...section.extras, emptyCell()],
                   }))
                 }
               >
@@ -164,9 +298,11 @@ export function BoardEditor({
 
           <section className="board-grid-wrap">
             <div className="board-section-head">
-              <h3 className="board-section-title">Board</h3>
+              <h3 className="board-section-title">
+                {active.name.trim() || "Section"}
+              </h3>
               <p className="board-section-note">
-                Click a position to change it. {board.rows * COLUMNS} positions.
+                Click a position to change it. {active.rows * COLUMNS} positions.
               </p>
             </div>
 
@@ -176,9 +312,9 @@ export function BoardEditor({
                   {indexes.map((index) => (
                     <Cell
                       key={index}
-                      number={positionNumber(board, index)}
-                      state={board.cells[index].state}
-                      label={board.cells[index].label}
+                      number={positionNumber(active, index, board.numbering)}
+                      state={active.cells[index].state}
+                      label={active.cells[index].label}
                       onCycle={() => cycleCell(index)}
                       onLabel={(value) => labelCell(index, value)}
                     />
@@ -191,17 +327,17 @@ export function BoardEditor({
               <button
                 type="button"
                 className="board-row-btn"
-                onClick={() => setBoard((current) => withRows(current, current.rows - 1))}
-                disabled={board.rows <= MIN_ROWS}
+                onClick={() => editActive((section) => withRows(section, section.rows - 1))}
+                disabled={active.rows <= MIN_ROWS}
               >
                 − Remove row
               </button>
-              <span className="board-rows-count">{board.rows} rows</span>
+              <span className="board-rows-count">{active.rows} rows</span>
               <button
                 type="button"
                 className="board-row-btn"
-                onClick={() => setBoard((current) => withRows(current, current.rows + 1))}
-                disabled={board.rows >= MAX_ROWS}
+                onClick={() => editActive((section) => withRows(section, section.rows + 1))}
+                disabled={active.rows >= MAX_ROWS}
               >
                 + Add row
               </button>
@@ -211,6 +347,12 @@ export function BoardEditor({
 
         <footer className="board-foot">
           {error ? <p className="dialog-error">{error}</p> : null}
+          {unnamed.length > 0 ? (
+            <p className="board-warning">
+              {unnamed.length === 1 ? "One section still needs" : `${unnamed.length} sections still need`}{" "}
+              a name before this can be saved.
+            </p>
+          ) : null}
           <div className="dialog-actions">
             <button type="button" className="dialog-cancel" onClick={onCancel}>
               Cancel
@@ -219,7 +361,7 @@ export function BoardEditor({
               type="button"
               className="dialog-confirm"
               onClick={() => void save()}
-              disabled={busy || !name.trim()}
+              disabled={busy || !name.trim() || unnamed.length > 0}
             >
               {busy ? "Saving…" : "Save and exit"}
             </button>
