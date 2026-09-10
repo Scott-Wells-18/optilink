@@ -69,6 +69,8 @@ export function IssueDialog({
   const [cause, setCause] = usePersisted<IssueCause | null>(`${key}:cause`, null);
   const [refTemp, setRefTemp] = usePersisted(`${key}:ref`, "");
   const [hotTemp, setHotTemp] = usePersisted(`${key}:hot`, "");
+  /** "reading" while the thermogram is being read, "read" once it has been. */
+  const [reading, setReading] = useState<"reading" | "read" | "failed" | null>(null);
   const [picks, setPicks] = usePersisted<string[]>(`${key}:picks`, []);
   /** The survey is a second page, reached once the photos are in. */
   const [onSurvey, setOnSurvey] = usePersisted(`${key}:survey`, false);
@@ -128,10 +130,41 @@ export function IssueDialog({
         ...current,
         [kindWanted]: [...(current[kindWanted] ?? []), ...added],
       }));
+      // The camera writes the readings onto the thermogram, so the first one
+      // in fills the boxes. Anything already typed is left alone.
+      if (kindWanted === "THERMAL" && added[0]) void readTemps(added[0].fileId);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function readTemps(fileId: string) {
+    setReading("reading");
+    try {
+      const response = await fetch("/api/thermal-read", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileId }),
+      });
+      if (!response.ok) throw new Error();
+      const found = (await response.json()) as {
+        refTemp: number | null;
+        hotTemp: number | null;
+      };
+      let filled = false;
+      if (found.refTemp !== null) {
+        setRefTemp((current) => (current.trim() ? current : String(found.refTemp)));
+        filled = true;
+      }
+      if (found.hotTemp !== null) {
+        setHotTemp((current) => (current.trim() ? current : String(found.hotTemp)));
+        filled = true;
+      }
+      setReading(filled ? "read" : "failed");
+    } catch {
+      setReading("failed");
     }
   }
 
@@ -287,8 +320,14 @@ export function IssueDialog({
               <>
                 <section className="issue-survey">
                   <h3 className="board-section-title">Temperatures</h3>
-                  <p className="issue-empty">
-                    Off the thermogram, in °C. The rise between them sets the priority.
+                  <p className={`issue-empty ${reading === "reading" ? "is-working" : ""}`}>
+                    {reading === "reading"
+                      ? "Reading the thermogram…"
+                      : reading === "read"
+                        ? "Read off the thermogram — check them against the image."
+                        : reading === "failed"
+                          ? "Could not read the thermogram — type them in."
+                          : "Off the thermogram, in °C. The rise between them sets the priority."}
                   </p>
                   <div className="issue-temps">
                     <label className="issue-temp">

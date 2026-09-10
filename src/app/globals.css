@@ -2770,3 +2770,8 @@ body {
   color: #b62a30;
   border-color: rgba(182, 42, 48, 0.4);
 }
+
+/* While a thermogram is being read for its temperatures. */
+.issue-empty.is-working {
+  color: var(--accent);
+}

@@ -191,7 +191,10 @@ function componentDescription(
   isMotor: boolean,
 ): string {
   if (type === "REPAIRED") return `${where || "Equipment"} - REPAIRED`;
-  if (type === "DUST_INGRESS") return "Dust & product - inside panel";
+  // A motor has no panel to be inside of.
+  if (type === "DUST_INGRESS") {
+    return isMotor ? "Dust ingress" : "Dust & product - inside panel";
+  }
   const causeLabel = cause ? CAUSE_LABELS[cause] : "Raised temperature";
   if (isMotor) return `${causeLabel} - raised temperatures`;
   return `${where || "Component"} - ${causeLabel}`;
@@ -223,8 +226,8 @@ function comments(
   }
   if (type === "DUST_INGRESS") {
     return [
-      `Dust and product build-up was found inside the ${equipment}.`,
-      "Build-up of this kind traps heat and carries a fire risk. The panel should be cleaned out and the source of ingress addressed.",
+      `Dust and product build-up was found on the ${equipment}.`,
+      "Build-up of this kind traps heat and carries a fire risk. It should be cleaned out and the source of the ingress addressed.",
     ];
   }
   const causeLabel = cause ? CAUSE_LABELS[cause].toLowerCase() : "an abnormal thermal pattern";

@@ -19,7 +19,8 @@
     "next": "15.5.25",
     "pdfkit": "^0.20.2",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
