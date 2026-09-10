@@ -203,9 +203,22 @@ function Branch({
   const siblingChosen = Boolean(openPath[depth]) && !isOpen;
   const dimmed = !onPath || siblingChosen;
 
-  const isAdd = Boolean(node.onActivate);
-  const children = isAdd ? [] : (node.children ?? []);
-  const hasChildren = children.length > 0;
+  const isAdd = node.variant === "add";
+  const isInfo = node.variant === "info";
+  const opensPanel = Boolean(node.onActivate);
+  const allChildren = opensPanel ? [] : (node.children ?? []);
+  const hasChildren = allChildren.length > 0;
+
+  /**
+   * The "add new" tile only belongs to the deepest list you have open. Once you
+   * step into one of these rows, the tile at this level gets out of the way and
+   * the one inside takes over — otherwise a long client list carries a dead
+   * tile at every level you have walked past.
+   */
+  const childOpen = Boolean(openPath[depth + 1]);
+  const children = childOpen
+    ? allChildren.filter((child) => child.variant !== "add")
+    : allChildren;
 
   /**
    * Children have to be in the DOM during the same commit that opens them,
@@ -257,7 +270,8 @@ function Branch({
     depth === 0 ? "is-section" : "",
     isAdd ? "is-add" : "",
     isOpen ? "is-open" : "",
-    !isAdd && !hasChildren ? "is-leaf" : "",
+    isInfo ? "is-info" : "",
+    !opensPanel && !hasChildren ? "is-leaf" : "",
     dimmed && !isAdd ? "is-dimmed" : "",
   ]
     .filter(Boolean)
@@ -271,7 +285,7 @@ function Branch({
             ref={cardRef}
             className={`tree-node ${state}`}
             onClick={() => {
-              if (isAdd) node.onActivate?.();
+              if (opensPanel) node.onActivate?.();
               else if (hasChildren) toggle(depth, node.id);
             }}
             aria-expanded={hasChildren ? isOpen : undefined}
@@ -287,6 +301,12 @@ function Branch({
               <span className="tree-node-chevron" aria-hidden>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            ) : isInfo ? (
+              <span className="tree-node-chevron is-info" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path d="M4 5h8M4 8h8M4 11h5" strokeLinecap="round" />
                 </svg>
               </span>
             ) : null}

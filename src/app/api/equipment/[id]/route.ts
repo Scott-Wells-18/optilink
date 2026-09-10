@@ -8,9 +8,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    await prisma.contact.delete({ where: { id } });
+    await prisma.equipment.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return serverError(error, "That person could not be removed.");
+    return serverError(error, "That equipment could not be removed.");
   }
 }

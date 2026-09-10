@@ -110,21 +110,21 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contacts Contact[]
+  equipment Equipment[]
 
   @@index([clientId])
 }
 
-model Contact {
+model Equipment {
   id     String @id @default(cuid())
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  name      String
-  phone     String?
-  email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  name String
+  /** Only shown when the item is opened, to keep the tree readable. */
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([siteId])
 }

@@ -12,8 +12,10 @@ export type TreeNode = {
   detail?: string;
   children?: TreeNode[];
   /**
-   * Present on the grey "add new" tiles. Runs instead of expanding the node.
+   * "add" is the grey tile at the end of a list; "info" is a row whose detail
+   * is only shown when it is opened. Both run onActivate instead of expanding.
    */
+  variant?: "add" | "info";
   onActivate?: () => void;
   /** Present on rows that can be deleted. Shows a remove control on hover. */
   onRemove?: () => void;

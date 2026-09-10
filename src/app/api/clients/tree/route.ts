@@ -15,9 +15,9 @@ export async function GET() {
           id: true,
           name: true,
           location: true,
-          contacts: {
+          equipment: {
             orderBy: { createdAt: "asc" },
-            select: { id: true, name: true, phone: true, email: true },
+            select: { id: true, name: true, description: true },
           },
         },
       },

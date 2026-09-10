@@ -16,7 +16,7 @@ export function AddDialog({
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const firstField = useRef<HTMLInputElement>(null);
+  const firstField = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   useEffect(() => {
     firstField.current?.focus();
@@ -59,16 +59,29 @@ export function AddDialog({
                 {field.label}
                 {field.required ? null : <em>optional</em>}
               </span>
-              <input
-                ref={index === 0 ? firstField : undefined}
-                type={field.type ?? "text"}
-                className="dialog-input"
-                placeholder={field.placeholder}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  setValues((current) => ({ ...current, [field.name]: event.target.value }))
-                }
-              />
+              {field.multiline ? (
+                <textarea
+                  ref={index === 0 ? (firstField as React.RefObject<HTMLTextAreaElement>) : undefined}
+                  rows={4}
+                  className="dialog-input dialog-textarea"
+                  placeholder={field.placeholder}
+                  value={values[field.name] ?? ""}
+                  onChange={(event) =>
+                    setValues((current) => ({ ...current, [field.name]: event.target.value }))
+                  }
+                />
+              ) : (
+                <input
+                  ref={index === 0 ? (firstField as React.RefObject<HTMLInputElement>) : undefined}
+                  type={field.type ?? "text"}
+                  className="dialog-input"
+                  placeholder={field.placeholder}
+                  value={values[field.name] ?? ""}
+                  onChange={(event) =>
+                    setValues((current) => ({ ...current, [field.name]: event.target.value }))
+                  }
+                />
+              )}
             </label>
           ))}
         </div>

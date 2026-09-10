@@ -7,22 +7,20 @@ export async function POST(request: Request) {
     const body = (await readJson(request)) as {
       siteId?: string;
       name?: string;
-      phone?: string;
-      email?: string;
+      description?: string;
     };
-    if (!body.siteId) return badRequest("Which site is this person at?");
+    if (!body.siteId) return badRequest("Which site is this equipment at?");
     if (!body.name?.trim()) return badRequest("A name is required.");
 
-    const contact = await prisma.contact.create({
+    const equipment = await prisma.equipment.create({
       data: {
         siteId: body.siteId,
         name: body.name.trim().slice(0, 180),
-        phone: body.phone?.trim().slice(0, 60) || null,
-        email: body.email?.trim().slice(0, 200) || null,
+        description: body.description?.trim().slice(0, 4000) || null,
       },
     });
-    return NextResponse.json(contact);
+    return NextResponse.json(equipment);
   } catch (error) {
-    return serverError(error, "That person could not be added.");
+    return serverError(error, "That equipment could not be added.");
   }
 }

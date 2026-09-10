@@ -8,6 +8,7 @@ import { TreeNav } from "@/components/TreeNav";
 import { SECTIONS } from "@/lib/navTree";
 import { useClientsTree } from "@/lib/useClientsTree";
 import { AddDialog } from "@/components/AddDialog";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 
 /**
@@ -103,6 +104,10 @@ export function Gateway({
           onClose={clients.closeDialog}
           onSubmit={clients.submit}
         />
+      ) : null}
+
+      {open && clients.info ? (
+        <InfoDialog spec={clients.info} onClose={clients.closeInfo} />
       ) : null}
 
       <nav className="gate-exits" aria-hidden={!open}>

@@ -9,18 +9,17 @@ import type { TreeNode } from "@/lib/navTree";
  * still opens to somewhere useful.
  */
 
-type ContactRecord = {
+type EquipmentRecord = {
   id: string;
   name: string;
-  phone: string | null;
-  email: string | null;
+  description: string | null;
 };
 
 type SiteRecord = {
   id: string;
   name: string;
   location: string | null;
-  contacts: ContactRecord[];
+  equipment: EquipmentRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -31,6 +30,7 @@ export type DialogField = {
   placeholder?: string;
   type?: string;
   required?: boolean;
+  multiline?: boolean;
 };
 
 export type DialogSpec = {
@@ -43,9 +43,13 @@ export type DialogSpec = {
 };
 
 /** `enabled` gates the first load until someone has actually signed in. */
+/** A read-only panel, used to reveal an item's description. */
+export type InfoSpec = { title: string; body: string | null };
+
 export function useClientsTree(enabled: boolean) {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [info, setInfo] = useState<InfoSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -107,31 +111,36 @@ export function useClientsTree(enabled: boolean) {
           label: site.name,
           detail:
             site.location?.trim() ||
-            countLabel(site.contacts.length, "contact", "contacts"),
+            countLabel(site.equipment.length, "item", "items"),
           onRemove: () => void remove(`/api/sites/${site.id}`, site.name),
           children: [
-            ...site.contacts.map<TreeNode>((contact) => ({
-              id: `contact:${contact.id}`,
-              label: contact.name,
-              detail:
-                [contact.phone, contact.email].filter(Boolean).join("  ·  ") ||
-                undefined,
-              onRemove: () => void remove(`/api/contacts/${contact.id}`, contact.name),
+            ...site.equipment.map<TreeNode>((item) => ({
+              id: `equipment:${item.id}`,
+              label: item.name,
+              // The description stays hidden until the row is opened.
+              variant: "info",
+              onActivate: () => setInfo({ title: item.name, body: item.description }),
+              onRemove: () => void remove(`/api/equipment/${item.id}`, item.name),
             })),
             {
-              id: `add:contact:${site.id}`,
+              id: `add:equipment:${site.id}`,
               label: "Add new",
-              detail: "Manager or contact",
+              detail: "Equipment",
+              variant: "add",
               onActivate: () =>
                 setDialog({
-                  title: `Add a contact at ${site.name}`,
-                  submitLabel: "Add contact",
-                  endpoint: "/api/contacts",
+                  title: `Add equipment at ${site.name}`,
+                  submitLabel: "Add equipment",
+                  endpoint: "/api/equipment",
                   extra: { siteId: site.id },
                   fields: [
-                    { name: "name", label: "Name", required: true, placeholder: "Full name" },
-                    { name: "phone", label: "Contact", placeholder: "Phone number" },
-                    { name: "email", label: "Email", type: "email", placeholder: "name@company.com.au" },
+                    { name: "name", label: "Name", required: true, placeholder: "e.g. Main switchboard" },
+                    {
+                      name: "description",
+                      label: "Description",
+                      multiline: true,
+                      placeholder: "Anything worth remembering — only shown when this is opened.",
+                    },
                   ],
                 }),
             },
@@ -141,6 +150,7 @@ export function useClientsTree(enabled: boolean) {
           id: `add:site:${client.id}`,
           label: "Add new",
           detail: "Site",
+          variant: "add",
           onActivate: () =>
             setDialog({
               title: `Add a site for ${client.name}`,
@@ -160,6 +170,7 @@ export function useClientsTree(enabled: boolean) {
       id: "add:client",
       label: "Add new",
       detail: "Client",
+      variant: "add",
       onActivate: () =>
         setDialog({
           title: "Add a client",
@@ -184,6 +195,8 @@ export function useClientsTree(enabled: boolean) {
     nodes,
     dialog,
     closeDialog: () => setDialog(null),
+    info,
+    closeInfo: () => setInfo(null),
     submit,
     error,
   };

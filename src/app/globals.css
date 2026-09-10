@@ -981,6 +981,17 @@ body {
   height: 14px;
 }
 
+/* A row whose detail is hidden until it is opened. */
+.tree-node-chevron.is-info {
+  color: var(--ink-4);
+  background: rgba(11, 42, 68, 0.04);
+}
+
+.tree-card-wrap.is-info:hover > .tree-node .tree-node-chevron.is-info {
+  color: var(--accent);
+  background: rgba(43, 163, 220, 0.14);
+}
+
 .tree-node.is-open .tree-node-chevron {
   transform: rotate(90deg);
   color: #fff;
@@ -1201,4 +1212,23 @@ body {
   cursor: not-allowed;
   background: #9fb3c2;
   box-shadow: none;
+}
+
+.dialog-textarea {
+  resize: vertical;
+  min-height: 92px;
+  line-height: 1.55;
+  font-family: var(--font-app);
+}
+
+.dialog-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.dialog-body.is-empty {
+  color: var(--ink-4);
+  font-style: italic;
 }
