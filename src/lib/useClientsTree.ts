@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TreeNode } from "@/lib/navTree";
 import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/board";
+import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 
 /**
  * Clients → sites → contacts, loaded from the database and turned into tree
@@ -21,11 +22,26 @@ type EquipmentRecord = {
   board: unknown;
 };
 
+type IssueRecord = {
+  id: string;
+  equipmentId: string;
+  slot: string;
+  type: IssueType;
+};
+
+type InspectionRecord = {
+  id: string;
+  name: string | null;
+  createdAt: string;
+  issues: IssueRecord[];
+};
+
 type SiteRecord = {
   id: string;
   name: string;
   location: string | null;
   equipment: EquipmentRecord[];
+  inspections: InspectionRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -56,8 +72,21 @@ export type InfoSpec = { title: string; body: string | null };
 export type ChooserSpec = { siteId: string; siteName: string };
 
 /** Opening the switchboard editor, either on a new board or an existing one. */
-/** Read-only board, opened from Thermal to pin photos to positions. */
-export type ViewerSpec = { equipmentId: string; name: string; board: Board };
+/** Read-only board, opened from an inspection to report issues against it. */
+export type ViewerSpec = {
+  inspectionId: string;
+  equipmentId: string;
+  name: string;
+  board: Board;
+};
+
+/** Reporting straight against a motor, which has no positions to pick from. */
+export type MotorIssueSpec = {
+  inspectionId: string;
+  equipmentId: string;
+  slot: string;
+  where: string;
+};
 
 export type BoardSpec = {
   title: string;
@@ -75,6 +104,7 @@ export function useClientsTree(enabled: boolean) {
   const [chooser, setChooser] = useState<ChooserSpec | null>(null);
   const [boardEditor, setBoardEditor] = useState<BoardSpec | null>(null);
   const [viewer, setViewer] = useState<ViewerSpec | null>(null);
+  const [motorIssue, setMotorIssue] = useState<MotorIssueSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -297,48 +327,103 @@ export function useClientsTree(enabled: boolean) {
     return clientNodes;
   }, [clients, remove, equipmentNode]);
 
+  /** Starting a survey needs no form — the date it began names it. */
+  const startInspection = useCallback(
+    async (siteId: string) => {
+      const response = await fetch("/api/inspections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId }),
+      });
+      if (!response.ok) {
+        setError("The inspection could not be started.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   /**
-   * Thermal works off boards and motors — appliances never appear here, and
-   * nothing is added from this side. Boards open read-only, for pinning photos.
+   * Thermal walks client → site → inspection → equipment. Everything found is
+   * filed against an inspection, so the same board can be surveyed in March
+   * and again in June without the two runs bleeding into each other.
+   *
+   * Boards and motors only — an appliance is never thermographed.
    */
   const thermalNodes = useMemo<TreeNode[]>(
     () =>
       clients
-        .map<TreeNode>((client) => ({
-          id: `thermal:client:${client.id}`,
-          label: client.name,
-          detail: countLabel(
-            client.sites.reduce(
-              (total, site) => total + site.equipment.filter(inThermal).length,
-              0,
-            ),
-            "item",
-            "items",
-          ),
-          children: client.sites
+        .map<TreeNode>((client) => {
+          const sites = client.sites
+            .filter((site) => site.equipment.some(inThermal))
             .map<TreeNode>((site) => ({
               id: `thermal:site:${site.id}`,
               label: site.name,
-              detail: site.location?.trim() || undefined,
-              children: site.equipment.filter(inThermal).map((item) => ({
-                ...equipmentNode(item, site),
-                id: `thermal:equipment:${item.id}`,
-                onRemove: undefined,
-                onActivate:
-                  item.kind === "SWITCHBOARD"
-                    ? () =>
-                        setViewer({
-                          equipmentId: item.id,
-                          name: item.name,
-                          board: normaliseBoard(item.board),
-                        })
-                    : () => setInfo({ title: item.name, body: describeItem(item) }),
-              })),
-            }))
-            .filter((site) => (site.children?.length ?? 0) > 0),
-        }))
+              detail:
+                site.location?.trim() ||
+                countLabel(site.inspections.length, "inspection", "inspections"),
+              children: [
+                ...site.inspections.map<TreeNode>((inspection) => {
+                  const title = inspectionTitle(inspection);
+                  return {
+                    id: `inspection:${inspection.id}`,
+                    label: title,
+                    detail: inspectionDetail(inspection),
+                    onRemove: () =>
+                      void remove(`/api/inspections/${inspection.id}`, title),
+                    children: site.equipment.filter(inThermal).map((item) => {
+                      const found = inspection.issues.filter(
+                        (issue) => issue.equipmentId === item.id,
+                      ).length;
+                      const isBoard = item.kind === "SWITCHBOARD";
+                      return {
+                        id: `inspection:${inspection.id}:equipment:${item.id}`,
+                        label: item.name,
+                        detail: found
+                          ? countLabel(found, "finding", "findings")
+                          : isBoard
+                            ? describeBoard(normaliseBoard(item.board))
+                            : item.circuitLoading?.trim() || "Motor",
+                        variant: "info",
+                        onActivate: isBoard
+                          ? () =>
+                              setViewer({
+                                inspectionId: inspection.id,
+                                equipmentId: item.id,
+                                name: item.name,
+                                board: normaliseBoard(item.board),
+                              })
+                          : () =>
+                              setMotorIssue({
+                                inspectionId: inspection.id,
+                                equipmentId: item.id,
+                                slot: MOTOR_SLOT,
+                                where: item.name,
+                              }),
+                      };
+                    }),
+                  };
+                }),
+                {
+                  id: `add:inspection:${site.id}`,
+                  label: "Add new",
+                  detail: "Inspection",
+                  variant: "add",
+                  onActivate: () => void startInspection(site.id),
+                },
+              ],
+            }));
+
+          return {
+            id: `thermal:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, equipmentNode],
+    [clients, remove, startInspection],
   );
 
   return {
@@ -355,7 +440,15 @@ export function useClientsTree(enabled: boolean) {
     closeBoardEditor: () => setBoardEditor(null),
     saveBoard,
     viewer,
-    closeViewer: () => setViewer(null),
+    closeViewer: () => {
+      setViewer(null);
+      void refresh();
+    },
+    motorIssue,
+    closeMotorIssue: () => {
+      setMotorIssue(null);
+      void refresh();
+    },
     submit,
     error,
   };
@@ -377,4 +470,28 @@ function describeItem(item: EquipmentRecord): string | null {
     parts.push(`Circuit loading: ${item.circuitLoading.trim()}`);
   }
   return parts.join("\n\n") || null;
+}
+
+/** A survey is named by hand, or else by the day it was started. */
+function inspectionTitle(inspection: { name: string | null; createdAt: string }): string {
+  return (
+    inspection.name?.trim() ||
+    new Date(inspection.createdAt).toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+  );
+}
+
+/** Time of day and what was found — enough to tell two same-day runs apart. */
+function inspectionDetail(inspection: {
+  createdAt: string;
+  issues: unknown[];
+}): string {
+  const time = new Date(inspection.createdAt).toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${time}  ·  ${countLabel(inspection.issues.length, "finding", "findings")}`;
 }

@@ -8,9 +8,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    await prisma.boardPhoto.delete({ where: { id } });
+    await prisma.issue.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return serverError(error, "The photo could not be removed.");
+    return serverError(error, "That finding could not be removed.");
   }
 }

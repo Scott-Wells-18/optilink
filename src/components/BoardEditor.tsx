@@ -18,6 +18,7 @@ import {
   type CellState,
   type Numbering,
 } from "@/lib/board";
+import { BoardLegend } from "@/components/BoardLegend";
 
 /**
  * Draws a switchboard the way it actually looks: two columns of positions, one
@@ -179,7 +180,7 @@ export function BoardEditor({
               rows={active.rows}
               onChange={(numbering) => setBoard((current) => ({ ...current, numbering }))}
             />
-            <Legend />
+            <BoardLegend />
           </div>
         </header>
 
@@ -494,19 +495,5 @@ function NumberingPicker({
         ))}
       </div>
     </div>
-  );
-}
-
-function Legend() {
-  const states: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "CONTACTOR"];
-  return (
-    <ul className="board-legend">
-      {states.map((state) => (
-        <li key={state}>
-          <span className={`board-swatch is-${state.toLowerCase()}`} />
-          {STATE_LABELS[state]}
-        </li>
-      ))}
-    </ul>
   );
 }

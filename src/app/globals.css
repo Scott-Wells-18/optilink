@@ -768,8 +768,15 @@ body {
   border-radius: 18px;
 }
 
+/*
+ * A card always paints over the curve that reaches it. The wrapper needs its
+ * own z-index rather than leaning on the card's: hovering transforms the
+ * wrapper, and a transform makes a stacking context that trapped the card's
+ * z-index inside it — so the line jumped over the card until the cursor left.
+ */
 .tree-card-wrap {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   transition: transform 420ms var(--ease-out);
@@ -1982,4 +1989,270 @@ body {
 .board-warning {
   font-size: 12.5px;
   color: #a2650d;
+}
+
+/* --- reporting what an inspection found ----------------------------------- */
+
+/* The picked panel can now hold several findings, each with its photos. */
+.board-picked {
+  flex: none;
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
+.board-cell.is-flagged {
+  box-shadow: inset 0 0 0 2px rgba(194, 65, 12, 0.55);
+}
+
+.board-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.board-finding {
+  padding: 12px 14px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.board-finding-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.board-finding-remove {
+  border: none;
+  background: none;
+  font-family: var(--font-app);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-4);
+  cursor: pointer;
+}
+
+.board-finding-remove:hover {
+  color: #b62a30;
+}
+
+.board-finding-note {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.board-finding .board-picked-photos {
+  margin-top: 10px;
+}
+
+.board-photo figcaption {
+  padding: 4px 7px 5px;
+  border-top: 1px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* The report dialog sits over the board it was opened from. */
+.dialog-layer.is-stacked {
+  z-index: 70;
+}
+
+.dialog.is-issue {
+  width: min(520px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  gap: 18px;
+}
+
+.issue-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.issue-kind {
+  margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.issue-types {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-type {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 16px;
+  text-align: left;
+  border: 1px solid var(--hair-strong);
+  border-left: 3px solid var(--issue-colour, var(--ink-4));
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 220ms var(--ease-soft), box-shadow 220ms var(--ease-soft),
+    transform 220ms var(--ease-out);
+}
+
+.issue-type:hover {
+  transform: translateX(3px);
+  border-color: rgba(27, 155, 216, 0.42);
+  border-left-color: var(--issue-colour, var(--accent));
+  box-shadow: var(--shadow-lift);
+}
+
+.issue-type-label {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.issue-type-note {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.issue-type.is-dust_ingress,
+.issue-chip.is-dust_ingress {
+  --issue-colour: #a2650d;
+}
+
+.issue-type.is-rising_temperature,
+.issue-chip.is-rising_temperature {
+  --issue-colour: #c2410c;
+}
+
+.issue-type.is-termination_issue,
+.issue-chip.is-termination_issue {
+  --issue-colour: #b62a30;
+}
+
+.issue-type.is-repaired,
+.issue-chip.is-repaired {
+  --issue-colour: #0e9f6e;
+}
+
+.issue-chosen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.issue-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--issue-colour, var(--ink-3)) 12%, #fff);
+  color: var(--issue-colour, var(--ink-2));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.issue-change {
+  border: none;
+  background: none;
+  font-family: var(--font-app);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.issue-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.issue-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.issue-add {
+  padding: 7px 13px;
+  border: 1px dashed var(--hair-strong);
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 220ms var(--ease-soft), color 220ms var(--ease-soft);
+}
+
+.issue-add:hover {
+  border-style: solid;
+  border-color: rgba(27, 155, 216, 0.5);
+  color: var(--accent);
+}
+
+.issue-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.issue-shot {
+  position: relative;
+  width: 124px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--hair-strong);
+  background: #fff;
+}
+
+.issue-shot img {
+  display: block;
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+}
+
+.issue-empty {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.issue-note {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.issue-note textarea {
+  width: 100%;
+  padding: 10px 13px;
+  font-family: var(--font-app);
+  font-size: 13px;
+  color: var(--ink);
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  outline: none;
+  resize: vertical;
+  transition: border-color 260ms var(--ease-soft), box-shadow 260ms var(--ease-soft);
+}
+
+.issue-note textarea:focus {
+  border-color: rgba(27, 155, 216, 0.5);
+  box-shadow: 0 0 0 3px rgba(27, 155, 216, 0.12);
 }

@@ -12,6 +12,7 @@ import { InfoDialog } from "@/components/InfoDialog";
 import { ChooseKindDialog } from "@/components/ChooseKindDialog";
 import { BoardEditor } from "@/components/BoardEditor";
 import { BoardViewer } from "@/components/BoardViewer";
+import { IssueDialog } from "@/components/IssueDialog";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 
 /**
@@ -125,10 +126,23 @@ export function Gateway({
 
       {open && clients.viewer ? (
         <BoardViewer
+          inspectionId={clients.viewer.inspectionId}
           equipmentId={clients.viewer.equipmentId}
           name={clients.viewer.name}
           board={clients.viewer.board}
           onClose={clients.closeViewer}
+        />
+      ) : null}
+
+      {open && clients.motorIssue ? (
+        <IssueDialog
+          inspectionId={clients.motorIssue.inspectionId}
+          equipmentId={clients.motorIssue.equipmentId}
+          slot={clients.motorIssue.slot}
+          where={clients.motorIssue.where}
+          kind="Motor"
+          onCancel={clients.closeMotorIssue}
+          onSaved={clients.closeMotorIssue}
         />
       ) : null}
 

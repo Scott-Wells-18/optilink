@@ -6,50 +6,62 @@ import {
   COLUMNS,
   STATE_LABELS,
   isDevice,
-  legacySlotKey,
   positionNumber,
   slotKey,
   type Board,
   type BoardCell,
 } from "@/lib/board";
-import { uploadImage } from "@/components/ImageUpload";
+import { BoardLegend } from "@/components/BoardLegend";
+import { IssueDialog } from "@/components/IssueDialog";
+import { ISSUE_LABELS, type IssueType, type PhotoKind } from "@/lib/issues";
 
 /**
- * The board as drawn, read only, for pinning thermal photos to it.
+ * The board as drawn, read only, for reporting what an inspection turned up.
  *
  * Only positions carrying a device can be picked — a blank or an empty way has
- * nothing to photograph.
+ * nothing to look at.
  */
 
-type Photo = { id: string; slot: string; fileId: string; caption: string | null };
+type Issue = {
+  id: string;
+  equipmentId: string;
+  slot: string;
+  type: IssueType;
+  note: string | null;
+  photos: { id: string; kind: PhotoKind; fileId: string }[];
+};
 
 export function BoardViewer({
+  inspectionId,
   equipmentId,
   name,
   board,
   onClose,
 }: {
+  inspectionId: string;
   equipmentId: string;
   name: string;
   board: Board;
   onClose: () => void;
 }) {
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [slot, setSlot] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
   const [activeId, setActiveId] = useState(board.sections[0]?.id ?? "");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`/api/equipment/${equipmentId}/photos`, {
+      const response = await fetch(`/api/inspections/${inspectionId}/issues`, {
         cache: "no-store",
       });
-      if (response.ok) setPhotos(await response.json());
+      if (!response.ok) return;
+      const all = (await response.json()) as Issue[];
+      setIssues(all.filter((issue) => issue.equipmentId === equipmentId));
     } catch {
       // Leaving the list as-is is better than blanking it on a hiccup.
     }
-  }, [equipmentId]);
+  }, [inspectionId, equipmentId]);
 
   useEffect(() => {
     void refresh();
@@ -57,71 +69,39 @@ export function BoardViewer({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || reporting) return;
       if (slot) setSlot(null);
       else onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [slot, onClose]);
+  }, [slot, reporting, onClose]);
 
-  async function addPhoto(files: FileList | null) {
-    if (!files?.length || !slot) return;
-    setBusy(true);
-    setError(null);
-    try {
-      for (const file of Array.from(files)) {
-        const image = await uploadImage(file);
-        const response = await fetch("/api/board-photos", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ equipmentId, slot, fileId: image.id }),
-        });
-        if (!response.ok) throw new Error("The photo could not be saved.");
-      }
-      await refresh();
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
-    } finally {
-      setBusy(false);
+  async function removeIssue(id: string) {
+    const response = await fetch(`/api/issues/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      setError("That finding could not be removed.");
+      return;
     }
-  }
-
-  async function removePhoto(id: string) {
-    const response = await fetch(`/api/board-photos/${id}`, { method: "DELETE" });
-    if (response.ok) await refresh();
+    await refresh();
   }
 
   const active = useMemo(
     () => board.sections.find((section) => section.id === activeId) ?? board.sections[0],
     [board.sections, activeId],
   );
-  const isFirstSection = board.sections[0]?.id === active.id;
 
-  /**
-   * Photos pinned before boards had sections carry no section prefix, so the
-   * first section answers to both spellings.
-   */
-  const countFor = (kind: "cell" | "extra", index: number) => {
-    const key = slotKey(active.id, kind, index);
-    const legacy = legacySlotKey(kind, index);
-    return photos.filter(
-      (photo) => photo.slot === key || (isFirstSection && photo.slot === legacy),
-    ).length;
-  };
+  const countFor = (kind: "cell" | "extra", index: number) =>
+    issues.filter((issue) => issue.slot === slotKey(active.id, kind, index)).length;
 
   const selected = slot ? cellForSlot(board, slot) : null;
-  const selectedPhotos = slot
-    ? photos.filter(
-        (photo) =>
-          photo.slot === slot ||
-          (isFirstSection && photo.slot === stripSection(slot)),
-      )
-    : [];
+  const selectedIssues = slot ? issues.filter((issue) => issue.slot === slot) : [];
 
   const rows = Array.from({ length: active.rows }, (_, row) =>
     Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
   );
+
+  const where = slot && selected ? describeSlot(board, slot, selected) : "";
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={name}>
@@ -132,9 +112,12 @@ export function BoardViewer({
           <div className="board-head-main">
             <h2 className="dialog-title">{name}</h2>
             <p className="board-section-note">
-              Pick a breaker, RCD or contactor to add photos to it. Blanks and empty
-              ways cannot be picked.
+              Pick a breaker, RCD or contactor to report what you found on it.
+              Blanks and empty ways cannot be picked.
             </p>
+          </div>
+          <div className="board-head-side">
+            <BoardLegend />
           </div>
         </header>
 
@@ -173,7 +156,7 @@ export function BoardViewer({
                     cell={cell}
                     slot={slotKey(active.id, "extra", index)}
                     active={slot === slotKey(active.id, "extra", index)}
-                    photos={countFor("extra", index)}
+                    findings={countFor("extra", index)}
                     onPick={setSlot}
                   />
                 ))}
@@ -183,7 +166,7 @@ export function BoardViewer({
 
           <section>
             <div className="board-section-head">
-              <h3 className="board-section-title">Board</h3>
+              <h3 className="board-section-title">{active.name.trim() || "Board"}</h3>
             </div>
             <div className="board-grid">
               {rows.map((indexes, row) => (
@@ -195,7 +178,7 @@ export function BoardViewer({
                       number={positionNumber(active, index, board.numbering)}
                       slot={slotKey(active.id, "cell", index)}
                       active={slot === slotKey(active.id, "cell", index)}
-                      photos={countFor("cell", index)}
+                      findings={countFor("cell", index)}
                       onPick={setSlot}
                     />
                   ))}
@@ -214,44 +197,55 @@ export function BoardViewer({
                   <span className="board-picked-kind">{STATE_LABELS[selected.state]}</span>
                 </p>
                 <p className="board-section-note">
-                  {selectedPhotos.length
-                    ? `${selectedPhotos.length} photo${selectedPhotos.length === 1 ? "" : "s"}`
-                    : "No photos yet"}
+                  {selectedIssues.length
+                    ? `${selectedIssues.length} finding${selectedIssues.length === 1 ? "" : "s"} this inspection`
+                    : "Nothing reported here yet"}
                 </p>
               </div>
-              <label className="dialog-confirm board-upload">
-                {busy ? "Uploading…" : "Add photo"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  hidden
-                  onChange={(event) => void addPhoto(event.target.files)}
-                />
-              </label>
+              <button
+                type="button"
+                className="dialog-confirm"
+                onClick={() => setReporting(true)}
+              >
+                Report issue
+              </button>
             </div>
 
             {error ? <p className="dialog-error">{error}</p> : null}
 
-            {selectedPhotos.length ? (
-              <div className="board-picked-photos">
-                {selectedPhotos.map((photo) => (
-                  <figure key={photo.id} className="board-photo">
-                    <Image
-                      src={`/api/files/${photo.fileId}`}
-                      alt={photo.caption ?? "Thermal photo"}
-                      width={280}
-                      height={210}
-                    />
-                    <button
-                      type="button"
-                      className="board-photo-remove"
-                      aria-label="Remove photo"
-                      onClick={() => void removePhoto(photo.id)}
-                    >
-                      ×
-                    </button>
-                  </figure>
+            {selectedIssues.length ? (
+              <div className="board-findings">
+                {selectedIssues.map((issue) => (
+                  <article className="board-finding" key={issue.id}>
+                    <div className="board-finding-head">
+                      <span className={`issue-chip is-${issue.type.toLowerCase()}`}>
+                        {ISSUE_LABELS[issue.type]}
+                      </span>
+                      <button
+                        type="button"
+                        className="board-finding-remove"
+                        onClick={() => void removeIssue(issue.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {issue.note ? <p className="board-finding-note">{issue.note}</p> : null}
+                    <div className="board-picked-photos">
+                      {issue.photos.map((photo) => (
+                        <figure key={photo.id} className="board-photo">
+                          <Image
+                            src={`/api/files/${photo.fileId}`}
+                            alt={photo.kind.toLowerCase()}
+                            width={280}
+                            height={210}
+                          />
+                          {photo.kind === "PLAIN" ? null : (
+                            <figcaption>{photo.kind === "THERMAL" ? "Thermal" : "Visual"}</figcaption>
+                          )}
+                        </figure>
+                      ))}
+                    </div>
+                  </article>
                 ))}
               </div>
             ) : null}
@@ -260,12 +254,27 @@ export function BoardViewer({
 
         <footer className="board-foot">
           <div className="dialog-actions">
-            <button type="button" className="dialog-cancel" onClick={onClose}>
-              Close
+            <button type="button" className="dialog-confirm" onClick={onClose}>
+              Save
             </button>
           </div>
         </footer>
       </div>
+
+      {reporting && slot && selected ? (
+        <IssueDialog
+          inspectionId={inspectionId}
+          equipmentId={equipmentId}
+          slot={slot}
+          where={where}
+          kind={STATE_LABELS[selected.state]}
+          onCancel={() => setReporting(false)}
+          onSaved={() => {
+            setReporting(false);
+            void refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -275,14 +284,14 @@ function ViewCell({
   number,
   slot,
   active,
-  photos,
+  findings,
   onPick,
 }: {
   cell: BoardCell;
   number?: number;
   slot: string;
   active: boolean;
-  photos: number;
+  findings: number;
   onPick: (slot: string) => void;
 }) {
   const selectable = isDevice(cell.state);
@@ -290,7 +299,7 @@ function ViewCell({
     <div
       className={`board-cell is-${cell.state.toLowerCase()} ${
         selectable ? "is-selectable" : "is-locked"
-      } ${active ? "is-picked" : ""}`}
+      } ${active ? "is-picked" : ""} ${findings ? "is-flagged" : ""}`}
       onClick={() => selectable && onPick(slot)}
       role={selectable ? "button" : undefined}
       tabIndex={selectable ? 0 : -1}
@@ -307,7 +316,7 @@ function ViewCell({
       <span className={`board-cell-text ${cell.label ? "" : "is-blank"}`}>
         {cell.label || (selectable ? "Unnamed" : "")}
       </span>
-      {photos > 0 ? <span className="board-cell-count">{photos}</span> : null}
+      {findings > 0 ? <span className="board-cell-count">{findings}</span> : null}
     </div>
   );
 }
@@ -320,8 +329,20 @@ function cellForSlot(board: Board, slot: string): BoardCell | null {
   return kind === "extra" ? (section.extras[index] ?? null) : (section.cells[index] ?? null);
 }
 
-/** "sectionId:cell:3" → "cell:3", for photos pinned before sections existed. */
-function stripSection(slot: string): string {
-  const parts = slot.split(":");
-  return parts.length === 3 ? `${parts[1]}:${parts[2]}` : slot;
+/** "Lighting section · 3 · Level 1 lights" — where a finding is being filed. */
+function describeSlot(board: Board, slot: string, cell: BoardCell): string {
+  const [sectionId, kind, raw] = slot.split(":");
+  const section = board.sections.find((entry) => entry.id === sectionId);
+  const index = Number(raw);
+  const parts: string[] = [];
+  if (section && board.sections.length > 1 && section.name.trim()) {
+    parts.push(section.name.trim());
+  }
+  parts.push(
+    kind === "extra"
+      ? "Additional"
+      : String(section ? positionNumber(section, index, board.numbering) : index + 1),
+  );
+  parts.push(cell.label || "Unnamed");
+  return parts.join("  ·  ");
 }

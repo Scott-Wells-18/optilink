@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-/** The whole clients → sites → contacts tree, oldest first at every level. */
+/**
+ * The whole clients → sites → equipment tree, oldest first at every level,
+ * plus each site's inspections. Issues come through without their photos —
+ * enough to count them in the tree, and the board loads the rest when opened.
+ */
 export async function GET() {
   const clients = await prisma.client.findMany({
     where: { archived: false },
@@ -24,6 +28,15 @@ export async function GET() {
               description: true,
               circuitLoading: true,
               board: true,
+            },
+          },
+          inspections: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              issues: { select: { id: true, equipmentId: true, slot: true, type: true } },
             },
           },
         },

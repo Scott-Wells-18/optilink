@@ -70,7 +70,7 @@ model UploadedFile {
   observationPhotos Observation[]
   settingsLogo      Settings[]       @relation("SettingsLogo")
   settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
-  boardPhotos       BoardPhoto[]
+  issuePhotos       IssuePhoto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +111,8 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  equipment Equipment[]
+  equipment   Equipment[]
+  inspections Inspection[]
 
   @@index([clientId])
 }
@@ -146,27 +147,86 @@ model Equipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  photos BoardPhoto[]
+  issues Issue[]
 
   @@index([siteId])
 }
 
-/** A photo pinned to one position on a board, taken during a thermal survey. */
-model BoardPhoto {
-  id          String    @id @default(cuid())
+// ---------------------------------------------------------------------------
+// Thermal inspections
+//
+// A site is surveyed over and over, so the findings hang off a dated
+// inspection rather than the equipment itself: the same breaker can be dusty
+// in March, hot in June and repaired in July, and each survey keeps its own
+// record and its own photos.
+// ---------------------------------------------------------------------------
+
+model Inspection {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** Optional — falls back to the date it was started. */
+  name String?
+
+  createdAt DateTime @default(now())
+
+  issues Issue[]
+
+  @@index([siteId])
+}
+
+enum IssueType {
+  DUST_INGRESS
+  RISING_TEMPERATURE
+  TERMINATION_ISSUE
+  REPAIRED
+}
+
+/** One finding, against one position on one piece of equipment. */
+model Issue {
+  id           String     @id @default(cuid())
+  inspectionId String
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
   equipmentId String
   equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 
-  /** Which position it belongs to: "cell:12" or "extra:0". */
-  slot    String
-  caption String?
+  /** Which position: "sectionId:cell:12", "sectionId:extra:0", or "motor". */
+  slot String
+
+  type IssueType
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photos IssuePhoto[]
+
+  @@index([inspectionId])
+  @@index([equipmentId])
+}
+
+enum IssuePhotoKind {
+  /** Dust ingress needs nothing but a straight photo. */
+  PLAIN
+  THERMAL
+  VISUAL
+}
+
+model IssuePhoto {
+  id      String @id @default(cuid())
+  issueId String
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  kind IssuePhotoKind @default(PLAIN)
 
   fileId String
   file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
-  @@index([equipmentId])
+  @@index([issueId])
 }
 
 // ---------------------------------------------------------------------------
