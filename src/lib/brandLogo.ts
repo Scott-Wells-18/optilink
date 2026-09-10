@@ -2,28 +2,30 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 /**
- * Where the logo comes from, in order of preference:
+ * The OptiLink artwork, committed at `public/brand/logo.jpg`. It is used
+ * everywhere the logo appears, with no setup and nothing to upload.
  *
- *  1. Artwork uploaded under Settings → Branding.
- *  2. A file dropped into `public/brand/` named `logo.<ext>` — the easiest
- *     route if you would rather commit the original artwork than upload it.
- *  3. The built-in SVG lockup.
+ * To replace it — a transparent PNG, or an SVG — drop a file into
+ * `public/brand/` named `logo.svg`, `logo.png` or `logo.webp` and it takes
+ * precedence. Artwork uploaded through the app takes precedence over both.
  */
 
-const CANDIDATES = ["logo.svg", "logo.png", "logo.webp", "logo.jpg", "logo.jpeg"];
+const COMMITTED_LOGO = "/brand/logo.jpg";
+const OVERRIDES = ["logo.svg", "logo.png", "logo.webp"];
 
-let cached: string | null | undefined;
+let override: string | null | undefined;
 
-export function droppedLogoUrl(): string | null {
-  if (cached !== undefined) return cached;
+function overrideLogoUrl(): string | null {
+  if (override !== undefined) return override;
   const brandDir = path.join(process.cwd(), "public", "brand");
-  cached = CANDIDATES.map((name) => (existsSync(path.join(brandDir, name)) ? `/brand/${name}` : null))
-    .find((url): url is string => url !== null) ?? null;
-  return cached;
+  override =
+    OVERRIDES.map((name) => (existsSync(path.join(brandDir, name)) ? `/brand/${name}` : null)).find(
+      (url): url is string => url !== null,
+    ) ?? null;
+  return override;
 }
 
-/** Null means "draw the built-in SVG lockup". */
-export function resolveLogoUrl(uploadedFileId: string | null | undefined): string | null {
+export function resolveLogoUrl(uploadedFileId?: string | null): string {
   if (uploadedFileId) return `/api/files/${uploadedFileId}`;
-  return droppedLogoUrl();
+  return overrideLogoUrl() ?? COMMITTED_LOGO;
 }

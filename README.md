@@ -23,14 +23,13 @@ two, each with one — waiting on the real steps.
 
 ## The logo
 
-Drop the artwork into `public/brand/` named `logo.png` (or `.svg`, `.webp`,
-`.jpg`) and it is used everywhere, permanently, with nothing else to set up.
+The OptiLink artwork lives at `public/brand/logo.jpg` and is used everywhere,
+permanently, with nothing to set up.
 
-On GitHub: open `public/brand/`, choose **Add file → Upload files**, drag the
-file in, rename it to `logo.png`, commit. Railway redeploys on its own.
-
-Until that file exists the app draws its own approximation of the lockup, which
-is close but is not the real artwork.
+To replace it — a transparent PNG or an SVG would be better than the JPEG —
+drop a file into `public/brand/` named `logo.svg`, `logo.png` or `logo.webp`
+and it takes precedence. On GitHub: open `public/brand/`, choose
+**Add file → Upload files**, drag it in, commit; Railway redeploys on its own.
 
 ## Deploying to Railway
 

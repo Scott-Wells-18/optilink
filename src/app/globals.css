@@ -355,7 +355,7 @@ body {
   justify-content: center;
   /* Sized by height, so any uploaded artwork lands at the same scale
      regardless of how wide the file happens to be. */
-  height: 104px;
+  height: 112px;
   max-width: min(560px, 86vw);
 }
 
@@ -718,15 +718,20 @@ body {
     opacity 400ms var(--ease-soft);
 }
 
-.tree-kids.is-revealed .tree-link {
+/*
+ * Scoped with ">" on purpose. As a descendant selector this also matched the
+ * curves of every nested branch, so a newly opened sub-branch was born already
+ * "revealed" and never drew itself in.
+ */
+.tree-kids.is-revealed > .tree-links > .tree-link {
   stroke-dashoffset: 0;
 }
 
-.tree-link.is-offpath {
+.tree-links > .tree-link.is-offpath {
   stroke: #c9d4dd;
 }
 
-.tree-kids:not(.is-active) .tree-link {
+.tree-kids:not(.is-active) > .tree-links > .tree-link {
   stroke: #c9d4dd;
 }
 
