@@ -1407,9 +1407,17 @@ body {
   border-color: #0e9f6e;
 }
 
-.board-body {
+/*
+ * Only the header stays put. Everything from the main switch down — tabs
+ * included — scrolls, so a long board does not pin half the panel in place.
+ */
+.board-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.board-body {
   padding: 18px 24px 22px;
 }
 
@@ -1850,7 +1858,6 @@ body {
 /* --- section tabs, Chrome style ------------------------------------------- */
 
 .board-tabs {
-  flex: none;
   display: flex;
   align-items: flex-end;
   gap: 4px;
@@ -2260,7 +2267,6 @@ body {
 /* --- the main switch, and dust reported against the whole board ----------- */
 
 .board-mains {
-  flex: none;
   padding: 14px 24px;
   border-bottom: 1px solid var(--hair);
   background: #fff;
@@ -2271,11 +2277,11 @@ body {
  * nameable, not recolourable and not part of any section.
  */
 .board-main-switch {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
-  padding: 12px 16px;
+  min-height: 42px;
+  padding: 10px 16px;
   border: 1px solid var(--hair-strong);
   border-radius: 10px;
   background: #fff;
@@ -2362,4 +2368,118 @@ body {
   border-radius: 9px;
   outline: none;
   box-shadow: 0 0 0 3px rgba(27, 155, 216, 0.12);
+}
+
+/* --- the survey behind a rising temperature ------------------------------- */
+
+.issue-survey {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.issue-survey .issue-chosen {
+  margin-bottom: 10px;
+}
+
+.issue-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.issue-pick {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  text-align: left;
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  background: #fff;
+  font-family: var(--font-app);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 200ms var(--ease-soft), color 200ms var(--ease-soft),
+    background 200ms var(--ease-soft);
+}
+
+.issue-pick:hover {
+  border-color: rgba(27, 155, 216, 0.4);
+}
+
+.issue-pick.is-on {
+  border-color: rgba(27, 155, 216, 0.55);
+  background: rgba(27, 155, 216, 0.06);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.issue-pick-mark {
+  flex: none;
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid var(--hair-strong);
+  border-radius: 5px;
+  transition: border-color 200ms var(--ease-soft), background 200ms var(--ease-soft);
+}
+
+/* A cause is one-of-two, so its mark is round. */
+.issue-pick-mark.is-one {
+  border-radius: 50%;
+}
+
+.issue-pick.is-on .issue-pick-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.issue-pick.is-on .issue-pick-mark::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+
+.issue-pick.is-on .issue-pick-mark.is-one::after {
+  left: 4px;
+  top: 4px;
+  width: 5px;
+  height: 5px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  transform: none;
+}
+
+.board-finding-cause {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.board-finding-fixes {
+  margin-top: 6px;
+  padding-left: 16px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.issue-chip.is-cause {
+  --issue-colour: #14528f;
 }

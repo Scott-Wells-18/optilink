@@ -17,6 +17,8 @@ export async function GET(
         equipmentId: true,
         slot: true,
         type: true,
+        cause: true,
+        recommendations: true,
         note: true,
         photos: {
           orderBy: { createdAt: "asc" },

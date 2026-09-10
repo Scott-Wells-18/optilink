@@ -17,9 +17,12 @@ import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { usePersisted } from "@/lib/session";
 import {
   BOARD_SLOT,
+  CAUSE_LABELS,
   ISSUE_LABELS,
   MAIN_SWITCH_SLOT,
   POSITION_ISSUE_TYPES,
+  recommendationText,
+  type IssueCause,
   type IssueType,
   type PhotoKind,
 } from "@/lib/issues";
@@ -36,6 +39,8 @@ type Issue = {
   equipmentId: string;
   slot: string;
   type: IssueType;
+  cause: IssueCause | null;
+  recommendations: string[];
   note: string | null;
   photos: { id: string; kind: PhotoKind; fileId: string }[];
 };
@@ -117,9 +122,21 @@ export function BoardViewer({
    */
   const picked: Picked | null =
     slot === MAIN_SWITCH_SLOT
-      ? { title: "Main switch", kind: "Main switch", where: "Main switch", fixedType: null }
+      ? {
+          title: "Main switch",
+          kind: "Main switch",
+          where: "Main switch",
+          device: "main switch",
+          fixedType: null,
+        }
       : slot === BOARD_SLOT
-        ? { title: "Dust ingress", kind: null, where: name, fixedType: "DUST_INGRESS" }
+        ? {
+            title: "Dust ingress",
+            kind: null,
+            where: name,
+            device: "board",
+            fixedType: "DUST_INGRESS",
+          }
         : slot
           ? pickedCell(board, slot)
           : null;
@@ -156,6 +173,7 @@ export function BoardViewer({
           </div>
         </header>
 
+        <div className="board-scroll">
         <MainSwitchRow
           findings={issues.filter((issue) => issue.slot === MAIN_SWITCH_SLOT).length}
           picked={slot === MAIN_SWITCH_SLOT}
@@ -228,6 +246,7 @@ export function BoardViewer({
             </div>
           </section>
         </div>
+        </div>
 
         {slot && picked ? (
           <section className="board-picked">
@@ -272,6 +291,16 @@ export function BoardViewer({
                         Remove
                       </button>
                     </div>
+                    {issue.cause ? (
+                      <p className="board-finding-cause">{CAUSE_LABELS[issue.cause]}</p>
+                    ) : null}
+                    {issue.recommendations.length ? (
+                      <ul className="board-finding-fixes">
+                        {issue.recommendations.map((entry) => (
+                          <li key={entry}>{recommendationText(entry, picked.device)}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <div className="board-picked-photos">
                       {issue.photos.map((photo) => (
                         <figure key={photo.id} className="board-photo">
@@ -313,6 +342,7 @@ export function BoardViewer({
           where={picked.where}
           kind={picked.kind ?? undefined}
           title={picked.fixedType ? "Report dust ingress" : "Report issue"}
+          device={picked.device}
           types={POSITION_ISSUE_TYPES}
           fixedType={picked.fixedType}
           onCancel={() => setReporting(false)}
@@ -374,6 +404,8 @@ type Picked = {
   kind: string | null;
   /** How the report names the place it is filed against. */
   where: string;
+  /** How a recommendation refers to it: "Replace the breaker". */
+  device: string;
   /** Set when there is nothing to choose. */
   fixedType: IssueType | null;
 };
@@ -385,6 +417,7 @@ function pickedCell(board: Board, slot: string): Picked | null {
     title: cell.label || "Unnamed",
     kind: STATE_LABELS[cell.state],
     where: describeSlot(board, slot, cell),
+    device: cell.state === "RCD" ? "RCD" : STATE_LABELS[cell.state].toLowerCase(),
     fixedType: null,
   };
 }

@@ -182,8 +182,15 @@ model Inspection {
 enum IssueType {
   DUST_INGRESS
   RISING_TEMPERATURE
+  /** Retired — folded into rising temperature. Kept so old findings read. */
   TERMINATION_ISSUE
   REPAIRED
+}
+
+/** What is behind a rising temperature. */
+enum IssueCause {
+  INTERNAL_HEATING
+  TERMINAL_CONNECTION
 }
 
 /** One finding, against one position on one piece of equipment. */
@@ -198,7 +205,15 @@ model Issue {
   /** Which position: "sectionId:cell:12", "sectionId:extra:0", or "motor". */
   slot String
 
-  type IssueType
+  type  IssueType
+  cause IssueCause?
+
+  /**
+   * What to do about it, as keys into the catalogue in lib/issues — the words
+   * themselves depend on what the position is, so they are built when shown.
+   */
+  recommendations String[]
+
   note String?
 
   createdAt DateTime @default(now())

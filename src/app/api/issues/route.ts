@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
-import { ISSUE_TYPES, photoSlotsFor, type IssueType, type PhotoKind } from "@/lib/issues";
+import {
+  ISSUE_CAUSES,
+  ISSUE_TYPES,
+  RECOMMENDATION_KEYS,
+  needsSurvey,
+  photoSlotsFor,
+  type IssueCause,
+  type IssueType,
+  type PhotoKind,
+} from "@/lib/issues";
 
 type PhotoInput = { kind?: string; fileId?: string };
 
@@ -16,6 +25,8 @@ export async function POST(request: Request) {
       equipmentId?: string;
       slot?: string;
       type?: string;
+      cause?: string;
+      recommendations?: string[];
       note?: string;
       photos?: PhotoInput[];
     };
@@ -31,12 +42,26 @@ export async function POST(request: Request) {
     );
     if (missing) return badRequest(`A ${missing.label.toLowerCase()} is required.`);
 
+    const cause = ISSUE_CAUSES.includes(body.cause as IssueCause)
+      ? (body.cause as IssueCause)
+      : null;
+    if (needsSurvey(type) && !cause) return badRequest("Pick what is behind it.");
+
+    const recommendations = (body.recommendations ?? []).filter((key) =>
+      RECOMMENDATION_KEYS.includes(key),
+    );
+    if (cause && recommendations.length === 0) {
+      return badRequest("Pick at least one recommendation.");
+    }
+
     const issue = await prisma.issue.create({
       data: {
         inspectionId: body.inspectionId,
         equipmentId: body.equipmentId,
         slot: body.slot.slice(0, 120),
         type,
+        cause,
+        recommendations,
         note: body.note?.trim().slice(0, 2000) || null,
         photos: { create: photos },
       },

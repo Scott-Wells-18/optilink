@@ -3,10 +3,15 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
+  CAUSE_LABELS,
+  ISSUE_CAUSES,
   ISSUE_LABELS,
   ISSUE_NOTES,
   POSITION_ISSUE_TYPES,
+  needsSurvey,
   photoSlotsFor,
+  recommendationsFor,
+  type IssueCause,
   type IssueType,
   type PhotoKind,
 } from "@/lib/issues";
@@ -27,6 +32,7 @@ export function IssueDialog({
   slot,
   where,
   kind,
+  device = "device",
   title = "Report issue",
   types = POSITION_ISSUE_TYPES,
   fixedType = null,
@@ -40,6 +46,8 @@ export function IssueDialog({
   where: string;
   /** Breaker, RCD, contactor — or absent for a motor. */
   kind?: string;
+  /** What the recommendations should call it: "breaker", "motor", … */
+  device?: string;
   title?: string;
   /** Which findings are on offer here. */
   types?: readonly IssueType[];
@@ -56,12 +64,17 @@ export function IssueDialog({
     `${key}:photos`,
     {},
   );
+  const [cause, setCause] = usePersisted<IssueCause | null>(`${key}:cause`, null);
+  const [picks, setPicks] = usePersisted<string[]>(`${key}:picks`, []);
+  /** The survey is a second page, reached once the photos are in. */
+  const [onSurvey, setOnSurvey] = usePersisted(`${key}:survey`, false);
   const [busy, setBusy] = useState<PhotoKind | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function forget() {
-    clearSession(`${key}:type`);
-    clearSession(`${key}:photos`);
+    for (const part of ["type", "photos", "cause", "picks", "survey"]) {
+      clearSession(`${key}:${part}`);
+    }
   }
 
   function cancel() {
@@ -80,8 +93,13 @@ export function IssueDialog({
   }, [onCancel]);
 
   const slots = type ? photoSlotsFor(type) : [];
-  const ready =
+  const survey = type !== null && needsSurvey(type);
+  const photosIn =
     type !== null && slots.every((entry) => (photos[entry.kind]?.length ?? 0) > 0);
+  /** Everything the first page needs before it can be left. */
+  const pageDone = photosIn && (!survey || cause !== null);
+  const ready = survey ? pageDone && picks.length > 0 : photosIn;
+  const options = cause ? recommendationsFor(cause, device) : [];
 
   async function add(kindWanted: PhotoKind, files: FileList | null) {
     if (!files?.length) return;
@@ -123,6 +141,8 @@ export function IssueDialog({
         equipmentId,
         slot,
         type,
+        cause: survey ? cause : undefined,
+        recommendations: survey ? picks : undefined,
         photos: slots.flatMap((entry) =>
           (photos[entry.kind] ?? []).map((photo) => ({
             kind: entry.kind,
@@ -176,7 +196,7 @@ export function IssueDialog({
           </div>
         ) : (
           <>
-            {fixedType ? null : (
+            {fixedType || onSurvey ? null : (
               <div className="issue-chosen">
                 <span className={`issue-chip is-${type.toLowerCase()}`}>
                   {ISSUE_LABELS[type]}
@@ -194,6 +214,7 @@ export function IssueDialog({
               </div>
             )}
 
+            {onSurvey ? null : (
             <div className="issue-slots">
               {slots.map((entry) => {
                 const held = photos[entry.kind] ?? [];
@@ -245,7 +266,74 @@ export function IssueDialog({
                 );
               })}
             </div>
+            )}
 
+            {survey && !onSurvey ? (
+              <section className="issue-survey">
+                <h3 className="board-section-title">What is behind it</h3>
+                <p className="issue-empty">One of the two.</p>
+                <div className="issue-picks">
+                  {ISSUE_CAUSES.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`issue-pick ${cause === option ? "is-on" : ""}`}
+                      onClick={() => {
+                        setCause(option);
+                        setPicks([]);
+                      }}
+                    >
+                      <span className="issue-pick-mark is-one" aria-hidden />
+                      {CAUSE_LABELS[option]}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {survey && onSurvey ? (
+              <section className="issue-survey">
+                <div className="issue-chosen">
+                  <span className={`issue-chip is-${type.toLowerCase()}`}>
+                    {ISSUE_LABELS[type]}
+                  </span>
+                  <span className="issue-chip is-cause">
+                    {cause ? CAUSE_LABELS[cause] : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="issue-change"
+                    onClick={() => setOnSurvey(false)}
+                  >
+                    Back
+                  </button>
+                </div>
+                <h3 className="board-section-title">Recommendations</h3>
+                <p className="issue-empty">As many as apply.</p>
+                <div className="issue-picks">
+                  {options.map((option) => {
+                    const on = picks.includes(option.key);
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`issue-pick ${on ? "is-on" : ""}`}
+                        onClick={() =>
+                          setPicks((current) =>
+                            on
+                              ? current.filter((entry) => entry !== option.key)
+                              : [...current, option.key],
+                          )
+                        }
+                      >
+                        <span className="issue-pick-mark" aria-hidden />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
           </>
         )}
 
@@ -255,7 +343,16 @@ export function IssueDialog({
           <button type="button" className="dialog-cancel" onClick={cancel}>
             Cancel
           </button>
-          {type !== null ? (
+          {type !== null && survey && !onSurvey ? (
+            <button
+              type="button"
+              className="dialog-confirm"
+              disabled={!pageDone || busy !== null}
+              onClick={() => setOnSurvey(true)}
+            >
+              Next
+            </button>
+          ) : type !== null ? (
             <button
               type="button"
               className="dialog-confirm"

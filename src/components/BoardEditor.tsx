@@ -207,6 +207,7 @@ export function BoardEditor({
           </div>
         </header>
 
+        <div className="board-scroll">
         <MainSwitchRow />
 
         <nav className="board-tabs" aria-label="Board sections">
@@ -369,6 +370,7 @@ export function BoardEditor({
               </button>
             </div>
           </section>
+        </div>
         </div>
 
         <footer className="board-foot">

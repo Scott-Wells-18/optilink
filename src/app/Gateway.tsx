@@ -143,6 +143,7 @@ export function Gateway({
           slot={clients.motorIssue.slot}
           where={clients.motorIssue.where}
           kind="Motor"
+          device="motor"
           types={ITEM_ISSUE_TYPES}
           onCancel={clients.closeMotorIssue}
           onSaved={clients.closeMotorIssue}
