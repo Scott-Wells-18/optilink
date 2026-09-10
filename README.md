@@ -24,9 +24,12 @@ chosen path fades to grey. Press a card again to close it and step back.
   Press it and a pop-up asks for the client name.
 - **Sites** — open a client to see its sites, then **Add new** for site name
   and location.
-- **Equipment** — open a site to see its equipment, then **Add new** for a name
-  and a description. The description is deliberately hidden in the tree; click
-  the equipment row to read it.
+- **Equipment** — open a site to see its equipment, then **Add new**, which
+  first asks whether it is a **switchboard** or an **appliance**.
+  - An *appliance* takes a name and a description. The description is hidden in
+    the tree; click the row to read it.
+  - A *switchboard* opens the board editor (below). Click the row later to open
+    it again and change anything.
 
 Added rows are solid; the **Add new** tile stays grey and sits at the bottom of
 its list. Only one tile is ever on screen — the one belonging to the deepest
@@ -36,8 +39,20 @@ you have walked past. Step back out and the previous tile returns.
 Hovering a row you added shows a small × to remove it — removing a client takes
 its sites and equipment with it.
 
-Thermal, RCD and B&A are still placeholders — three options, each with two,
-each with one — waiting on the real steps.
+**Drawing a switchboard.** Two columns of positions, fifteen rows to start —
+thirty positions. Add or remove rows for bigger and smaller boards; a row is a
+pair, so five more rows takes thirty to forty. Clicking a position walks it
+through **nothing → blank → breaker → RCD** and back around. The pencil on each
+position names that circuit. Above the grid is a strip for **additional RCDs** —
+the ones beside the board or up by the main switch — each a single position with
+the same click behaviour. Save and exit files it against the site.
+
+**Thermal** lists only switchboards, walked through client → site → board.
+Appliances never appear there, and nothing is added from that side — boards are
+created under Clients.
+
+RCD and B&A are still placeholders — three options, each with two, each with
+one — waiting on the real steps.
 
 ## The logo
 
@@ -107,6 +122,8 @@ src/components/TreeNav.tsx    The branching navigation and its connectors
 src/lib/navTree.ts            What sits under each section
 src/lib/useSpringScroll.ts    Smooth scrolling
 src/lib/useClientsTree.ts     Clients/sites/equipment, loaded and edited
+src/lib/board.ts              The switchboard model and its click cycle
+src/components/BoardEditor.tsx    Drawing a switchboard
 src/components/AddDialog.tsx  The "add new" pop-up
 src/components/InfoDialog.tsx The panel that reveals a description
 ```

@@ -38,7 +38,7 @@ export const SECTIONS: TreeNode[] = [
     id: "thermal",
     label: "Thermal",
     detail: "Infrared surveys",
-    children: placeholderBranches("thermal"),
+    children: [],
   },
   {
     id: "rcd",

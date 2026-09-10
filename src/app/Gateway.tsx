@@ -9,6 +9,8 @@ import { SECTIONS } from "@/lib/navTree";
 import { useClientsTree } from "@/lib/useClientsTree";
 import { AddDialog } from "@/components/AddDialog";
 import { InfoDialog } from "@/components/InfoDialog";
+import { ChooseKindDialog } from "@/components/ChooseKindDialog";
+import { BoardEditor } from "@/components/BoardEditor";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 
 /**
@@ -38,13 +40,15 @@ export function Gateway({
 
   useSpringScroll(scrollerRef);
 
-  // Clients comes from the database; the other sections are still placeholders.
+  // Clients and Thermal come from the database; RCD and B&A are placeholders.
   const sections = useMemo(
     () =>
-      SECTIONS.map((section) =>
-        section.id === "clients" ? { ...section, children: clients.nodes } : section,
-      ),
-    [clients.nodes],
+      SECTIONS.map((section) => {
+        if (section.id === "clients") return { ...section, children: clients.nodes };
+        if (section.id === "thermal") return { ...section, children: clients.thermalNodes };
+        return section;
+      }),
+    [clients.nodes, clients.thermalNodes],
   );
 
   useEffect(() => {
@@ -108,6 +112,24 @@ export function Gateway({
 
       {open && clients.info ? (
         <InfoDialog spec={clients.info} onClose={clients.closeInfo} />
+      ) : null}
+
+      {open && clients.chooser ? (
+        <ChooseKindDialog
+          siteName={clients.chooser.siteName}
+          onChoose={clients.chooseKind}
+          onClose={clients.closeChooser}
+        />
+      ) : null}
+
+      {open && clients.boardEditor ? (
+        <BoardEditor
+          title={clients.boardEditor.title}
+          initialName={clients.boardEditor.name}
+          initialBoard={clients.boardEditor.board}
+          onCancel={clients.closeBoardEditor}
+          onSave={clients.saveBoard}
+        />
       ) : null}
 
       <nav className="gate-exits" aria-hidden={!open}>

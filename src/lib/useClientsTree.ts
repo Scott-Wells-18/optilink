@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TreeNode } from "@/lib/navTree";
+import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/board";
 
 /**
  * Clients → sites → contacts, loaded from the database and turned into tree
@@ -11,8 +12,10 @@ import type { TreeNode } from "@/lib/navTree";
 
 type EquipmentRecord = {
   id: string;
+  kind: "SWITCHBOARD" | "APPLIANCE";
   name: string;
   description: string | null;
+  board: unknown;
 };
 
 type SiteRecord = {
@@ -46,10 +49,25 @@ export type DialogSpec = {
 /** A read-only panel, used to reveal an item's description. */
 export type InfoSpec = { title: string; body: string | null };
 
+/** Which site is being added to, when the switchboard/appliance choice is up. */
+export type ChooserSpec = { siteId: string; siteName: string };
+
+/** Opening the switchboard editor, either on a new board or an existing one. */
+export type BoardSpec = {
+  title: string;
+  name: string;
+  board: Board;
+  /** Absent when the board has not been created yet. */
+  equipmentId?: string;
+  siteId: string;
+};
+
 export function useClientsTree(enabled: boolean) {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [info, setInfo] = useState<InfoSpec | null>(null);
+  const [chooser, setChooser] = useState<ChooserSpec | null>(null);
+  const [boardEditor, setBoardEditor] = useState<BoardSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -99,6 +117,92 @@ export function useClientsTree(enabled: boolean) {
     [refresh],
   );
 
+  const equipmentNode = useCallback(
+    (item: EquipmentRecord, site: { id: string; name: string }): TreeNode => {
+      const isBoard = item.kind === "SWITCHBOARD";
+      return {
+        id: `equipment:${item.id}`,
+        label: item.name,
+        detail: isBoard ? describeBoard(normaliseBoard(item.board)) : undefined,
+        variant: "info",
+        onActivate: () =>
+          isBoard
+            ? setBoardEditor({
+                title: "Switchboard",
+                name: item.name,
+                board: normaliseBoard(item.board),
+                equipmentId: item.id,
+                siteId: site.id,
+              })
+            : setInfo({ title: item.name, body: item.description }),
+        onRemove: () => void remove(`/api/equipment/${item.id}`, item.name),
+      };
+    },
+    [remove],
+  );
+
+  /** Picked from the chooser: appliances go to a form, boards to the editor. */
+  const chooseKind = useCallback(
+    (kind: "SWITCHBOARD" | "APPLIANCE") => {
+      const site = chooser;
+      setChooser(null);
+      if (!site) return;
+
+      if (kind === "SWITCHBOARD") {
+        setBoardEditor({
+          title: "New switchboard",
+          name: "",
+          board: createBoard(),
+          siteId: site.siteId,
+        });
+        return;
+      }
+
+      setDialog({
+        title: `Add an appliance at ${site.siteName}`,
+        submitLabel: "Add appliance",
+        endpoint: "/api/equipment",
+        extra: { siteId: site.siteId, kind: "APPLIANCE" },
+        fields: [
+          { name: "name", label: "Name", required: true, placeholder: "e.g. Rooftop AC unit" },
+          {
+            name: "description",
+            label: "Description",
+            multiline: true,
+            placeholder: "Anything worth remembering — only shown when this is opened.",
+          },
+        ],
+      });
+    },
+    [chooser],
+  );
+
+  const saveBoard = useCallback(
+    async (name: string, board: Board) => {
+      if (!boardEditor) return;
+      const existing = Boolean(boardEditor.equipmentId);
+      const response = await fetch(
+        existing ? `/api/equipment/${boardEditor.equipmentId}` : "/api/equipment",
+        {
+          method: existing ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            existing
+              ? { name, board }
+              : { siteId: boardEditor.siteId, kind: "SWITCHBOARD", name, board },
+          ),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error ?? "The board could not be saved.");
+      }
+      await refresh();
+      setBoardEditor(null);
+    },
+    [boardEditor, refresh],
+  );
+
   const nodes = useMemo<TreeNode[]>(() => {
     const clientNodes: TreeNode[] = clients.map((client) => ({
       id: `client:${client.id}`,
@@ -114,35 +218,13 @@ export function useClientsTree(enabled: boolean) {
             countLabel(site.equipment.length, "item", "items"),
           onRemove: () => void remove(`/api/sites/${site.id}`, site.name),
           children: [
-            ...site.equipment.map<TreeNode>((item) => ({
-              id: `equipment:${item.id}`,
-              label: item.name,
-              // The description stays hidden until the row is opened.
-              variant: "info",
-              onActivate: () => setInfo({ title: item.name, body: item.description }),
-              onRemove: () => void remove(`/api/equipment/${item.id}`, item.name),
-            })),
+            ...site.equipment.map<TreeNode>((item) => equipmentNode(item, site)),
             {
               id: `add:equipment:${site.id}`,
               label: "Add new",
               detail: "Equipment",
               variant: "add",
-              onActivate: () =>
-                setDialog({
-                  title: `Add equipment at ${site.name}`,
-                  submitLabel: "Add equipment",
-                  endpoint: "/api/equipment",
-                  extra: { siteId: site.id },
-                  fields: [
-                    { name: "name", label: "Name", required: true, placeholder: "e.g. Main switchboard" },
-                    {
-                      name: "description",
-                      label: "Description",
-                      multiline: true,
-                      placeholder: "Anything worth remembering — only shown when this is opened.",
-                    },
-                  ],
-                }),
+              onActivate: () => setChooser({ siteId: site.id, siteName: site.name }),
             },
           ],
         })),
@@ -189,14 +271,59 @@ export function useClientsTree(enabled: boolean) {
     });
 
     return clientNodes;
-  }, [clients, remove]);
+  }, [clients, remove, equipmentNode]);
+
+  /**
+   * Thermal works off boards only — appliances never appear here, and nothing
+   * is added from this side.
+   */
+  const thermalNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => ({
+          id: `thermal:client:${client.id}`,
+          label: client.name,
+          detail: countLabel(
+            client.sites.reduce(
+              (total, site) =>
+                total + site.equipment.filter((item) => item.kind === "SWITCHBOARD").length,
+              0,
+            ),
+            "board",
+            "boards",
+          ),
+          children: client.sites
+            .map<TreeNode>((site) => ({
+              id: `thermal:site:${site.id}`,
+              label: site.name,
+              detail: site.location?.trim() || undefined,
+              children: site.equipment
+                .filter((item) => item.kind === "SWITCHBOARD")
+                .map((item) => ({
+                  ...equipmentNode(item, site),
+                  id: `thermal:equipment:${item.id}`,
+                  onRemove: undefined,
+                })),
+            }))
+            .filter((site) => (site.children?.length ?? 0) > 0),
+        }))
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, equipmentNode],
+  );
 
   return {
     nodes,
+    thermalNodes,
     dialog,
     closeDialog: () => setDialog(null),
     info,
     closeInfo: () => setInfo(null),
+    chooser,
+    closeChooser: () => setChooser(null),
+    chooseKind,
+    boardEditor,
+    closeBoardEditor: () => setBoardEditor(null),
+    saveBoard,
     submit,
     error,
   };

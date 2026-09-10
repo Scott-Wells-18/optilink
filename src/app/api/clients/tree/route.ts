@@ -17,7 +17,13 @@ export async function GET() {
           location: true,
           equipment: {
             orderBy: { createdAt: "asc" },
-            select: { id: true, name: true, description: true },
+            select: {
+              id: true,
+              kind: true,
+              name: true,
+              description: true,
+              board: true,
+            },
           },
         },
       },

@@ -115,16 +115,31 @@ model Site {
   @@index([clientId])
 }
 
+enum EquipmentKind {
+  SWITCHBOARD
+  APPLIANCE
+}
+
 model Equipment {
   id     String @id @default(cuid())
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
+  kind EquipmentKind @default(APPLIANCE)
   name String
-  /** Only shown when the item is opened, to keep the tree readable. */
+
+  /** Appliances only. Shown when the item is opened, to keep the tree short. */
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  /**
+   * Switchboards only — the drawn layout of the board: how many rows, what is
+   * in each position, and any RCDs sitting outside the main grid. Free-form
+   * shape, never queried, so it lives as JSON rather than its own tables.
+   */
+  board Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([siteId])
 }
