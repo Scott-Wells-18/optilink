@@ -13,6 +13,7 @@ import { relevantGlossary } from "@/lib/glossary";
 import { companyAddress, getSettings, type AppSettings } from "@/lib/settings";
 import { thermalBandTable } from "@/lib/standards/thermal";
 import { Logo } from "@/components/Logo";
+import { resolveLogoUrl } from "@/lib/brandLogo";
 import { PrintBar } from "./PrintBar";
 
 export const dynamic = "force-dynamic";
@@ -76,9 +77,9 @@ function Cover({
     <header className="avoid-break">
       <div className="flex flex-wrap items-start justify-between gap-6 border-b-4 pb-6" style={{ borderColor: "var(--brand)" }}>
         <div>
-          {settings.logoFileId ? (
+          {resolveLogoUrl(settings.logoFileId) ? (
             <Image
-              src={`/api/files/${settings.logoFileId}`}
+              src={resolveLogoUrl(settings.logoFileId)!}
               alt={settings.companyName}
               width={400}
               height={140}

@@ -11,10 +11,16 @@ import { useEffect, type RefObject } from "react";
  * alone — it already has its own momentum.
  */
 
-const STIFFNESS = 120;
+/**
+ * Stiff enough to keep up with the wheel — the spring is here to smooth the
+ * steps between notches, not to add a delay.
+ */
+const STIFFNESS = 620;
 const DAMPING = 2 * Math.sqrt(STIFFNESS); // critically damped: no overshoot
-const LINE_HEIGHT = 18;
-const PAGE_HEIGHT = 420;
+const LINE_HEIGHT = 40;
+const PAGE_HEIGHT = 800;
+/** How far one wheel notch travels. */
+const WHEEL_GAIN = 2.6;
 
 type Axis = { target: number; current: number; velocity: number };
 
@@ -32,7 +38,14 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
 
     let frame: number | null = null;
     let lastTime = 0;
-    let driving = false;
+    /**
+     * Scroll events fire asynchronously, so a plain "we are driving" flag is
+     * already false by the time the event for our own write arrives — which
+     * used to reset the target mid-glide and make every scroll stutter to a
+     * halt. Comparing against the last value written tells the two apart.
+     */
+    let writtenY = -1;
+    let writtenX = -1;
 
     const maxY = () => Math.max(0, element.scrollHeight - element.clientHeight);
     const maxX = () => Math.max(0, element.scrollWidth - element.clientWidth);
@@ -42,7 +55,7 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
       const displacement = axis.target - axis.current;
       axis.velocity += (displacement * STIFFNESS - axis.velocity * DAMPING) * dt;
       axis.current += axis.velocity * dt;
-      const settled = Math.abs(displacement) < 0.4 && Math.abs(axis.velocity) < 4;
+      const settled = Math.abs(displacement) < 0.3 && Math.abs(axis.velocity) < 6;
       if (settled) {
         axis.current = axis.target;
         axis.velocity = 0;
@@ -58,10 +71,11 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
       const doneY = step(y, dt);
       const doneX = step(x, dt);
 
-      driving = true;
-      element.scrollTop = y.current;
-      element.scrollLeft = x.current;
-      driving = false;
+      // Whole pixels only — fractional scroll offsets read as a shimmer.
+      element.scrollTop = Math.round(y.current);
+      element.scrollLeft = Math.round(x.current);
+      writtenY = element.scrollTop;
+      writtenX = element.scrollLeft;
 
       if (doneY && doneX) {
         frame = null;
@@ -80,8 +94,8 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
       if (event.ctrlKey) return; // pinch-zoom
       const scale =
         event.deltaMode === 1 ? LINE_HEIGHT : event.deltaMode === 2 ? PAGE_HEIGHT : 1;
-      const dy = event.deltaY * scale;
-      const dx = event.deltaX * scale;
+      const dy = event.deltaY * scale * WHEEL_GAIN;
+      const dx = event.deltaX * scale * WHEEL_GAIN;
 
       const canScrollY = maxY() > 0 && dy !== 0;
       const canScrollX = maxX() > 0 && dx !== 0;
@@ -95,10 +109,18 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
 
     /** Keep the target honest when something else moves the scroller. */
     function onScroll() {
-      if (driving) return;
-      y.target = y.current = element.scrollTop;
-      x.target = x.current = element.scrollLeft;
-      y.velocity = x.velocity = 0;
+      const movedY = Math.abs(element.scrollTop - writtenY) > 1;
+      const movedX = Math.abs(element.scrollLeft - writtenX) > 1;
+      if (!movedY && !movedX) return; // our own write coming back to us
+
+      if (movedY) {
+        y.target = y.current = element.scrollTop;
+        y.velocity = 0;
+      }
+      if (movedX) {
+        x.target = x.current = element.scrollLeft;
+        x.velocity = 0;
+      }
     }
 
     element.addEventListener("wheel", onWheel, { passive: false });
@@ -119,7 +141,7 @@ export function useSpringScroll(ref: RefObject<HTMLElement | null>) {
 export function easeIntoView(
   scroller: HTMLElement,
   element: HTMLElement,
-  duration = 650,
+  duration = 420,
 ) {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const scrollerBox = scroller.getBoundingClientRect();

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { SESSION_COOKIE, usingDefaultPassword, verifySessionToken } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
+import { resolveLogoUrl } from "@/lib/brandLogo";
 import { BrandStyle } from "@/components/BrandStyle";
 import { Gateway } from "./Gateway";
 
@@ -24,7 +25,7 @@ export default async function EntryPage() {
         <Gateway
           authed={authed}
           companyName={settings?.companyName ?? "OptiLink"}
-          logoUrl={settings?.logoFileId ? `/api/files/${settings.logoFileId}` : null}
+          logoUrl={resolveLogoUrl(settings?.logoFileId)}
           defaultPassword={usingDefaultPassword()}
         />
       </Suspense>

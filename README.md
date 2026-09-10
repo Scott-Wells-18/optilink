@@ -20,10 +20,13 @@ The password is one shared office password, set as an environment variable.
 Until `APP_PASSWORD` is set it falls back to **`123`** and says so on screen, so
 a fresh deploy can be opened before it is configured.
 
-**A hub you drill into.** Thermal, RCD, B&A and Clients sit as boxes down the
-left. Press one and its branches open to the right with a left-to-right wipe,
-joined by connector lines; press again to close it and step back. Scrolling
-eases in and eases out rather than snapping.
+**A hub you drill into.** Thermal, RCD, B&A and Clients sit centred on a white
+page. Press one and the tree slides aside, then that section's branches draw in
+to the right — across and downward from the card you pressed, never upward. The
+sections themselves never move: branches are laid out so they add width but no
+height, so whatever is above and below stays exactly where it was. Everything
+off the chosen path fades to grey. Press a card again to close it and step
+back.
 
 The branches under each section are placeholders for now — three options, each
 with two, each of those with one — so the shape can be judged before the real
@@ -102,11 +105,15 @@ stay valid until they expire — to sign everyone out immediately, change
 
 ### The logo
 
-The OptiLink lockup is built into the app as SVG — sign-in screen, header,
-sidebar and the cover of every report — so nothing has to be uploaded and it
-stays sharp at any size. `public/brand/optilink-mark.svg` is the standalone
-file. Uploading artwork under **Settings → Branding** replaces it everywhere if
-you would rather use the original file.
+The OptiLink lockup is drawn by the app itself — sign-in screen, header, sidebar
+and the cover of every report — so it is always there with nothing to set up.
+
+To use the original artwork instead, either:
+
+- drop the file into `public/brand/` named `logo.png` (or `.svg` / `.webp` /
+  `.jpg`) — on GitHub, **Add file → Upload files** into that folder is enough,
+  and Railway redeploys itself; or
+- upload it under **Settings → Branding** in the app, which takes precedence.
 
 Inter and Poppins are self-hosted from `public/fonts`, so the build never
 reaches out to a font CDN and the type renders the same on every machine.

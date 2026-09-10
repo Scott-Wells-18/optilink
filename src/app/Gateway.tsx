@@ -71,8 +71,6 @@ export function Gateway({
       data-instant={instant ? "true" : undefined}
     >
       <div className="gate-surface" aria-hidden />
-      <div className="gate-grid" aria-hidden />
-      <div className="gate-grain" aria-hidden />
 
       <div className="gate-brandbar">
         <div className="gate-brand">{brand}</div>

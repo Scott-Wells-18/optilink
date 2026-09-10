@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/settings";
 import { BrandStyle } from "@/components/BrandStyle";
 import { NavLinks } from "@/components/NavLinks";
 import { Logo } from "@/components/Logo";
+import { resolveLogoUrl } from "@/lib/brandLogo";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const settings = await getSettings();
-  const logoUrl = settings.logoFileId ? `/api/files/${settings.logoFileId}` : null;
+  const logoUrl = resolveLogoUrl(settings.logoFileId);
 
   return (
     <>

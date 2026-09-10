@@ -25,6 +25,8 @@ import { easeIntoView } from "@/lib/useSpringScroll";
  */
 
 const REVEAL_MS = 560;
+/** The tree slides aside first; branches start drawing part-way through. */
+const SLIDE_LEAD_MS = 220;
 const FLIP_MS = 700;
 const FLIP_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -127,7 +129,7 @@ export function TreeNav({
 
   return (
     <TreeContext.Provider value={{ openPath, toggle, register, scrollerRef }}>
-      <div className="tree-root">
+      <div className={`tree-root ${openPath.length === 0 ? "is-idle" : "is-engaged"}`}>
         {nodes.map((node, index) => (
           <div className="tree-row" key={node.id}>
             <Branch node={node} depth={0} index={index} parentId={null} onPath />
@@ -186,8 +188,8 @@ function Branch({
   useEffect(() => {
     if (isOpen) {
       setKeepOpen(true);
-      const raf = requestAnimationFrame(() => setRevealed(true));
-      return () => cancelAnimationFrame(raf);
+      const timer = setTimeout(() => setRevealed(true), SLIDE_LEAD_MS);
+      return () => clearTimeout(timer);
     }
     setRevealed(false);
     const timer = setTimeout(() => setKeepOpen(false), REVEAL_MS);
