@@ -18,8 +18,21 @@ sections themselves never move: branches take up width but no height, so
 whatever is above and below stays exactly where it was. Everything off the
 chosen path fades to grey. Press a card again to close it and step back.
 
-The branches under each section are placeholders — three options, each with
-two, each with one — waiting on the real steps.
+**Clients** is real and saved to the database, three levels deep:
+
+- **Clients** — every client you have added, then a grey **Add new** tile.
+  Press it and a pop-up asks for the client name.
+- **Sites** — open a client to see its sites, then **Add new** for site name
+  and location.
+- **Contacts** — open a site to see its managers and contacts, then **Add new**
+  for name, contact number and email.
+
+Added rows are solid and openable; the **Add new** tiles stay grey and always
+sit at the bottom of their list. Hovering a row you added shows a small × to
+remove it — removing a client takes its sites and contacts with it.
+
+Thermal, RCD and B&A are still placeholders — three options, each with two,
+each with one — waiting on the real steps.
 
 ## The logo
 
@@ -69,7 +82,7 @@ the old second dashboard. Everything below is intact and ready to be wired into
 the hub:
 
 ```
-prisma/schema.prisma          Clients, reports, findings, RCD tests, photos
+prisma/schema.prisma          Clients, sites, contacts, reports, findings, RCD tests
 src/lib/standards/rcd.ts      AS/NZS 3017 trip-time limits and pass/fail logic
 src/lib/standards/thermal.ts  ΔT severity bands and the plain-English wording
 src/lib/report.ts             Priority actions, overall risk, drafted summaries
@@ -88,6 +101,8 @@ src/app/Gateway.tsx           The sign-in-to-hub transition
 src/components/TreeNav.tsx    The branching navigation and its connectors
 src/lib/navTree.ts            What sits under each section
 src/lib/useSpringScroll.ts    Smooth scrolling
+src/lib/useClientsTree.ts     Clients/sites/contacts, loaded and edited
+src/components/AddDialog.tsx  The "add new" pop-up
 ```
 
 ## Standards note

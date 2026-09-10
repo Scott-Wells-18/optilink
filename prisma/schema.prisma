@@ -93,8 +93,40 @@ model Client {
   updatedAt    DateTime @updatedAt
 
   reports Report[]
+  sites   Site[]
 
   @@index([name])
+}
+
+// A client can have any number of sites, and each site its own people.
+
+model Site {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts Contact[]
+
+  @@index([clientId])
+}
+
+model Contact {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  name      String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
 }
 
 // ---------------------------------------------------------------------------

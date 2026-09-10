@@ -203,7 +203,8 @@ function Branch({
   const siblingChosen = Boolean(openPath[depth]) && !isOpen;
   const dimmed = !onPath || siblingChosen;
 
-  const children = node.children ?? [];
+  const isAdd = Boolean(node.onActivate);
+  const children = isAdd ? [] : (node.children ?? []);
   const hasChildren = children.length > 0;
 
   /**
@@ -250,36 +251,63 @@ function Branch({
   const label = depth === 0 ? String(index + 1).padStart(2, "0") : String(index + 1);
   const links = useLinkGeometry(cardRef, kidsRef, mounted, children.length);
 
+  // The wrapper carries the same state as the card, so the remove control
+  // travels with it on hover and the two never separate.
+  const state = [
+    depth === 0 ? "is-section" : "",
+    isAdd ? "is-add" : "",
+    isOpen ? "is-open" : "",
+    !isAdd && !hasChildren ? "is-leaf" : "",
+    dimmed && !isAdd ? "is-dimmed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div className="tree-branch" ref={rowRef}>
-        <button
-          type="button"
-          ref={cardRef}
-          className={[
-            "tree-node",
-            depth === 0 ? "is-section" : "",
-            isOpen ? "is-open" : "",
-            hasChildren ? "" : "is-leaf",
-            dimmed ? "is-dimmed" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={() => hasChildren && toggle(depth, node.id)}
-          aria-expanded={hasChildren ? isOpen : undefined}
-        >
-          <span className="tree-node-index">{label}</span>
-          <span className="tree-node-body">
-            <span className="tree-node-label">{node.label}</span>
-            {node.detail ? <span className="tree-node-detail">{node.detail}</span> : null}
-          </span>
-          {hasChildren ? (
-            <span className="tree-node-chevron" aria-hidden>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+        <div className={`tree-card-wrap ${state}`}>
+          <button
+            type="button"
+            ref={cardRef}
+            className={`tree-node ${state}`}
+            onClick={() => {
+              if (isAdd) node.onActivate?.();
+              else if (hasChildren) toggle(depth, node.id);
+            }}
+            aria-expanded={hasChildren ? isOpen : undefined}
+          >
+            <span className="tree-node-index" aria-hidden>
+              {isAdd ? "+" : label}
             </span>
+            <span className="tree-node-body">
+              <span className="tree-node-label">{node.label}</span>
+              {node.detail ? <span className="tree-node-detail">{node.detail}</span> : null}
+            </span>
+            {hasChildren ? (
+              <span className="tree-node-chevron" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            ) : null}
+          </button>
+
+          {node.onRemove ? (
+            <button
+              type="button"
+              className="tree-remove"
+              aria-label={`Remove ${node.label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                node.onRemove?.();
+              }}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                <path d="m4.5 4.5 7 7m0-7-7 7" strokeLinecap="round" />
+              </svg>
+            </button>
           ) : null}
-        </button>
+        </div>
 
         {hasChildren && mounted ? (
           <div

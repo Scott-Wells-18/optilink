@@ -1,0 +1,17 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { serverError } from "@/lib/api";
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  try {
+    // Contacts under the site go with it.
+    await prisma.site.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return serverError(error, "The site could not be removed.");
+  }
+}

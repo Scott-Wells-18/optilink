@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { TreeNav } from "@/components/TreeNav";
 import { SECTIONS } from "@/lib/navTree";
+import { useClientsTree } from "@/lib/useClientsTree";
+import { AddDialog } from "@/components/AddDialog";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 
 /**
@@ -31,8 +33,18 @@ export function Gateway({
   // Someone arriving already signed in should not watch the animation replay.
   const [instant, setInstant] = useState(authed);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const clients = useClientsTree(open);
 
   useSpringScroll(scrollerRef);
+
+  // Clients comes from the database; the other sections are still placeholders.
+  const sections = useMemo(
+    () =>
+      SECTIONS.map((section) =>
+        section.id === "clients" ? { ...section, children: clients.nodes } : section,
+      ),
+    [clients.nodes],
+  );
 
   useEffect(() => {
     if (!instant) return;
@@ -81,9 +93,17 @@ export function Gateway({
 
       <main className="gate-hub" ref={scrollerRef} aria-hidden={!open}>
         <div className="gate-hub-inner">
-          <TreeNav nodes={SECTIONS} scrollerRef={scrollerRef} />
+          <TreeNav nodes={sections} scrollerRef={scrollerRef} />
         </div>
       </main>
+
+      {open && clients.dialog ? (
+        <AddDialog
+          spec={clients.dialog}
+          onClose={clients.closeDialog}
+          onSubmit={clients.submit}
+        />
+      ) : null}
 
       <nav className="gate-exits" aria-hidden={!open}>
         <form action="/api/auth/logout" method="post">

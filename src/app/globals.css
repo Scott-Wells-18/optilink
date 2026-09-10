@@ -767,15 +767,30 @@ body {
   border-radius: 18px;
 }
 
-.tree-node:hover:not(.is-leaf):not(.is-dimmed) {
+.tree-card-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  transition: transform 420ms var(--ease-out);
+}
+
+.tree-card-wrap:hover:not(.is-leaf):not(.is-dimmed) {
   transform: translateX(4px);
+}
+
+.tree-card-wrap:hover:not(.is-leaf):not(.is-dimmed) > .tree-node {
   border-color: rgba(27, 155, 216, 0.3);
   box-shadow: var(--shadow-lift);
 }
 
-.tree-node:hover:not(.is-leaf):not(.is-dimmed)::before {
+.tree-card-wrap:hover:not(.is-leaf):not(.is-dimmed) > .tree-node::before {
   opacity: 0.4;
   transform: scaleY(0.8);
+}
+
+.tree-card-wrap.is-dimmed:hover > .tree-node {
+  opacity: 0.72;
+  filter: grayscale(0.4);
 }
 
 .tree-node.is-open {
@@ -798,17 +813,92 @@ body {
   cursor: pointer;
 }
 
-.tree-node.is-dimmed:hover {
-  opacity: 0.72;
-  filter: grayscale(0.4);
-}
-
 .tree-node.is-leaf {
   cursor: default;
   background: linear-gradient(168deg, #ffffff 0%, #f7fafc 100%);
   border-style: dashed;
   border-color: var(--hair-strong);
   box-shadow: 0 1px 1px rgba(10, 35, 60, 0.03);
+}
+
+/* "Add new" tiles stay grey — they are the way in, not a real entry. */
+.tree-node.is-add {
+  background: rgba(248, 250, 252, 0.9);
+  border-style: dashed;
+  border-color: var(--hair-strong);
+  box-shadow: none;
+  color: var(--ink-3);
+}
+
+.tree-node.is-add .tree-node-label {
+  color: var(--ink-3);
+  font-weight: 560;
+}
+
+.tree-node.is-add .tree-node-detail {
+  color: var(--ink-4);
+}
+
+.tree-node.is-add .tree-node-index {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ink-4);
+}
+
+.tree-card-wrap.is-add:hover > .tree-node {
+  border-style: solid;
+  border-color: rgba(27, 155, 216, 0.4);
+  background: #fff;
+  box-shadow: var(--shadow-rest);
+  color: var(--ink);
+}
+
+.tree-card-wrap.is-add:hover > .tree-node .tree-node-label,
+.tree-card-wrap.is-add:hover > .tree-node .tree-node-index {
+  color: var(--accent);
+}
+
+.tree-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  box-shadow: var(--shadow-rest);
+  transition:
+    opacity 240ms var(--ease-soft),
+    transform 300ms var(--ease-out),
+    color 240ms var(--ease-soft),
+    border-color 240ms var(--ease-soft);
+}
+
+.tree-remove svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tree-card-wrap:hover > .tree-remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tree-remove:hover {
+  color: #c0272d;
+  border-color: rgba(192, 39, 45, 0.45);
+}
+
+.tree-card-wrap.is-dimmed > .tree-remove {
+  display: none;
 }
 
 .tree-node:focus-visible {
@@ -941,4 +1031,174 @@ body {
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
   }
+}
+
+/* ===========================================================================
+   Add-new dialog
+   =========================================================================== */
+
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: dialog-in 240ms var(--ease-soft);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog-scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  cursor: default;
+  background: rgba(12, 31, 51, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.dialog {
+  position: relative;
+  width: min(400px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 26px 26px 22px;
+  border: 1px solid var(--hair);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow:
+    0 2px 4px rgba(10, 35, 60, 0.05),
+    0 18px 36px -12px rgba(10, 35, 60, 0.22),
+    0 48px 80px -40px rgba(10, 35, 60, 0.4);
+  animation: dialog-rise 340ms var(--ease-out);
+}
+
+@keyframes dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+.dialog-title {
+  font-family: var(--font-brand);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialog-field {
+  display: block;
+}
+
+.dialog-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.dialog-label em {
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--ink-4);
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 11px 14px;
+  font-family: var(--font-app);
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  outline: none;
+  transition:
+    border-color 260ms var(--ease-soft),
+    box-shadow 280ms var(--ease-soft);
+}
+
+.dialog-input::placeholder {
+  color: var(--ink-4);
+}
+
+.dialog-input:focus {
+  border-color: rgba(27, 155, 216, 0.5);
+  box-shadow: 0 0 0 3px rgba(27, 155, 216, 0.12);
+}
+
+.dialog-error {
+  font-size: 12.5px;
+  color: #b62a30;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-cancel,
+.dialog-confirm {
+  padding: 10px 18px;
+  border-radius: 11px;
+  font-family: var(--font-app);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 240ms var(--ease-soft),
+    box-shadow 260ms var(--ease-soft),
+    opacity 220ms var(--ease-soft);
+}
+
+.dialog-cancel {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink-3);
+}
+
+.dialog-cancel:hover {
+  border-color: var(--hair);
+  background: rgba(11, 42, 68, 0.03);
+  color: var(--ink);
+}
+
+.dialog-confirm {
+  border: none;
+  color: #fff;
+  background: linear-gradient(140deg, #29a6de, #14528f);
+  box-shadow: 0 6px 16px -6px rgba(18, 79, 136, 0.7);
+}
+
+.dialog-confirm:hover:not(:disabled) {
+  box-shadow: 0 10px 22px -6px rgba(18, 79, 136, 0.8);
+}
+
+.dialog-confirm:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+  background: #9fb3c2;
+  box-shadow: none;
 }
