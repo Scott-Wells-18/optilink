@@ -13,6 +13,7 @@ import {
   withRows,
   type Board,
   type CellState,
+  type Numbering,
 } from "@/lib/board";
 
 /**
@@ -65,7 +66,8 @@ export function BoardEditor({
   function cycleExtra(index: number) {
     setBoard((current) => {
       const extras = [...current.extras];
-      extras[index] = { ...extras[index], state: nextState(extras[index].state) };
+      // Contactors only exist out here, so this cycle has the extra stop.
+      extras[index] = { ...extras[index], state: nextState(extras[index].state, true) };
       return { ...current, extras };
     });
   }
@@ -111,7 +113,14 @@ export function BoardEditor({
               aria-label="Board name"
             />
           </div>
-          <Legend />
+          <div className="board-head-side">
+            <NumberingPicker
+              value={board.numbering}
+              rows={board.rows}
+              onChange={(numbering) => setBoard((current) => ({ ...current, numbering }))}
+            />
+            <Legend />
+          </div>
         </header>
 
         <div className="board-body">
@@ -314,8 +323,40 @@ function Cell({
   );
 }
 
+function NumberingPicker({
+  value,
+  rows,
+  onChange,
+}: {
+  value: Numbering;
+  rows: number;
+  onChange: (value: Numbering) => void;
+}) {
+  const options: Array<{ key: Numbering; label: string }> = [
+    { key: "SEQUENTIAL", label: `1–${rows}, ${rows + 1}–${rows * COLUMNS}` },
+    { key: "ODD_EVEN", label: "1, 3, 5 / 2, 4, 6" },
+  ];
+  return (
+    <div className="board-numbering">
+      <span className="board-numbering-label">Numbering</span>
+      <div className="board-numbering-options">
+        {options.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            className={`board-numbering-option ${value === option.key ? "is-on" : ""}`}
+            onClick={() => onChange(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Legend() {
-  const states: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD"];
+  const states: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "CONTACTOR"];
   return (
     <ul className="board-legend">
       {states.map((state) => (

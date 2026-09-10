@@ -9,7 +9,7 @@ export function ChooseKindDialog({
   onClose,
 }: {
   siteName: string;
-  onChoose: (kind: "SWITCHBOARD" | "APPLIANCE") => void;
+  onChoose: (kind: "SWITCHBOARD" | "APPLIANCE" | "MOTOR") => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -50,6 +50,17 @@ export function ChooseKindDialog({
             </svg>
             <span className="chooser-label">Appliance</span>
             <span className="chooser-note">A name and a description</span>
+          </button>
+
+          <button type="button" className="chooser-option" onClick={() => onChoose("MOTOR")}>
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden>
+              <rect x="6.5" y="12.5" width="21" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M27.5 17.5h4a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M11 12.5V10m6 2.5V10m6 2.5V10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              <circle cx="17" cy="20" r="3.5" stroke="currentColor" strokeWidth="1.6" />
+            </svg>
+            <span className="chooser-label">Motor</span>
+            <span className="chooser-note">Name, description, circuit loading</span>
           </button>
         </div>
 

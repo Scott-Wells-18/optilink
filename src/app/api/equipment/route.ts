@@ -10,19 +10,24 @@ export async function POST(request: Request) {
       kind?: string;
       name?: string;
       description?: string;
+      circuitLoading?: string;
       board?: unknown;
     };
     if (!body.siteId) return badRequest("Which site is this at?");
     if (!body.name?.trim()) return badRequest("A name is required.");
 
-    const isBoard = body.kind === "SWITCHBOARD";
+    const kind =
+      body.kind === "SWITCHBOARD" || body.kind === "MOTOR" ? body.kind : "APPLIANCE";
+    const isBoard = kind === "SWITCHBOARD";
 
     const equipment = await prisma.equipment.create({
       data: {
         siteId: body.siteId,
-        kind: isBoard ? "SWITCHBOARD" : "APPLIANCE",
+        kind,
         name: body.name.trim().slice(0, 180),
         description: isBoard ? null : body.description?.trim().slice(0, 4000) || null,
+        circuitLoading:
+          kind === "MOTOR" ? body.circuitLoading?.trim().slice(0, 80) || null : null,
         board: isBoard ? normaliseBoard(body.board) : undefined,
       },
     });

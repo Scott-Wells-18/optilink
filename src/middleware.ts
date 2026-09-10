@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
+import { siteUrl } from "@/lib/siteUrl";
 
 /** Reachable without signing in. "/" is the sign-in screen itself. */
-const PUBLIC_PATHS = ["/", "/api/auth/login", "/api/health"];
+const PUBLIC_PATHS = ["/", "/api/auth/login", "/api/auth/logout", "/api/health"];
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -18,7 +19,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const loginUrl = new URL("/", request.url);
+  const loginUrl = siteUrl(request, "/");
   loginUrl.searchParams.set("next", `${pathname}${search}`);
   return NextResponse.redirect(loginUrl);
 }

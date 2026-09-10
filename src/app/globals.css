@@ -375,8 +375,9 @@ body {
   position: relative;
   z-index: 20;
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding-top: min(34vh, 290px);
+  min-height: 100dvh;
   transition:
     opacity 460ms var(--ease-soft),
     transform 720ms var(--ease-out),
@@ -1238,13 +1239,19 @@ body {
    =========================================================================== */
 
 .dialog.is-chooser {
-  width: min(460px, 92vw);
+  width: min(600px, 94vw);
 }
 
 .chooser-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .chooser-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .chooser-option {
@@ -1649,4 +1656,184 @@ body {
   padding: 16px 24px 18px;
   border-top: 1px solid var(--hair);
   background: #fcfdfe;
+}
+
+.board-head-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.board-numbering {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-numbering-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.board-numbering-options {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.board-numbering-option {
+  padding: 4px 9px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background 200ms var(--ease-soft), color 200ms var(--ease-soft);
+}
+
+.board-numbering-option.is-on {
+  background: var(--accent-deep);
+  color: #fff;
+}
+
+.board-swatch.is-contactor,
+.board-cell.is-contactor {
+  background: #cf2f36;
+  border-color: #cf2f36;
+}
+
+.board-cell.is-contactor {
+  color: #fff;
+}
+
+.board-cell.is-contactor .board-cell-no {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.board-cell.is-contactor .board-cell-text.is-blank {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.board-cell.is-contactor .board-cell-edit {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* --- read-only board, for pinning thermal photos --------------------------- */
+
+.board.is-viewer .board-cell {
+  cursor: default;
+}
+
+.board-cell.is-selectable {
+  cursor: pointer;
+}
+
+.board-cell.is-locked {
+  opacity: 0.5;
+}
+
+.board-cell.is-picked {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.board-cell-count {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.board-cell.is-empty .board-cell-count,
+.board-cell.is-blank .board-cell-count {
+  background: rgba(11, 42, 68, 0.1);
+}
+
+.board-picked {
+  padding: 16px 24px;
+  border-top: 1px solid var(--hair);
+  background: #f7fafc;
+}
+
+.board-picked-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.board-picked-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.board-picked-kind {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.board-upload {
+  cursor: pointer;
+}
+
+.board-picked-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.board-photo {
+  position: relative;
+  width: 132px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--hair-strong);
+  background: #fff;
+}
+
+.board-photo img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+}
+
+.board-photo-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: #b62a30;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-rest);
 }

@@ -28,6 +28,7 @@ chosen path fades to grey. Press a card again to close it and step back.
   first asks whether it is a **switchboard** or an **appliance**.
   - An *appliance* takes a name and a description. The description is hidden in
     the tree; click the row to read it.
+  - A *motor* takes a name, a description and an optional circuit loading.
   - A *switchboard* opens the board editor (below). Click the row later to open
     it again and change anything.
 
@@ -43,13 +44,19 @@ its sites and equipment with it.
 thirty positions. Add or remove rows for bigger and smaller boards; a row is a
 pair, so five more rows takes thirty to forty. Clicking a position walks it
 through **nothing → blank → breaker → RCD** and back around. The pencil on each
-position names that circuit. Above the grid is a strip for **additional RCDs** —
-the ones beside the board or up by the main switch — each a single position with
-the same click behaviour. Save and exit files it against the site.
+position names that circuit. Numbering switches between running down the columns
+(1–15 then 16–30) and odds down the left with evens down the right.
 
-**Thermal** lists only switchboards, walked through client → site → board.
-Appliances never appear there, and nothing is added from that side — boards are
-created under Clients.
+Above the grid is a strip for anything sitting outside it — the RCDs beside the
+board or up by the main switch. Those positions carry one extra stop in the
+cycle, **contactor**, which the grid does not have. Save and exit files it
+against the site.
+
+**Thermal** walks client → site, then lists switchboards and motors — never
+appliances — and nothing is added from that side. Opening a switchboard shows
+the board read-only. Any position carrying a device (breaker, RCD or contactor)
+can be picked and photographed; blanks and empty ways cannot. Photos are pinned
+to that position.
 
 RCD and B&A are still placeholders — three options, each with two, each with
 one — waiting on the real steps.
@@ -124,6 +131,8 @@ src/lib/useSpringScroll.ts    Smooth scrolling
 src/lib/useClientsTree.ts     Clients/sites/equipment, loaded and edited
 src/lib/board.ts              The switchboard model and its click cycle
 src/components/BoardEditor.tsx    Drawing a switchboard
+src/components/BoardViewer.tsx    The read-only board, for thermal photos
+src/lib/siteUrl.ts            Redirect targets that survive a proxy
 src/components/AddDialog.tsx  The "add new" pop-up
 src/components/InfoDialog.tsx The panel that reveals a description
 ```

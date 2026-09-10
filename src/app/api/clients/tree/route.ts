@@ -22,6 +22,7 @@ export async function GET() {
               kind: true,
               name: true,
               description: true,
+              circuitLoading: true,
               board: true,
             },
           },

@@ -11,6 +11,7 @@ import { AddDialog } from "@/components/AddDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { ChooseKindDialog } from "@/components/ChooseKindDialog";
 import { BoardEditor } from "@/components/BoardEditor";
+import { BoardViewer } from "@/components/BoardViewer";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 
 /**
@@ -119,6 +120,15 @@ export function Gateway({
           siteName={clients.chooser.siteName}
           onChoose={clients.chooseKind}
           onClose={clients.closeChooser}
+        />
+      ) : null}
+
+      {open && clients.viewer ? (
+        <BoardViewer
+          equipmentId={clients.viewer.equipmentId}
+          name={clients.viewer.name}
+          board={clients.viewer.board}
+          onClose={clients.closeViewer}
         />
       ) : null}
 

@@ -10,11 +10,14 @@ import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/bo
  * still opens to somewhere useful.
  */
 
+export type EquipmentKind = "SWITCHBOARD" | "APPLIANCE" | "MOTOR";
+
 type EquipmentRecord = {
   id: string;
-  kind: "SWITCHBOARD" | "APPLIANCE";
+  kind: EquipmentKind;
   name: string;
   description: string | null;
+  circuitLoading: string | null;
   board: unknown;
 };
 
@@ -53,6 +56,9 @@ export type InfoSpec = { title: string; body: string | null };
 export type ChooserSpec = { siteId: string; siteName: string };
 
 /** Opening the switchboard editor, either on a new board or an existing one. */
+/** Read-only board, opened from Thermal to pin photos to positions. */
+export type ViewerSpec = { equipmentId: string; name: string; board: Board };
+
 export type BoardSpec = {
   title: string;
   name: string;
@@ -68,6 +74,7 @@ export function useClientsTree(enabled: boolean) {
   const [info, setInfo] = useState<InfoSpec | null>(null);
   const [chooser, setChooser] = useState<ChooserSpec | null>(null);
   const [boardEditor, setBoardEditor] = useState<BoardSpec | null>(null);
+  const [viewer, setViewer] = useState<ViewerSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -134,7 +141,7 @@ export function useClientsTree(enabled: boolean) {
                 equipmentId: item.id,
                 siteId: site.id,
               })
-            : setInfo({ title: item.name, body: item.description }),
+            : setInfo({ title: item.name, body: describeItem(item) }),
         onRemove: () => void remove(`/api/equipment/${item.id}`, item.name),
       };
     },
@@ -143,7 +150,7 @@ export function useClientsTree(enabled: boolean) {
 
   /** Picked from the chooser: appliances go to a form, boards to the editor. */
   const chooseKind = useCallback(
-    (kind: "SWITCHBOARD" | "APPLIANCE") => {
+    (kind: EquipmentKind) => {
       const site = chooser;
       setChooser(null);
       if (!site) return;
@@ -158,19 +165,36 @@ export function useClientsTree(enabled: boolean) {
         return;
       }
 
+      const isMotor = kind === "MOTOR";
       setDialog({
-        title: `Add an appliance at ${site.siteName}`,
-        submitLabel: "Add appliance",
+        title: isMotor
+          ? `Add a motor at ${site.siteName}`
+          : `Add an appliance at ${site.siteName}`,
+        submitLabel: isMotor ? "Add motor" : "Add appliance",
         endpoint: "/api/equipment",
-        extra: { siteId: site.siteId, kind: "APPLIANCE" },
+        extra: { siteId: site.siteId, kind },
         fields: [
-          { name: "name", label: "Name", required: true, placeholder: "e.g. Rooftop AC unit" },
+          {
+            name: "name",
+            label: "Name",
+            required: true,
+            placeholder: isMotor ? "e.g. Supply air fan 1" : "e.g. Rooftop AC unit",
+          },
           {
             name: "description",
             label: "Description",
             multiline: true,
             placeholder: "Anything worth remembering — only shown when this is opened.",
           },
+          ...(isMotor
+            ? [
+                {
+                  name: "circuitLoading",
+                  label: "Circuit loading",
+                  placeholder: "e.g. 32 A, or 18.5 kW",
+                },
+              ]
+            : []),
         ],
       });
     },
@@ -274,8 +298,8 @@ export function useClientsTree(enabled: boolean) {
   }, [clients, remove, equipmentNode]);
 
   /**
-   * Thermal works off boards only — appliances never appear here, and nothing
-   * is added from this side.
+   * Thermal works off boards and motors — appliances never appear here, and
+   * nothing is added from this side. Boards open read-only, for pinning photos.
    */
   const thermalNodes = useMemo<TreeNode[]>(
     () =>
@@ -285,25 +309,31 @@ export function useClientsTree(enabled: boolean) {
           label: client.name,
           detail: countLabel(
             client.sites.reduce(
-              (total, site) =>
-                total + site.equipment.filter((item) => item.kind === "SWITCHBOARD").length,
+              (total, site) => total + site.equipment.filter(inThermal).length,
               0,
             ),
-            "board",
-            "boards",
+            "item",
+            "items",
           ),
           children: client.sites
             .map<TreeNode>((site) => ({
               id: `thermal:site:${site.id}`,
               label: site.name,
               detail: site.location?.trim() || undefined,
-              children: site.equipment
-                .filter((item) => item.kind === "SWITCHBOARD")
-                .map((item) => ({
-                  ...equipmentNode(item, site),
-                  id: `thermal:equipment:${item.id}`,
-                  onRemove: undefined,
-                })),
+              children: site.equipment.filter(inThermal).map((item) => ({
+                ...equipmentNode(item, site),
+                id: `thermal:equipment:${item.id}`,
+                onRemove: undefined,
+                onActivate:
+                  item.kind === "SWITCHBOARD"
+                    ? () =>
+                        setViewer({
+                          equipmentId: item.id,
+                          name: item.name,
+                          board: normaliseBoard(item.board),
+                        })
+                    : () => setInfo({ title: item.name, body: describeItem(item) }),
+              })),
             }))
             .filter((site) => (site.children?.length ?? 0) > 0),
         }))
@@ -324,6 +354,8 @@ export function useClientsTree(enabled: boolean) {
     boardEditor,
     closeBoardEditor: () => setBoardEditor(null),
     saveBoard,
+    viewer,
+    closeViewer: () => setViewer(null),
     submit,
     error,
   };
@@ -331,4 +363,18 @@ export function useClientsTree(enabled: boolean) {
 
 function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/** Boards and motors get thermal surveys; appliances do not. */
+function inThermal(item: EquipmentRecord): boolean {
+  return item.kind === "SWITCHBOARD" || item.kind === "MOTOR";
+}
+
+/** What the info panel shows for an appliance or a motor. */
+function describeItem(item: EquipmentRecord): string | null {
+  const parts = [item.description?.trim()].filter(Boolean) as string[];
+  if (item.circuitLoading?.trim()) {
+    parts.push(`Circuit loading: ${item.circuitLoading.trim()}`);
+  }
+  return parts.join("\n\n") || null;
 }

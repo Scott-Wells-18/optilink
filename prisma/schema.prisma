@@ -70,6 +70,7 @@ model UploadedFile {
   observationPhotos Observation[]
   settingsLogo      Settings[]       @relation("SettingsLogo")
   settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
+  boardPhotos       BoardPhoto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +119,7 @@ model Site {
 enum EquipmentKind {
   SWITCHBOARD
   APPLIANCE
+  MOTOR
 }
 
 model Equipment {
@@ -128,8 +130,11 @@ model Equipment {
   kind EquipmentKind @default(APPLIANCE)
   name String
 
-  /** Appliances only. Shown when the item is opened, to keep the tree short. */
+  /** Appliances and motors. Shown when opened, to keep the tree short. */
   description String?
+
+  /** Motors only, and optional even then — e.g. "32 A" or "18.5 kW". */
+  circuitLoading String?
 
   /**
    * Switchboards only — the drawn layout of the board: how many rows, what is
@@ -141,7 +146,27 @@ model Equipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  photos BoardPhoto[]
+
   @@index([siteId])
+}
+
+/** A photo pinned to one position on a board, taken during a thermal survey. */
+model BoardPhoto {
+  id          String    @id @default(cuid())
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  /** Which position it belongs to: "cell:12" or "extra:0". */
+  slot    String
+  caption String?
+
+  fileId String
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([equipmentId])
 }
 
 // ---------------------------------------------------------------------------
