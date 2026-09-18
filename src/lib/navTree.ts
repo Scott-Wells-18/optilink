@@ -59,7 +59,7 @@ export const SECTIONS: TreeNode[] = [
     id: "ba",
     label: "B&A",
     detail: "Before & after",
-    children: placeholderBranches("ba"),
+    children: [],
   },
   {
     id: "clients",

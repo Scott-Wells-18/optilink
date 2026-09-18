@@ -71,6 +71,7 @@ model UploadedFile {
   settingsLogo      Settings[]       @relation("SettingsLogo")
   settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
   issuePhotos       IssuePhoto[]
+  jobPhotos         JobPhoto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +115,7 @@ model Site {
   equipment   Equipment[]
   inspections Inspection[]
   contacts    Contact[]
+  jobs        Job[]
 
   @@index([clientId])
 }
@@ -277,6 +279,80 @@ model IssuePhoto {
   createdAt DateTime @default(now())
 
   @@index([issueId])
+}
+
+// ---------------------------------------------------------------------------
+// Before & after
+//
+// A day's work at a site, recorded so the client can see what was done. One
+// job holds several items, and an item is one discrete piece of work with its
+// photos: how it was found, optionally the work in progress, and how it was
+// left.
+// ---------------------------------------------------------------------------
+
+model Job {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** Optional — falls back to the date the work was done. */
+  name String?
+
+  /** The day the work was carried out. */
+  date DateTime @default(now()) @db.Date
+
+  /** Anything found but not put right, printed at the back of the report. */
+  recommendations String[]
+
+  createdAt DateTime @default(now())
+
+  items JobItem[]
+
+  @@index([siteId])
+}
+
+model JobItem {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  title    String
+  location String
+  /** How it was found. */
+  found String
+  /** What was done about it. */
+  done String
+
+  /** Hand-ordered within the job. */
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  photos JobPhoto[]
+
+  @@index([jobId])
+}
+
+enum JobPhotoStage {
+  BEFORE
+  DURING
+  AFTER
+}
+
+model JobPhoto {
+  id     String  @id @default(cuid())
+  itemId String
+  item   JobItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  stage JobPhotoStage
+
+  fileId String
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([itemId])
 }
 
 // ---------------------------------------------------------------------------

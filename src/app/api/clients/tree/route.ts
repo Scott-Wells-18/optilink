@@ -34,6 +34,25 @@ export async function GET() {
             orderBy: { createdAt: "asc" },
             select: { id: true, name: true, email: true, phone: true },
           },
+          jobs: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              name: true,
+              date: true,
+              items: {
+                orderBy: { position: "asc" },
+                select: {
+                  id: true,
+                  title: true,
+                  location: true,
+                  found: true,
+                  done: true,
+                  _count: { select: { photos: true } },
+                },
+              },
+            },
+          },
           inspections: {
             orderBy: { createdAt: "asc" },
             select: {

@@ -13,6 +13,7 @@ import { ChooseKindDialog } from "@/components/ChooseKindDialog";
 import { BoardEditor } from "@/components/BoardEditor";
 import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
+import { JobItemDialog } from "@/components/JobItemDialog";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 import { clearAllSession } from "@/lib/session";
@@ -50,9 +51,10 @@ export function Gateway({
       SECTIONS.map((section) => {
         if (section.id === "clients") return { ...section, children: clients.nodes };
         if (section.id === "thermal") return { ...section, children: clients.thermalNodes };
+        if (section.id === "ba") return { ...section, children: clients.baNodes };
         return section;
       }),
-    [clients.nodes, clients.thermalNodes],
+    [clients.nodes, clients.thermalNodes, clients.baNodes],
   );
 
   useEffect(() => {
@@ -147,6 +149,15 @@ export function Gateway({
           types={ITEM_ISSUE_TYPES}
           onCancel={clients.closeMotorIssue}
           onSaved={clients.closeMotorIssue}
+        />
+      ) : null}
+
+      {open && clients.jobItem ? (
+        <JobItemDialog
+          jobId={clients.jobItem.jobId}
+          jobTitle={clients.jobItem.jobTitle}
+          onCancel={clients.closeJobItem}
+          onSaved={clients.closeJobItem}
         />
       ) : null}
 

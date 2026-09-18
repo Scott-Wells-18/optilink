@@ -39,6 +39,23 @@ type InspectionRecord = {
   issues: IssueRecord[];
 };
 
+type JobItemRecord = {
+  id: string;
+  title: string;
+  location: string;
+  found: string;
+  done: string;
+  _count: { photos: number };
+};
+
+type JobRecord = {
+  id: string;
+  name: string | null;
+  /** The day the work was done, as an ISO date. */
+  date: string;
+  items: JobItemRecord[];
+};
+
 type SiteRecord = {
   id: string;
   name: string;
@@ -46,6 +63,7 @@ type SiteRecord = {
   equipment: EquipmentRecord[];
   contacts: Contact[];
   inspections: InspectionRecord[];
+  jobs: JobRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -90,6 +108,9 @@ export type ViewerSpec = {
   board: Board;
 };
 
+/** Adding one piece of work to a job. */
+export type JobItemSpec = { jobId: string; jobTitle: string };
+
 /** Reporting straight against a motor, which has no positions to pick from. */
 export type MotorIssueSpec = {
   inspectionId: string;
@@ -115,6 +136,7 @@ export function useClientsTree(enabled: boolean) {
   const [boardEditor, setBoardEditor] = usePersisted<BoardSpec | null>("editor", null);
   const [viewer, setViewer] = usePersisted<ViewerSpec | null>("viewer", null);
   const [motorIssue, setMotorIssue] = usePersisted<MotorIssueSpec | null>("motor", null);
+  const [jobItem, setJobItem] = usePersisted<JobItemSpec | null>("jobitem", null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -472,9 +494,118 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startInspection, setInspectionDate],
   );
 
+  const setJobDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/jobs/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Starting a job needs no form either — today's date names it. */
+  const startJob = useCallback(
+    async (siteId: string) => {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId }),
+      });
+      if (!response.ok) {
+        setError("The job could not be started.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /**
+   * Before & after walks client → site → job → the work done. A job is a day
+   * at a site; each item under it is one discrete piece of work, photographed
+   * as it was found and as it was left.
+   */
+  const baNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `ba:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() || countLabel(site.jobs.length, "job", "jobs"),
+            children: [
+              ...site.jobs.map<TreeNode>((job) => {
+                const title = jobTitle(job);
+                return {
+                  id: `job:${job.id}`,
+                  label: title,
+                  detail: countLabel(job.items.length, "item", "items"),
+                  editDate: {
+                    value: isoDate(job.date),
+                    onSave: (value) => void setJobDate(job.id, value),
+                  },
+                  onDownload: () => openInTab(`/api/jobs/${job.id}/report`),
+                  onRemove: () => void remove(`/api/jobs/${job.id}`, title),
+                  children: [
+                    ...job.items.map<TreeNode>((item) => ({
+                      id: `jobitem:${item.id}`,
+                      label: item.title,
+                      detail: `${item.location}  ·  ${countLabel(
+                        item._count.photos,
+                        "photo",
+                        "photos",
+                      )}`,
+                      variant: "info",
+                      onActivate: () =>
+                        setInfo({
+                          title: item.title,
+                          body: `${item.location}\n\nFound\n${item.found}\n\nDone\n${item.done}`,
+                        }),
+                      onRemove: () => void remove(`/api/job-items/${item.id}`, item.title),
+                    })),
+                    {
+                      id: `add:jobitem:${job.id}`,
+                      label: "Add new",
+                      detail: "Work done",
+                      variant: "add",
+                      onActivate: () => setJobItem({ jobId: job.id, jobTitle: title }),
+                    },
+                  ],
+                };
+              }),
+              {
+                id: `add:job:${site.id}`,
+                label: "Add new",
+                detail: "Job",
+                variant: "add",
+                onActivate: () => void startJob(site.id),
+              },
+            ],
+          }));
+
+          return {
+            id: `ba:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, remove, startJob, setJobDate, setJobItem, setInfo],
+  );
+
   return {
     nodes,
     thermalNodes,
+    baNodes,
     dialog,
     closeDialog: () => setDialog(null),
     info,
@@ -495,6 +626,11 @@ export function useClientsTree(enabled: boolean) {
       setMotorIssue(null);
       void refresh();
     },
+    jobItem,
+    closeJobItem: () => {
+      setJobItem(null);
+      void refresh();
+    },
     submit,
     error,
   };
@@ -505,7 +641,11 @@ export function useClientsTree(enabled: boolean) {
  * than the bytes — it saves it the same way it would any other download.
  */
 function downloadReport(inspectionId: string) {
-  window.open(`/api/inspections/${inspectionId}/report`, "_blank", "noopener");
+  openInTab(`/api/inspections/${inspectionId}/report`);
+}
+
+function openInTab(url: string) {
+  window.open(url, "_blank", "noopener");
 }
 
 const SITE_FIELDS: DialogField[] = [
@@ -540,6 +680,19 @@ function inspectionTitle(inspection: { name: string | null; date: string }): str
   return (
     inspection.name?.trim() ||
     new Date(inspection.date).toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    })
+  );
+}
+
+/** A job is named by hand, or else by the day the work was done. */
+function jobTitle(job: { name: string | null; date: string }): string {
+  return (
+    job.name?.trim() ||
+    new Date(job.date).toLocaleDateString("en-AU", {
       day: "numeric",
       month: "short",
       year: "numeric",
