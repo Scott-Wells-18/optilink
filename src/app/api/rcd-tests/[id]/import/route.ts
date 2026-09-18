@@ -4,7 +4,7 @@ import { badRequest, notFound, readJson, serverError } from "@/lib/api";
 import { readUpload } from "@/lib/storage";
 import { normaliseBoard } from "@/lib/board";
 import { parseRcdExport } from "@/lib/rcd/parse";
-import { crossCheck } from "@/lib/rcd/map";
+import { countRcdTests, crossCheck } from "@/lib/rcd/map";
 
 export const runtime = "nodejs";
 
@@ -40,14 +40,11 @@ export async function POST(
         })
       : null;
     const board = equipment ? normaliseBoard(equipment.board) : null;
-    const ways = board
-      ? board.sections.reduce((total, section) => total + section.cells.length, 0)
-      : 0;
 
     const mismatches = crossCheck(
       parsed,
       { name: run.site.name },
-      equipment ? { name: equipment.name, ways } : null,
+      equipment && board ? { name: equipment.name, tests: countRcdTests(board) } : null,
     );
 
     await prisma.rcdTestRun.update({
@@ -59,7 +56,12 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ parsed, mismatches });
+    // The operator reads the sentence; what disagrees with what is worked out
+    // again when the report is drawn, from the export that was just stored.
+    return NextResponse.json({
+      parsed,
+      mismatches: mismatches.map((mismatch) => mismatch.message),
+    });
   } catch (error) {
     return serverError(error, "That export could not be read.");
   }

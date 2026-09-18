@@ -1756,6 +1756,46 @@ body {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/*
+ * A three-phase RCD. Deeper than the single-phase green so the two read as the
+ * same family, with a marker on the cell because the difference matters: the
+ * instrument records three tests against it, one per phase.
+ */
+.board-swatch.is-rcd_3p,
+.board-cell.is-rcd_3p {
+  background: #07724d;
+  border-color: #07724d;
+}
+
+.board-cell.is-rcd_3p {
+  color: #fff;
+}
+
+.board-cell.is-rcd_3p .board-cell-no {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.board-cell.is-rcd_3p .board-cell-text.is-blank {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.board-cell.is-rcd_3p .board-cell-edit {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Bottom corner, clear of the ×2 tally that sits centred on the right. */
+.board-cell.is-rcd_3p::after {
+  content: "3ph";
+  position: absolute;
+  right: 7px;
+  bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.78);
+  pointer-events: none;
+}
+
 /* --- read-only board, for pinning thermal photos --------------------------- */
 
 .board.is-viewer .board-cell {
@@ -2894,4 +2934,101 @@ body {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink-2);
+}
+
+/* A heading for a second question on the same step, set off from the first. */
+.rcd-subhead {
+  margin-top: 22px;
+}
+
+/*
+ * The devices outside the grid, in the duplicates picker. They were running
+ * straight into the first row of the grid, which read as one list when they
+ * are two different things.
+ */
+.rcd-extras {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.rcd-extras-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* Clicking the additional RCDs into the order they were worked. */
+.rcd-order-note {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rcd-order-clear {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-deep);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rcd-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rcd-order-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rcd-order-item.is-on {
+  border-color: #0e9f6e;
+  background: #0e9f6e;
+  color: #fff;
+}
+
+.rcd-order-rank {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(11, 42, 68, 0.08);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+.rcd-order-item.is-on .rcd-order-rank {
+  background: rgba(255, 255, 255, 0.92);
+  color: #0a6a49;
+}
+
+.rcd-order-tests {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.rcd-order-item.is-on .rcd-order-tests {
+  color: rgba(255, 255, 255, 0.78);
 }

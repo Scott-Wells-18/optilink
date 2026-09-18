@@ -7,6 +7,8 @@ import { COMPANY } from "@/lib/company";
 import { LIMIT_SOURCE, showReading, type Verdict } from "@/lib/rcd/assess";
 import { loadTuning } from "@/lib/rcd/settings";
 import { CHECKLIST } from "@/lib/rcd/checklist";
+import { normaliseWalk } from "@/lib/rcd/map";
+import { namesMatch } from "@/lib/rcd/names";
 import type { Reading } from "@/lib/rcd/parse";
 import type { RcdLimits } from "@/lib/standards/rcd";
 import {
@@ -82,6 +84,15 @@ export type RcdReport = PageMeta & {
   };
   checklist: { question: string; answer: string }[];
   mismatches: string[];
+  /**
+   * What the record says, when the report is not printing it.
+   *
+   * An export that names a different site or board is the one that counts —
+   * the readings came off it. So the report carries the instrument's own
+   * names throughout and says here what it was filed against, rather than
+   * printing one board's name over another board's results.
+   */
+  filedUnder: { siteName: string; siteLocation: string | null; boardName: string } | null;
   original: Buffer | null;
   /** How many pages the instrument's own report runs to. */
   originalPages: number;
@@ -109,22 +120,40 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
   if (!run) return null;
 
   const tuning = await loadTuning();
-  const parsed = (run.parsed ?? {}) as { company?: string | null };
+  const parsed = (run.parsed ?? {}) as {
+    company?: string | null;
+    siteName?: string | null;
+    boardName?: string | null;
+  };
+  const identity = resolveIdentity(parsed, {
+    siteName: run.site.name,
+    siteLocation: run.site.location,
+    boardName: run.equipment?.name ?? "Switchboard",
+  });
   const corrections = (run.corrections ?? {}) as {
     droppedEmpty?: string[];
     droppedDuplicate?: string[];
     untested?: string[];
-    walk?: { order?: string; rightToLeft?: boolean };
+    walk?: unknown;
   };
   const checklist = (run.checklist ?? {}) as Record<string, boolean | string>;
   const original = run.sourceFile ? await fileBytes(run.sourceFile.storedName) : null;
 
   return {
     clientName: safe(run.site.client.name),
-    siteName: safe(run.site.name),
-    siteLocation: run.site.location ? safe(run.site.location) : null,
+    siteName: safe(identity.siteName),
+    siteLocation: identity.siteLocation ? safe(identity.siteLocation) : null,
     contactName: run.site.contacts[0] ? safe(run.site.contacts[0].name) : null,
-    boardName: safe(run.equipment?.name ?? "Switchboard"),
+    boardName: safe(identity.boardName),
+    filedUnder: identity.filedUnder
+      ? {
+          siteName: safe(identity.filedUnder.siteName),
+          siteLocation: identity.filedUnder.siteLocation
+            ? safe(identity.filedUnder.siteLocation)
+            : null,
+          boardName: safe(identity.filedUnder.boardName),
+        }
+      : null,
     testDate: run.date,
     reportDate: new Date(),
     instrument: parsed.company ? safe(parsed.company) : null,
@@ -171,11 +200,51 @@ function pick(a: number | null, b: number | null): Reading {
   return worst >= 2000 ? "NO_TRIP" : worst;
 }
 
-function describeWalk(walk: { order?: string; rightToLeft?: boolean } | undefined): string {
-  if (!walk) return "Down each column in turn, left to right";
-  const across = walk.order === "ROWS";
-  const side = walk.rightToLeft ? "right to left" : "left to right";
-  return across ? `Across each row, ${side}` : `Down each column in turn, ${side}`;
+function describeWalk(value: unknown): string {
+  const walk = normaliseWalk(value);
+  const grid =
+    walk.order === "ROWS"
+      ? "Across each row, then down"
+      : "Down each column in turn";
+  const extras = walk.extrasFirst
+    ? "additional RCDs first"
+    : "additional RCDs after the grid";
+  return `${grid}, left to right, ${extras}`;
+}
+
+type Names = { siteName: string; siteLocation: string | null; boardName: string };
+
+/**
+ * Whose names the report carries.
+ *
+ * Normally the record's, which is also the instrument's, spelled properly. But
+ * if the export names a different site or a different board, the export wins
+ * outright: these readings came off whatever the instrument was standing in
+ * front of, and a report that labels them with the board they were filed
+ * against is a report that says something untrue. The record's own names are
+ * kept to be printed alongside, so nothing is quietly swapped.
+ *
+ * The location goes with the record's site, so once the site is in doubt the
+ * location is dropped rather than carried over onto somewhere else.
+ */
+function resolveIdentity(
+  parsed: { siteName?: string | null; boardName?: string | null },
+  record: Names,
+): Names & { filedUnder: Names | null } {
+  const exportSite = parsed.siteName?.trim() || null;
+  const exportBoard = parsed.boardName?.trim() || null;
+
+  const siteDiffers = Boolean(exportSite) && !namesMatch(exportSite!, record.siteName);
+  const boardDiffers = Boolean(exportBoard) && !namesMatch(exportBoard!, record.boardName);
+
+  if (!siteDiffers && !boardDiffers) return { ...record, filedUnder: null };
+
+  return {
+    siteName: exportSite ?? record.siteName,
+    siteLocation: null,
+    boardName: exportBoard ?? record.boardName,
+    filedUnder: record,
+  };
 }
 
 function answerFor(value: boolean | string | undefined): string {
@@ -353,6 +422,11 @@ function cover(doc: Doc, data: RcdReport) {
       ["Prepared for:", data.contactName ?? data.clientName],
       ["Report Date:", shortDate(data.reportDate)],
       ["Switchboard:", data.boardName],
+      // Spelled out when it is not the record's own, so the cover cannot be
+      // read as naming one place while the results came off another.
+      ...(data.filedUnder
+        ? ([["Site (per instrument):", data.siteName]] as [string, string][])
+        : []),
       ["Tested By:", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
     marks: [data.badge, data.auspta],
@@ -431,12 +505,24 @@ function contents(doc: Doc, data: RcdReport, laid: Plan) {
     y += 54;
   }
 
-  if (data.mismatches.length > 0) {
+  const notes = [...data.mismatches];
+  if (data.filedUnder) {
+    // Said in one sentence, because it is the sentence that decides how every
+    // reading in this report should be read.
+    const was = data.filedUnder.siteLocation
+      ? `${data.filedUnder.siteName}, ${data.filedUnder.siteLocation}`
+      : data.filedUnder.siteName;
+    notes.push(
+      `The site and switchboard named throughout this report are the instrument's own, as recorded on the export reproduced at the back. They are what these readings were taken from. The test was filed in our records against ${data.filedUnder.boardName} at ${was}.`,
+    );
+  }
+
+  if (notes.length > 0) {
     y += 6;
     sectionBar(doc, "Please Note", y);
     y += 30;
     doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
-    for (const line of data.mismatches) {
+    for (const line of notes) {
       doc.text(`•  ${line}`, MARGIN + 8, y, { width: CONTENT - 16, lineGap: 1.5 });
       y = doc.y + 5;
     }
@@ -615,7 +701,7 @@ function corrections(doc: Doc, data: RcdReport, laid: Plan) {
   let y = MARGIN + 46;
   doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
   doc.text(
-    "The instrument records every fetch, including those taken without a device connected, and a way tested more than once leaves a record each time. The following was set aside before the results above were drawn up.",
+    "The instrument records every fetch, including those taken without a device connected, and an RCD tested more than once leaves a record each time. The following was set aside before the results above were drawn up.",
     MARGIN,
     y,
     { width: CONTENT, lineGap: 2 },
@@ -637,7 +723,7 @@ function corrections(doc: Doc, data: RcdReport, laid: Plan) {
         : "None",
     ],
     [
-      "Ways not tested",
+      "RCDs not tested",
       data.corrections.untested.length
         ? `${data.corrections.untested.length} (${data.corrections.untested.join(", ")})`
         : "None",

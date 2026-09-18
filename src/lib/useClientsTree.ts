@@ -432,9 +432,9 @@ export function useClientsTree(enabled: boolean) {
     () =>
       clients
         .map<TreeNode>((client) => {
-          const sites = client.sites
-            .filter((site) => site.equipment.some(inThermal))
-            .map<TreeNode>((site) => ({
+          const sites = client.sites.map<TreeNode>((site) => {
+            const surveyable = site.equipment.filter(inThermal);
+            return {
               id: `thermal:site:${site.id}`,
               label: site.name,
               detail:
@@ -454,37 +454,55 @@ export function useClientsTree(enabled: boolean) {
                     onRemove: () =>
                       void remove(`/api/inspections/${inspection.id}`, title),
                     onDownload: () => downloadReport(inspection.id),
-                    children: site.equipment.filter(inThermal).map((item) => {
-                      const found = inspection.issues.filter(
-                        (issue) => issue.equipmentId === item.id,
-                      ).length;
-                      const isBoard = item.kind === "SWITCHBOARD";
-                      return {
-                        id: `inspection:${inspection.id}:equipment:${item.id}`,
-                        label: item.name,
-                        detail: found
-                          ? countLabel(found, "finding", "findings")
-                          : isBoard
-                            ? describeBoard(normaliseBoard(item.board))
-                            : item.circuitLoading?.trim() || "Motor",
-                        variant: "info",
-                        onActivate: isBoard
-                          ? () =>
-                              setViewer({
-                                inspectionId: inspection.id,
-                                equipmentId: item.id,
-                                name: item.name,
-                                board: normaliseBoard(item.board),
-                              })
-                          : () =>
-                              setMotorIssue({
-                                inspectionId: inspection.id,
-                                equipmentId: item.id,
-                                slot: MOTOR_SLOT,
-                                where: item.name,
-                              }),
-                      };
-                    }),
+                    children:
+                      surveyable.length > 0
+                        ? surveyable.map<TreeNode>((item) => {
+                            const found = inspection.issues.filter(
+                              (issue) => issue.equipmentId === item.id,
+                            ).length;
+                            const isBoard = item.kind === "SWITCHBOARD";
+                            return {
+                              id: `inspection:${inspection.id}:equipment:${item.id}`,
+                              label: item.name,
+                              detail: found
+                                ? countLabel(found, "finding", "findings")
+                                : isBoard
+                                  ? describeBoard(normaliseBoard(item.board))
+                                  : item.circuitLoading?.trim() || "Motor",
+                              variant: "info",
+                              onActivate: isBoard
+                                ? () =>
+                                    setViewer({
+                                      inspectionId: inspection.id,
+                                      equipmentId: item.id,
+                                      name: item.name,
+                                      board: normaliseBoard(item.board),
+                                    })
+                                : () =>
+                                    setMotorIssue({
+                                      inspectionId: inspection.id,
+                                      equipmentId: item.id,
+                                      slot: MOTOR_SLOT,
+                                      where: item.name,
+                                    }),
+                            };
+                          })
+                        : // An inspection can be started anywhere; there is just
+                          // nothing to point the camera at until the site has a
+                          // board or a motor drawn up under Clients.
+                          [
+                            {
+                              id: `inspection:${inspection.id}:nothing`,
+                              label: "Nothing to survey yet",
+                              detail: "No switchboards or motors",
+                              variant: "info",
+                              onActivate: () =>
+                                setInfo({
+                                  title: site.name,
+                                  body: "This site has no switchboards or motors on it yet, so there is nothing an inspection can be filed against.\n\nAdd them under Clients, then come back — they will appear under every inspection at this site.",
+                                }),
+                            },
+                          ],
                   };
                 }),
                 {
@@ -495,7 +513,8 @@ export function useClientsTree(enabled: boolean) {
                   onActivate: () => void startInspection(site.id),
                 },
               ],
-            }));
+            };
+          });
 
           return {
             id: `thermal:client:${client.id}`,
@@ -504,8 +523,11 @@ export function useClientsTree(enabled: boolean) {
             children: sites,
           };
         })
+        // A client with no sites at all has nothing to open, here or anywhere
+        // else in the app. Every site they do have is shown, whether or not
+        // anything on it has been drawn up yet.
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startInspection, setInspectionDate],
+    [clients, remove, startInspection, setInspectionDate, setInfo],
   );
 
   const setJobDate = useCallback(
@@ -566,7 +588,7 @@ export function useClientsTree(enabled: boolean) {
                     value: isoDate(job.date),
                     onSave: (value) => void setJobDate(job.id, value),
                   },
-                  onDownload: () => openInTab(`/api/jobs/${job.id}/report`),
+                  onDownload: () => download(`/api/jobs/${job.id}/report`),
                   onRemove: () => void remove(`/api/jobs/${job.id}`, title),
                   children: [
                     ...job.items.map<TreeNode>((item) => ({
@@ -685,7 +707,7 @@ export function useClientsTree(enabled: boolean) {
                   },
                   onActivate: () => setRcd({ runId: run.id, siteName: site.name }),
                   onDownload: done
-                    ? () => openInTab(`/api/rcd-tests/${run.id}/report`)
+                    ? () => download(`/api/rcd-tests/${run.id}/report`)
                     : undefined,
                   onRemove: () => void remove(`/api/rcd-tests/${run.id}`, title),
                 };
@@ -756,11 +778,26 @@ export function useClientsTree(enabled: boolean) {
  * than the bytes — it saves it the same way it would any other download.
  */
 function downloadReport(inspectionId: string) {
-  openInTab(`/api/inspections/${inspectionId}/report`);
+  download(`/api/inspections/${inspectionId}/report`);
 }
 
-function openInTab(url: string) {
-  window.open(url, "_blank", "noopener");
+/**
+ * Fetches a report.
+ *
+ * The routes answer with an attachment, so a link click is what is wanted, not
+ * a new window: `window.open` on an attachment opens a tab that closes itself
+ * again the instant the download starts, which on a phone or behind a popup
+ * blocker means nothing visibly happens at all.
+ */
+function download(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.rel = "noopener";
+  // Empty, so the name comes off the response rather than the URL.
+  link.download = "";
+  document.body.append(link);
+  link.click();
+  link.remove();
 }
 
 const SITE_FIELDS: DialogField[] = [

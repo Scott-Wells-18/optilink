@@ -101,3 +101,24 @@ export function serverError(error: unknown, message: string) {
   console.error(message, error);
   return NextResponse.json({ error: message }, { status: 500 });
 }
+
+/**
+ * A PDF, offered for download under a name the client can read.
+ *
+ * The name goes out twice over. `filename*` carries it in full, commas,
+ * apostrophes and all; the plain `filename` beside it is stripped back to what
+ * an older reader can cope with, because a reader that does not understand
+ * `filename*` will take the plain one literally — which is how a percent-
+ * encoded name ends up saved as "Kogarah%20Depot.pdf".
+ */
+export function pdfResponse(pdf: Buffer, name: string) {
+  const plain = name.replace(/[^\w .\-()]+/g, " ").replace(/\s+/g, " ").trim();
+  return new NextResponse(new Uint8Array(pdf), {
+    headers: {
+      "content-type": "application/pdf",
+      "content-length": String(pdf.byteLength),
+      "content-disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      "cache-control": "no-store",
+    },
+  });
+}

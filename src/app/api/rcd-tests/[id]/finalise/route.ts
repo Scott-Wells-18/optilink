@@ -4,7 +4,7 @@ import { badRequest, notFound, readJson, serverError } from "@/lib/api";
 import { normaliseBoard } from "@/lib/board";
 import { assessRow, kindFor } from "@/lib/rcd/assess";
 import { loadTuning } from "@/lib/rcd/settings";
-import { mapTests, walkPositions, type Walk } from "@/lib/rcd/map";
+import { mapTests, normaliseWalk, walkPositions } from "@/lib/rcd/map";
 import type { RcdExport, Reading } from "@/lib/rcd/parse";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function POST(
   const { id } = await params;
   try {
     const body = (await readJson(request)) as {
-      walk?: Walk;
+      walk?: unknown;
       extras?: Record<string, number>;
       checklist?: Record<string, boolean | string>;
       mismatches?: string[];
@@ -37,7 +37,7 @@ export async function POST(
 
     const parsed = run.parsed as unknown as RcdExport;
     const board = run.equipment ? normaliseBoard(run.equipment.board) : null;
-    const walk = body.walk ?? { order: "COLUMNS", rightToLeft: false };
+    const walk = normaliseWalk(body.walk);
     const positions = board ? walkPositions(board, walk) : [];
     const mapped = mapTests(parsed.rows, positions, body.extras ?? {});
 

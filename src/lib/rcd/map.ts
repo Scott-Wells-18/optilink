@@ -1,12 +1,29 @@
-import { COLUMNS, isDevice, positionNumber, slotKey, type Board } from "@/lib/board";
+import {
+  COLUMNS,
+  PHASES,
+  isRcd,
+  positionNumber,
+  slotKey,
+  testsFor,
+  type Board,
+  type BoardSection,
+  type CellState,
+  type Numbering,
+} from "@/lib/board";
+import { namesMatch } from "@/lib/rcd/names";
 import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
 
 /**
  * Pairing the instrument's tests with the ways on the board.
  *
  * The instrument knows nothing about the board — it just numbers its tests in
- * the order they were taken. So the board is walked in the order the operator
- * says they worked it, and the tests are dealt onto that walk one at a time.
+ * the order they were taken, S_1, S_2, and on. So the board is walked in the
+ * order the operator says they worked it, and the tests are dealt onto that
+ * walk one at a time.
+ *
+ * Only RCDs are walked. A board of thirty-six ways might carry four of them,
+ * and the instrument's fourth test belongs to the fourth RCD, not to way four:
+ * everything in between is a breaker with nothing to trip.
  *
  * Two things are taken out first: rows that measured nothing, and the extra
  * rows left behind when a way was tested more than once.
@@ -19,58 +36,128 @@ export type WalkOrder =
   /** Across each row, then down to the next. */
   | "ROWS";
 
-export type Walk = { order: WalkOrder; rightToLeft: boolean };
+export type Walk = {
+  order: WalkOrder;
+  /** Whether the devices outside the grid were worked before the grid or after. */
+  extrasFirst: boolean;
+  /**
+   * The additional RCDs in the order they were tested, by slot. Anything not
+   * named here follows in the order it is drawn.
+   */
+  extraOrder: string[];
+};
 
-export const DEFAULT_WALK: Walk = { order: "COLUMNS", rightToLeft: false };
+export const DEFAULT_WALK: Walk = { order: "COLUMNS", extrasFirst: true, extraOrder: [] };
+
+/** Accepts a walk off an older record, which had no additionals ordering. */
+export function normaliseWalk(value: unknown): Walk {
+  const raw = (value ?? {}) as Partial<Walk>;
+  return {
+    order: raw.order === "ROWS" ? "ROWS" : "COLUMNS",
+    extrasFirst: raw.extrasFirst !== false,
+    extraOrder: Array.isArray(raw.extraOrder)
+      ? raw.extraOrder.filter((slot): slot is string => typeof slot === "string")
+      : [],
+  };
+}
 
 export type Position = {
   slot: string;
   label: string;
   /** The way number as printed on the board. */
   number: number | null;
+  /** Which phase of a three-phase device this test is, if it is one. */
+  phase: string | null;
+  /** True on the last test a device accounts for — where its repeats follow. */
+  last: boolean;
 };
 
-/** Every way on the board that can hold a test, in the order it was worked. */
+/** Every RCD on the board that takes a test, in the order it was worked. */
 export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position[] {
   const out: Position[] = [];
 
   for (const section of board.sections) {
-    // Devices outside the grid are tested first — they are at the top of the
-    // board, by the main switch.
-    section.extras.forEach((cell, index) => {
-      if (!isDevice(cell.state)) return;
-      out.push({
-        slot: slotKey(section.id, "extra", index),
-        label: cell.label.trim() || `Additional ${index + 1}`,
-        number: null,
-      });
-    });
-
-    const columns = Array.from({ length: COLUMNS }, (_, column) =>
-      walk.rightToLeft ? COLUMNS - 1 - column : column,
-    );
-
-    const indexes: number[] =
-      walk.order === "COLUMNS"
-        ? columns.flatMap((column) =>
-            Array.from({ length: section.rows }, (_, row) => row * COLUMNS + column),
-          )
-        : Array.from({ length: section.rows }, (_, row) =>
-            columns.map((column) => row * COLUMNS + column),
-          ).flat();
-
-    for (const index of indexes) {
-      const cell = section.cells[index];
-      if (!cell || !isDevice(cell.state)) continue;
-      out.push({
-        slot: slotKey(section.id, "cell", index),
-        label: cell.label.trim() || `Way ${positionNumber(section, index, board.numbering)}`,
-        number: positionNumber(section, index, board.numbering),
-      });
-    }
+    const extras = extraPositions(section, walk);
+    const grid = gridPositions(section, board.numbering, walk);
+    out.push(...(walk.extrasFirst ? [...extras, ...grid] : [...grid, ...extras]));
   }
 
   return out;
+}
+
+/**
+ * Devices outside the grid, in the order the operator says they took them.
+ *
+ * They have no numbering of their own to follow, so unless the operator points
+ * at them one by one they are taken as drawn, left to right.
+ */
+function extraPositions(section: BoardSection, walk: Walk): Position[] {
+  const drawn = section.extras
+    .map((cell, index) => ({ cell, slot: slotKey(section.id, "extra", index), index }))
+    .filter((entry) => isRcd(entry.cell.state));
+
+  const ranked = [...drawn].sort((a, b) => {
+    const left = walk.extraOrder.indexOf(a.slot);
+    const right = walk.extraOrder.indexOf(b.slot);
+    if (left === right) return a.index - b.index;
+    if (left < 0) return 1;
+    if (right < 0) return -1;
+    return left - right;
+  });
+
+  return ranked.flatMap((entry) =>
+    phasesOf(entry.cell.state, entry.slot, entry.cell.label.trim() || `Additional ${entry.index + 1}`, null),
+  );
+}
+
+function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk): Position[] {
+  const columns = Array.from({ length: COLUMNS }, (_, column) => column);
+
+  const indexes: number[] =
+    walk.order === "COLUMNS"
+      ? columns.flatMap((column) =>
+          Array.from({ length: section.rows }, (_, row) => row * COLUMNS + column),
+        )
+      : Array.from({ length: section.rows }, (_, row) =>
+          columns.map((column) => row * COLUMNS + column),
+        ).flat();
+
+  return indexes.flatMap((index) => {
+    const cell = section.cells[index];
+    if (!cell || !isRcd(cell.state)) return [];
+    const number = positionNumber(section, index, numbering);
+    return phasesOf(
+      cell.state,
+      slotKey(section.id, "cell", index),
+      cell.label.trim() || `Way ${number}`,
+      number,
+    );
+  });
+}
+
+/**
+ * One device, as many tests as it accounts for.
+ *
+ * A three-phase RCD is tested across each phase in turn, so it takes three of
+ * the instrument's records; each comes back as its own result, named for its
+ * phase, because a device that trips on two phases and not the third has to
+ * read as exactly that.
+ */
+function phasesOf(
+  state: CellState,
+  slot: string,
+  label: string,
+  number: number | null,
+): Position[] {
+  const count = testsFor(state);
+  if (count === 1) return [{ slot, label, number, phase: null, last: true }];
+  return PHASES.slice(0, count).map((phase, index) => ({
+    slot,
+    label: `${label} (${phase})`,
+    number,
+    phase,
+    last: index === count - 1,
+  }));
 }
 
 export type Pairing = {
@@ -92,7 +179,8 @@ export type MappingResult = {
  * Deal the real tests onto the walk.
  *
  * `extras` says how many times over a way was tested: a way marked ×2 swallows
- * two further rows after its own, which are set aside rather than mapped.
+ * two further rows after its own, which are set aside rather than mapped. On a
+ * three-phase device the repeats follow the third phase, not the first.
  */
 export function mapTests(
   rows: RcdRow[],
@@ -116,6 +204,7 @@ export function mapTests(
     at += 1;
 
     // Retests of this way follow immediately, so they are taken next.
+    if (!position.last) continue;
     const repeats = Math.max(0, Math.floor(extras[position.slot] ?? 0));
     for (let n = 0; n < repeats && at < real.length; n += 1) {
       duplicates.push(real[at]);
@@ -129,45 +218,71 @@ export function mapTests(
   return { pairs, dropped, duplicates, untested };
 }
 
+/** How many RCDs a board carries, counting a three-phase device once. */
+export function countRcds(board: Board): number {
+  return everyCell(board).filter((cell) => isRcd(cell.state)).length;
+}
+
+/**
+ * How many of the instrument's records the board should account for — three
+ * apiece for the three-phase devices, one for the rest.
+ */
+export function countRcdTests(board: Board): number {
+  return everyCell(board)
+    .filter((cell) => isRcd(cell.state))
+    .reduce((total, cell) => total + testsFor(cell.state), 0);
+}
+
+function everyCell(board: Board) {
+  return board.sections.flatMap((section) => [...section.cells, ...section.extras]);
+}
+
+export type Mismatch = {
+  /** Which part of the identity disagrees. */
+  field: "site" | "board" | "ways";
+  /** What the instrument's own export says. */
+  onExport: string;
+  /** What it is being filed against here. */
+  onRecord: string;
+  message: string;
+};
+
 /** What the file says about itself, against what it is being filed under. */
 export function crossCheck(
   parsed: { siteName: string | null; boardName: string | null; circuitRange: string | null },
   site: { name: string },
-  board: { name: string; ways: number } | null,
-): string[] {
-  const out: string[] = [];
+  board: { name: string; tests: number } | null,
+): Mismatch[] {
+  const out: Mismatch[] = [];
 
-  if (parsed.siteName && !looselyMatches(parsed.siteName, site.name)) {
-    out.push(
-      `The report names site "${parsed.siteName}"; it is being filed under "${site.name}".`,
-    );
+  if (parsed.siteName && !namesMatch(parsed.siteName, site.name)) {
+    out.push({
+      field: "site",
+      onExport: parsed.siteName,
+      onRecord: site.name,
+      message: `The export names site "${parsed.siteName}"; it is being filed under "${site.name}".`,
+    });
   }
-  if (board && parsed.boardName && !looselyMatches(parsed.boardName, board.name)) {
-    out.push(
-      `The report names board "${parsed.boardName}"; it is being filed against "${board.name}".`,
-    );
+  if (board && parsed.boardName && !namesMatch(parsed.boardName, board.name)) {
+    out.push({
+      field: "board",
+      onExport: parsed.boardName,
+      onRecord: board.name,
+      message: `The export names board "${parsed.boardName}"; it is being filed against "${board.name}".`,
+    });
   }
-  if (board && parsed.circuitRange) {
-    const ways = Number.parseInt(parsed.circuitRange.split(/[-–]/).pop() ?? "", 10);
-    if (Number.isFinite(ways) && ways > board.ways) {
-      out.push(
-        `The report covers ${parsed.circuitRange} ways; "${board.name}" is drawn with ${board.ways}.`,
-      );
+  if (board && parsed.circuitRange && board.tests > 0) {
+    // The instrument is set to a span of ways; what matters is whether the
+    // board has RCDs enough to take the tests that came back.
+    const ways = Number.parseInt(parsed.circuitRange.split(/[-–—]/).pop() ?? "", 10);
+    if (Number.isFinite(ways) && ways > 0 && board.tests > ways) {
+      out.push({
+        field: "ways",
+        onExport: parsed.circuitRange,
+        onRecord: `${board.tests} tests`,
+        message: `The instrument was set to ways ${parsed.circuitRange}; "${board.name}" is drawn with ${board.tests} RCD tests to take.`,
+      });
     }
   }
   return out;
-}
-
-/** Names are typed on a keypad, so this is forgiving about how. */
-function looselyMatches(a: string, b: string): boolean {
-  const clean = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const left = clean(a);
-  const right = clean(b);
-  if (!left || !right) return true;
-  if (left === right || left.includes(right) || right.includes(left)) return true;
-
-  // Or they share most of their words — "meal room" against "DB2 Meal Room".
-  const words = new Set(left.split(" "));
-  const shared = right.split(" ").filter((word) => words.has(word)).length;
-  return shared >= Math.min(words.size, right.split(" ").length);
 }

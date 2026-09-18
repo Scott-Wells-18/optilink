@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { buildRcdReport, loadRcdReport } from "@/lib/report/rcd";
-import { notFound, serverError } from "@/lib/api";
+import { notFound, pdfResponse, serverError } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -19,14 +18,7 @@ export async function GET(
       .toISOString()
       .slice(0, 10)}.pdf`;
 
-    return new NextResponse(new Uint8Array(pdf), {
-      headers: {
-        "content-type": "application/pdf",
-        "content-length": String(pdf.byteLength),
-        "content-disposition": `attachment; filename="${encodeURIComponent(name)}"`,
-        "cache-control": "no-store",
-      },
-    });
+    return pdfResponse(pdf, name);
   } catch (error) {
     return serverError(error, "The report could not be built.");
   }

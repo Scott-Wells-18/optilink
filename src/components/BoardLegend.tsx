@@ -1,6 +1,6 @@
 import { STATE_LABELS, type CellState } from "@/lib/board";
 
-const STATES: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "CONTACTOR"];
+const STATES: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "RCD_3P", "CONTACTOR"];
 
 /** What each colour on a board means. Shown wherever a board is. */
 export function BoardLegend() {

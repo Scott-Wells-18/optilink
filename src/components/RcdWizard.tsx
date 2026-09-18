@@ -1,8 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { COLUMNS, isDevice, normaliseBoard, positionNumber, slotKey, type Board } from "@/lib/board";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  COLUMNS,
+  isRcd,
+  normaliseBoard,
+  positionNumber,
+  slotKey,
+  testsFor,
+  type Board,
+} from "@/lib/board";
 import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
+import { countRcdTests } from "@/lib/rcd/map";
 import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
@@ -34,6 +43,9 @@ type Run = {
   mismatches: string[];
 };
 
+/** An additional RCD, as the operator picks the order they tested them in. */
+type Extra = { slot: string; label: string; tests: number };
+
 export function RcdWizard({
   runId,
   onClose,
@@ -46,7 +58,8 @@ export function RcdWizard({
   const [step, setStep] = usePersisted<Step>(`${key}:step`, "upload");
   const [equipmentId, setEquipmentId] = usePersisted<string>(`${key}:board`, "");
   const [order, setOrder] = usePersisted<"COLUMNS" | "ROWS">(`${key}:order`, "COLUMNS");
-  const [rightToLeft, setRightToLeft] = usePersisted(`${key}:rtl`, false);
+  const [extrasFirst, setExtrasFirst] = usePersisted(`${key}:extrasfirst`, true);
+  const [extraOrder, setExtraOrder] = usePersisted<string[]>(`${key}:extraorder`, []);
   const [extras, setExtras] = usePersisted<Record<string, number>>(`${key}:extras`, {});
   const [answers, setAnswers] = usePersisted<Record<string, boolean | string>>(
     `${key}:checks`,
@@ -83,6 +96,28 @@ export function RcdWizard({
   const chosen = boards.find((board) => board.id === equipmentId) ?? null;
   const board: Board | null = chosen ? normaliseBoard(chosen.board) : null;
   const realTests = parsed ? parsed.rows.length - parsed.emptyCount : 0;
+  const rcdTests = board ? countRcdTests(board) : 0;
+
+  /** The RCDs sitting outside the grid — the ones with no numbering to follow. */
+  const extraDevices = useMemo<Extra[]>(
+    () =>
+      board
+        ? board.sections.flatMap((section) =>
+            section.extras.flatMap((cell, index) =>
+              isRcd(cell.state)
+                ? [
+                    {
+                      slot: slotKey(section.id, "extra", index),
+                      label: cell.label.trim() || `Additional ${index + 1}`,
+                      tests: testsFor(cell.state),
+                    },
+                  ]
+                : [],
+            ),
+          )
+        : [],
+    [board],
+  );
 
   async function upload(files: FileList | null) {
     const file = files?.[0];
@@ -135,7 +170,7 @@ export function RcdWizard({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          walk: { order, rightToLeft },
+          walk: { order, extrasFirst, extraOrder },
           extras,
           checklist: answers,
           mismatches,
@@ -145,7 +180,15 @@ export function RcdWizard({
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload.error ?? "Those results could not be saved.");
       }
-      for (const part of ["step", "board", "order", "rtl", "extras", "checks"]) {
+      for (const part of [
+        "step",
+        "board",
+        "order",
+        "extrasfirst",
+        "extraorder",
+        "extras",
+        "checks",
+      ]) {
         clearSession(`${key}:${part}`);
       }
       onClose();
@@ -285,7 +328,7 @@ export function RcdWizard({
                       <span className="issue-pick-body">
                         <span className="issue-pick-label">{option.name}</span>
                         <span className="issue-pick-note">
-                          {countDevices(normaliseBoard(option.board))} devices drawn
+                          {countRcdTests(normaliseBoard(option.board))} RCD tests drawn
                         </span>
                       </span>
                     </button>
@@ -298,8 +341,13 @@ export function RcdWizard({
                   ) : null}
                 </div>
 
-                <div className="board-section-head" style={{ marginTop: 18 }}>
+                <div className="board-section-head rcd-subhead">
                   <h3 className="board-section-title">Order worked</h3>
+                  <p className="board-section-note">
+                    The grid is always walked left to right. Only the RCDs take a
+                    test — {rcdTests} of them on this board, counting a three-phase
+                    device as three.
+                  </p>
                 </div>
                 <div className="issue-picks">
                   {(
@@ -318,25 +366,56 @@ export function RcdWizard({
                       {label}
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    className={`issue-pick ${rightToLeft ? "is-on" : ""}`}
-                    onClick={() => setRightToLeft((current) => !current)}
-                  >
-                    <span className="issue-pick-mark" aria-hidden />
-                    Right to left
-                  </button>
                 </div>
+
+                {extraDevices.length > 0 ? (
+                  <>
+                    <div className="board-section-head rcd-subhead">
+                      <h3 className="board-section-title">The additional RCDs</h3>
+                      <p className="board-section-note">
+                        Where these fall in the run decides which test lands on
+                        which device, so it has to be the order you actually worked.
+                      </p>
+                    </div>
+                    <div className="issue-picks">
+                      {(
+                        [
+                          [true, "Tested before the grid"],
+                          [false, "Tested after the grid"],
+                        ] as [boolean, string][]
+                      ).map(([value, label]) => (
+                        <button
+                          key={String(value)}
+                          type="button"
+                          className={`issue-pick ${extrasFirst === value ? "is-on" : ""}`}
+                          onClick={() => setExtrasFirst(value)}
+                        >
+                          <span className="issue-pick-mark is-one" aria-hidden />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {extraDevices.length > 1 ? (
+                      <ExtraOrder
+                        devices={extraDevices}
+                        picked={extraOrder}
+                        onChange={setExtraOrder}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
               </section>
             ) : null}
 
             {step === "duplicates" ? (
               <section>
                 <div className="board-section-head">
-                  <h3 className="board-section-title">Ways you tested more than once</h3>
+                  <h3 className="board-section-title">RCDs you tested more than once</h3>
                   <p className="board-section-note">
-                    Click a way to mark an extra test against it, again for two, again
+                    Click an RCD to mark an extra test against it, again for two, again
                     for three. Those extra records are set aside rather than mapped.
+                    Breakers take no test, so they cannot be marked.
                   </p>
                 </div>
                 {board ? (
@@ -439,13 +518,59 @@ export function RcdWizard({
   );
 }
 
-function countDevices(board: Board): number {
-  return board.sections.reduce(
-    (total, section) =>
-      total +
-      section.cells.filter((cell) => isDevice(cell.state)).length +
-      section.extras.filter((cell) => isDevice(cell.state)).length,
-    0,
+/**
+ * The additional RCDs, clicked into the order they were tested.
+ *
+ * They sit outside the grid and have no numbering of their own, so nothing but
+ * the operator can say which of them the instrument's first test belongs to.
+ * Anything left unclicked follows in the order it is drawn.
+ */
+function ExtraOrder({
+  devices,
+  picked,
+  onChange,
+}: {
+  devices: Extra[];
+  picked: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const known = picked.filter((slot) => devices.some((device) => device.slot === slot));
+
+  const toggle = (slot: string) =>
+    onChange(
+      known.includes(slot) ? known.filter((other) => other !== slot) : [...known, slot],
+    );
+
+  return (
+    <>
+      <p className="board-section-note rcd-order-note">
+        Click them in the order you tested them.
+        {known.length > 0 ? (
+          <button type="button" className="rcd-order-clear" onClick={() => onChange([])}>
+            Start again
+          </button>
+        ) : null}
+      </p>
+      <div className="rcd-order">
+        {devices.map((device, drawn) => {
+          const at = known.indexOf(device.slot);
+          return (
+            <button
+              key={device.slot}
+              type="button"
+              className={`rcd-order-item ${at >= 0 ? "is-on" : ""}`}
+              onClick={() => toggle(device.slot)}
+            >
+              <span className="rcd-order-rank">{at >= 0 ? at + 1 : drawn + 1}</span>
+              <span className="rcd-order-label">{device.label}</span>
+              {device.tests > 1 ? (
+                <span className="rcd-order-tests">{device.tests} tests</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -478,20 +603,23 @@ function DuplicatePicker({
             </div>
           ) : null}
 
-          {section.extras.length > 0 ? (
-            <div className="board-extra-row">
-              {section.extras.map((cell, index) =>
-                isDevice(cell.state) ? (
-                  <DuplicateCell
-                    key={index}
-                    label={cell.label || "Unnamed"}
-                    state={cell.state}
-                    number={null}
-                    count={extras[slotKey(section.id, "extra", index)] ?? 0}
-                    onClick={() => bump(slotKey(section.id, "extra", index))}
-                  />
-                ) : null,
-              )}
+          {section.extras.some((cell) => isRcd(cell.state)) ? (
+            <div className="rcd-extras">
+              <p className="rcd-extras-title">Additional RCDs</p>
+              <div className="board-extra-row">
+                {section.extras.map((cell, index) =>
+                  isRcd(cell.state) ? (
+                    <DuplicateCell
+                      key={index}
+                      label={cell.label || "Unnamed"}
+                      state={cell.state}
+                      number={null}
+                      count={extras[slotKey(section.id, "extra", index)] ?? 0}
+                      onClick={() => bump(slotKey(section.id, "extra", index))}
+                    />
+                  ) : null,
+                )}
+              </div>
             </div>
           ) : null}
 
@@ -502,14 +630,15 @@ function DuplicatePicker({
                   const index = row * COLUMNS + column;
                   const cell = section.cells[index];
                   const slot = slotKey(section.id, "cell", index);
+                  const state = cell?.state ?? "EMPTY";
                   return (
                     <DuplicateCell
                       key={index}
-                      label={cell?.label || (isDevice(cell?.state ?? "EMPTY") ? "Unnamed" : "")}
-                      state={cell?.state ?? "EMPTY"}
+                      label={cell?.label || (isRcd(state) ? "Unnamed" : "")}
+                      state={state}
                       number={positionNumber(section, index, board.numbering)}
                       count={extras[slot] ?? 0}
-                      onClick={() => isDevice(cell?.state ?? "EMPTY") && bump(slot)}
+                      onClick={() => isRcd(state) && bump(slot)}
                     />
                   );
                 })}
@@ -535,7 +664,7 @@ function DuplicateCell({
   count: number;
   onClick: () => void;
 }) {
-  const selectable = isDevice(state as never);
+  const selectable = isRcd(state as never);
   return (
     <div
       className={`board-cell is-${state.toLowerCase()} ${

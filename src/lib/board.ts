@@ -7,7 +7,7 @@
  * positions. Fifteen rows is thirty positions, which covers most sections.
  */
 
-export type CellState = "EMPTY" | "BLANK" | "BREAKER" | "RCD" | "CONTACTOR";
+export type CellState = "EMPTY" | "BLANK" | "BREAKER" | "RCD" | "RCD_3P" | "CONTACTOR";
 
 export type BoardCell = { state: CellState; label: string };
 
@@ -40,7 +40,7 @@ export const MAX_ROWS = 40;
 export const MAX_SECTIONS = 12;
 
 /** Clicking a position in the grid walks through these, then starts again. */
-const GRID_CYCLE: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD"];
+const GRID_CYCLE: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "RCD_3P"];
 
 /** Outside the grid there can also be contactors. */
 const EXTRA_CYCLE: CellState[] = [...GRID_CYCLE, "CONTACTOR"];
@@ -50,13 +50,34 @@ export const STATE_LABELS: Record<CellState, string> = {
   BLANK: "Blank",
   BREAKER: "Breaker",
   RCD: "RCD",
+  RCD_3P: "RCD, three phase",
   CONTACTOR: "Contactor",
 };
 
 /** Positions carrying a device — the ones a thermal photo can be pinned to. */
 export function isDevice(state: CellState): boolean {
-  return state === "BREAKER" || state === "RCD" || state === "CONTACTOR";
+  return (
+    state === "BREAKER" || state === "RCD" || state === "RCD_3P" || state === "CONTACTOR"
+  );
 }
+
+/** Positions an RCD test lands on. A breaker has nothing to trip. */
+export function isRcd(state: CellState): boolean {
+  return state === "RCD" || state === "RCD_3P";
+}
+
+/**
+ * How many tests a device accounts for on the instrument.
+ *
+ * A three-phase RCD is tested across each phase in turn, so it swallows three
+ * of the instrument's records rather than one.
+ */
+export function testsFor(state: CellState): number {
+  return state === "RCD_3P" ? 3 : 1;
+}
+
+/** What the instrument's three records are called, in the order they're taken. */
+export const PHASES = ["L1", "L2", "L3"] as const;
 
 export function nextState(state: CellState, inExtras = false): CellState {
   const cycle = inExtras ? EXTRA_CYCLE : GRID_CYCLE;
@@ -179,7 +200,7 @@ export function describeBoard(board: Board): string {
   const parts: string[] = [];
   if (board.sections.length > 1) parts.push(`${board.sections.length} sections`);
   const breakers = count("BREAKER");
-  const rcds = count("RCD");
+  const rcds = count("RCD") + count("RCD_3P");
   const contactors = count("CONTACTOR");
   if (breakers) parts.push(`${breakers} breaker${breakers === 1 ? "" : "s"}`);
   if (rcds) parts.push(`${rcds} RCD${rcds === 1 ? "" : "s"}`);
