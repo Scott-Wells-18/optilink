@@ -5,6 +5,10 @@
 export const COMPANY = {
   name: "Optilink",
   abn: "19 075 861 611",
+  /** NSW electrical contractor licence. */
+  licence: "91510C",
+  /** Qualified supervisor certificate. */
+  supervisor: "24046S",
   addressLine1: "20-22 Parramatta St, Cronulla",
   addressLine2: "New South Wales 2230",
   phone: "0418 614 154",

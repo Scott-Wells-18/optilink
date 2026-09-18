@@ -1,7 +1,26 @@
-import PDFDocument from "pdfkit";
 import { COMPANY, reportBy } from "@/lib/company";
 import { PRIORITY_BANDS, printColours, priorityLabel } from "@/lib/priority";
 import type { ReportData, ReportFinding } from "@/lib/report/data";
+import {
+  bar,
+  coverPage,
+  footer,
+  newDocument,
+  sectionBar,
+  signOff,
+  stampPageNumbers,
+  tableHead,
+  type Doc,
+} from "@/lib/report/furniture";
+import {
+  COLOURS,
+  CONTENT,
+  MARGIN,
+  PAGE,
+  longDate,
+  shortDate,
+  timeOfDay,
+} from "@/lib/report/theme";
 
 /**
  * The thermographic report, laid out to the shape the trade expects: a cover,
@@ -12,27 +31,15 @@ import type { ReportData, ReportFinding } from "@/lib/report/data";
  * with no browser, which is what Railway gives us.
  */
 
-const PAGE = { width: 595.28, height: 841.89 };
-const MARGIN = 42;
-const CONTENT = PAGE.width - MARGIN * 2;
-
-const INK = "#111111";
-const HEAD = "#3b3b7a";
-const HEAD_INK = "#ffffff";
-const BAND = "#a8dbe8";
-const HAIR = "#3b3b7a";
-const SOFT = "#f1f1f6";
-const RED = "#d81f26";
-
-type Doc = PDFKit.PDFDocument;
+const INK = COLOURS.ink;
+const HEAD = COLOURS.bar;
+const HEAD_INK = COLOURS.onBar;
+const HAIR = COLOURS.hair;
+const SOFT = COLOURS.soft;
+const RED = COLOURS.alert;
 
 export function buildReport(data: ReportData): Promise<Buffer> {
-  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: MARGIN, bufferPages: true });
-  const chunks: Buffer[] = [];
-  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-  const done = new Promise<Buffer>((resolve) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-  });
+  const { doc, done } = newDocument();
 
   cover(doc, data);
   surveyNotes(doc, data);
@@ -49,80 +56,22 @@ export function buildReport(data: ReportData): Promise<Buffer> {
 /* --- the cover ------------------------------------------------------------ */
 
 function cover(doc: Doc, data: ReportData) {
-  if (data.logo) {
-    doc.image(data.logo, MARGIN + 100, 46, { fit: [CONTENT - 200, 92], align: "center" });
-  }
-
-  let y = 178;
-  const titleHeight = 128;
-  doc.rect(MARGIN, y, CONTENT, titleHeight).fillAndStroke(BAND, INK);
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(17);
-  doc.text("Thermographic and Preventive Maintenance Report", MARGIN, y + 16, {
-    width: CONTENT,
-    align: "center",
+  coverPage(doc, data, {
+    title: "Thermographic and Preventive Maintenance Report",
+    subtitle: data.siteLocation || data.siteName,
+    dateLabel: "Inspection Date:",
+    date: data.inspectionDate,
+    scope: data.scope.length
+      ? data.scope.join(", ")
+      : "Electrical switchboards and equipment",
+    rows: [
+      ["Prepared for:", data.contactName ?? data.clientName],
+      ["Report Date:", shortDate(data.reportDate)],
+      ["Next Survey Due:", shortDate(data.nextSurveyDue)],
+      ["Survey/Report By:", reportBy()],
+    ],
+    marks: [data.badge, data.auspta],
   });
-  doc.font("Helvetica").fontSize(10);
-  doc.text("For", MARGIN, y + 42, { width: CONTENT, align: "center" });
-  doc.font("Helvetica-Bold").fontSize(15);
-  doc.text(data.clientName, MARGIN, y + 60, { width: CONTENT, align: "center" });
-  doc.fontSize(10.5);
-  doc.text(data.siteLocation || data.siteName, MARGIN, y + 88, {
-    width: CONTENT,
-    align: "center",
-  });
-
-  y += titleHeight + 34;
-  doc.font("Helvetica-Oblique").fontSize(10).fillColor(INK);
-  doc.text("Inspection Date:", MARGIN, y, { width: CONTENT, align: "center" });
-  doc.font("Helvetica-Bold").fontSize(10.5);
-  doc.text(shortDate(data.inspectionDate), MARGIN, y + 15, { width: CONTENT, align: "center" });
-
-  // The scope grows with the site, so the block sizes itself to the list.
-  y += 48;
-  const scope = data.scope.length ? data.scope.join(", ") : "Electrical switchboards and equipment";
-  doc.font("Helvetica-Bold").fontSize(12.5);
-  const scopeHeight = Math.max(
-    50,
-    doc.heightOfString(scope, { width: CONTENT - 36, align: "center" }) + 26,
-  );
-  doc.rect(MARGIN, y, CONTENT, scopeHeight).fillAndStroke(BAND, INK);
-  doc.fillColor(INK).text(scope, MARGIN + 18, y + 13, { width: CONTENT - 36, align: "center" });
-
-  y += scopeHeight + 40;
-  const rows: [string, string][] = [
-    ["Prepared for:", data.contactName ?? data.clientName],
-    ["Report Date:", shortDate(data.reportDate)],
-    ["Next Survey Due:", shortDate(data.nextSurveyDue)],
-    ["Survey/Report By:", reportBy()],
-  ];
-  doc.fontSize(10);
-  rows.forEach(([label, value], index) => {
-    const rowY = y + index * 30;
-    doc.font("Helvetica").fillColor(INK).text(label, MARGIN, rowY, { width: 120 });
-    doc.text(value, MARGIN + 130, rowY, { width: 250 });
-  });
-
-  const rightX = MARGIN + CONTENT - 190;
-  const details = [
-    COMPANY.name,
-    `ABN: ${COMPANY.abn}`,
-    "",
-    COMPANY.addressLine1,
-    COMPANY.addressLine2,
-    "",
-    `P: ${COMPANY.phone}`,
-    COMPANY.email,
-  ];
-  doc.font("Helvetica").fontSize(9.5).fillColor(INK);
-  details.forEach((line, index) => {
-    doc.text(line, rightX, y + index * 13, { width: 190, align: "center" });
-  });
-
-  const badgeY = y + 150;
-  if (data.badge) doc.image(data.badge, MARGIN + 10, badgeY, { fit: [118, 118] });
-  if (data.auspta) {
-    doc.image(data.auspta, MARGIN + CONTENT - 128, badgeY, { fit: [118, 118] });
-  }
 }
 
 /* --- survey notes --------------------------------------------------------- */
@@ -152,15 +101,10 @@ function surveyNotes(doc: Doc, data: ReportData) {
   }
 
   y += 40;
-  doc.font("Helvetica").fontSize(11).text("……………………………………………", MARGIN, y);
-  doc.font("Helvetica-Bold").fontSize(11).text(THERMOGRAPHER_NAME, MARGIN, y + 22);
-  doc.font("Helvetica").fontSize(10).text(THERMOGRAPHER_LINE, MARGIN, y + 38);
+  signOff(doc, y);
 
   footer(doc, data);
 }
-
-const THERMOGRAPHER_NAME = reportBy().split(" (")[0];
-const THERMOGRAPHER_LINE = `${reportBy().split(" (")[1]?.replace(/\)$/, "") ?? ""}`;
 
 /* --- terms and the severity bands ---------------------------------------- */
 
@@ -338,7 +282,7 @@ function findingPage(doc: Doc, data: ReportData, finding: ReportFinding) {
   // IR image and the numbers off it.
   let y = MARGIN + 64;
   const halfLeft = 300;
-  bar(doc, MARGIN, y, halfLeft, `IR Image:  ${time(finding.takenAt)}  ${shortDate(finding.takenAt)}`);
+  bar(doc, MARGIN, y, halfLeft, `IR Image:  ${timeOfDay(finding.takenAt)}  ${shortDate(finding.takenAt)}`);
   bar(doc, MARGIN + halfLeft, y, CONTENT - halfLeft, "Analysis", "center");
   y += 19;
 
@@ -486,105 +430,4 @@ function plantInspected(doc: Doc, data: ReportData) {
   });
 
   footer(doc, data);
-}
-
-/* --- shared furniture ----------------------------------------------------- */
-
-function sectionBar(doc: Doc, title: string, y: number) {
-  doc.rect(MARGIN, y, CONTENT, 22).fill(HEAD);
-  doc.fillColor(HEAD_INK).font("Helvetica-Bold").fontSize(10.5).text(title, MARGIN + 10, y + 7);
-  doc.fillColor(INK);
-}
-
-function bar(doc: Doc, x: number, y: number, width: number, title: string, align: "left" | "center" = "left", colour = HEAD) {
-  doc.rect(x, y, width, 19).fill(colour);
-  doc
-    .fillColor(HEAD_INK)
-    .font("Helvetica-Bold")
-    .fontSize(9.5)
-    .text(title, align === "center" ? x : x + 8, y + 5.5, {
-      width: align === "center" ? width : width - 16,
-      align,
-    });
-  doc.fillColor(INK);
-}
-
-function tableHead(doc: Doc, y: number, titles: string[], columns: number[]) {
-  doc.rect(MARGIN, y, CONTENT, 20).fill(HEAD);
-  doc.fillColor(HEAD_INK).font("Helvetica-Bold").fontSize(9.5);
-  let x = MARGIN;
-  titles.forEach((title, index) => {
-    const centred = index > 0 && columns[index] < 140;
-    doc.text(title, centred ? x : x + 8, y + 6, {
-      width: centred ? columns[index] : columns[index] - 12,
-      align: centred ? "center" : "left",
-    });
-    x += columns[index];
-  });
-  doc.fillColor(INK);
-}
-
-/**
- * Drawn at the very foot of the page, below where text is allowed to flow —
- * so the bottom margin is lifted for the duration, otherwise pdfkit reads the
- * last line as an overflow and starts a fresh page for it.
- */
-function footer(doc: Doc, data: ReportData) {
-  const bottom = doc.page.margins.bottom;
-  doc.page.margins.bottom = 0;
-
-  const y = PAGE.height - 56;
-  if (data.logo) doc.image(data.logo, MARGIN, y - 2, { fit: [92, 28] });
-  doc.fillColor(HEAD).font("Helvetica-Bold").fontSize(9.5);
-  doc.text(data.clientName, MARGIN + 110, y, { width: CONTENT - 220, align: "center" });
-  doc.font("Helvetica").fontSize(9);
-  doc.text(data.siteLocation || data.siteName, MARGIN + 110, y + 13, {
-    width: CONTENT - 220,
-    align: "center",
-  });
-
-  doc.page.margins.bottom = bottom;
-  doc.fillColor(INK);
-}
-
-/** "Page 5 of 13", stamped once the document knows how long it turned out. */
-function stampPageNumbers(doc: Doc) {
-  const range = doc.bufferedPageRange();
-  for (let index = 1; index < range.count; index += 1) {
-    doc.switchToPage(range.start + index);
-    const bottom = doc.page.margins.bottom;
-    doc.page.margins.bottom = 0;
-    doc
-      .fillColor(HEAD)
-      .font("Helvetica")
-      .fontSize(9)
-      .text(`Page ${index + 1} of ${range.count}`, MARGIN + CONTENT - 150, PAGE.height - 49, {
-        width: 150,
-        align: "right",
-      });
-    doc.page.margins.bottom = bottom;
-  }
-}
-
-function shortDate(date: Date): string {
-  return date.toLocaleDateString("en-AU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function longDate(date: Date): string {
-  return date.toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function time(date: Date): string {
-  return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
 }
