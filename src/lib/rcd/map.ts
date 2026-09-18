@@ -1,7 +1,10 @@
 import {
   COLUMNS,
   PHASES,
+  freeSlotKey,
+  isFreeBoard,
   isRcd,
+  orderedItems,
   positionNumber,
   slotKey,
   testsFor,
@@ -74,6 +77,16 @@ export type Position = {
 
 /** Every RCD on the board that takes a test, in the order it was worked. */
 export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position[] {
+  // A freehand board has no rows or columns to walk. The operator numbered the
+  // RCDs themselves when they drew it, and that numbering is the walk.
+  if (isFreeBoard(board)) {
+    return orderedItems(board)
+      .filter((item) => isRcd(item.state))
+      .flatMap((item) =>
+        phasesOf(item.state, freeSlotKey(item.id), item.label.trim() || "RCD", null),
+      );
+  }
+
   const out: Position[] = [];
 
   for (const section of board.sections) {
@@ -223,6 +236,13 @@ export function countRcds(board: Board): number {
   return everyCell(board).filter((cell) => isRcd(cell.state)).length;
 }
 
+/** True when every RCD on a freehand board has been given a place in the run. */
+export function sequenceIsSet(board: Board): boolean {
+  if (!isFreeBoard(board)) return true;
+  const rcds = (board.items ?? []).filter((item) => isRcd(item.state));
+  return rcds.length === 0 || rcds.every((item) => item.order !== null);
+}
+
 /**
  * How many of the instrument's records the board should account for — three
  * apiece for the three-phase devices, one for the rest.
@@ -234,6 +254,7 @@ export function countRcdTests(board: Board): number {
 }
 
 function everyCell(board: Board) {
+  if (isFreeBoard(board)) return board.items ?? [];
   return board.sections.flatMap((section) => [...section.cells, ...section.extras]);
 }
 

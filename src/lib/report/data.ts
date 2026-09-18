@@ -2,7 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { readUpload } from "@/lib/storage";
-import { normaliseBoard, positionNumber, STATE_LABELS, type Board } from "@/lib/board";
+import {
+  freeItemFor,
+  normaliseBoard,
+  positionNumber,
+  STATE_LABELS,
+  type Board,
+  type CellState,
+} from "@/lib/board";
 import {
   BOARD_SLOT,
   CAUSE_LABELS,
@@ -159,6 +166,10 @@ function describeSlot(board: Board | null, slot: string): string {
   if (slot === MOTOR_SLOT) return "";
   if (!board) return "";
 
+  // A freehand board names its devices itself; there are no way numbers.
+  const free = freeItemFor(board, slot);
+  if (free) return free.label.trim() || STATE_LABELS[free.state];
+
   const [sectionId, kind, raw] = slot.split(":");
   const section = board.sections.find((entry) => entry.id === sectionId);
   const index = Number(raw);
@@ -178,6 +189,8 @@ function deviceWord(board: Board | null, slot: string, isMotor: boolean): string
   if (isMotor) return "motor";
   if (slot === MAIN_SWITCH_SLOT) return "main switch";
   if (slot === BOARD_SLOT || !board) return "board";
+  const free = freeItemFor(board, slot);
+  if (free) return wordFor(free.state);
   const [sectionId, kind, raw] = slot.split(":");
   const section = board.sections.find((entry) => entry.id === sectionId);
   const index = Number(raw);
@@ -188,7 +201,13 @@ function deviceWord(board: Board | null, slot: string, isMotor: boolean): string
         : section.cells[index]
       : null;
   if (!cell) return "device";
-  return cell.state === "RCD" ? "RCD" : STATE_LABELS[cell.state].toLowerCase();
+  return wordFor(cell.state);
+}
+
+/** "RCD", "breaker", "contactor" — how a recommendation refers to the thing. */
+function wordFor(state: CellState): string {
+  if (state === "RCD" || state === "RCD_3P") return "RCD";
+  return STATE_LABELS[state].toLowerCase();
 }
 
 /** The line that goes in the Component Description column. */

@@ -5,13 +5,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   COLUMNS,
   STATE_LABELS,
+  freeItemFor,
+  freeSlotKey,
   isDevice,
+  isFreeBoard,
+  isRcd,
   positionNumber,
   slotKey,
   type Board,
   type BoardCell,
+  type FreeItem,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
+import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { IssueDialog } from "@/components/IssueDialog";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { usePersisted } from "@/lib/session";
@@ -107,6 +113,7 @@ export function BoardViewer({
     await refresh();
   }
 
+  const free = isFreeBoard(board);
   const active = useMemo(
     () => board.sections.find((section) => section.id === activeId) ?? board.sections[0],
     [board.sections, activeId],
@@ -114,6 +121,17 @@ export function BoardViewer({
 
   const countFor = (kind: "cell" | "extra", index: number) =>
     issues.filter((issue) => issue.slot === slotKey(active.id, kind, index)).length;
+
+  /** Findings against each device on a freehand board, for the badges. */
+  const freeMarks = useMemo(() => {
+    if (!free) return {};
+    const marks: Record<string, string> = {};
+    for (const item of board.items ?? []) {
+      const found = issues.filter((issue) => issue.slot === freeSlotKey(item.id)).length;
+      if (found > 0) marks[item.id] = String(found);
+    }
+    return marks;
+  }, [free, board.items, issues]);
 
   const dustFindings = issues.filter((issue) => issue.slot === BOARD_SLOT).length;
   const selectedIssues = slot ? issues.filter((issue) => issue.slot === slot) : [];
@@ -144,9 +162,11 @@ export function BoardViewer({
           ? pickedCell(board, slot)
           : null;
 
-  const rows = Array.from({ length: active.rows }, (_, row) =>
-    Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
-  );
+  const rows = free
+    ? []
+    : Array.from({ length: active.rows }, (_, row) =>
+        Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
+      );
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={name}>
@@ -183,7 +203,7 @@ export function BoardViewer({
           onPick={() => setSlot(MAIN_SWITCH_SLOT)}
         />
 
-        {board.sections.length > 1 ? (
+        {!free && board.sections.length > 1 ? (
           <nav className="board-tabs" aria-label="Board sections">
             {board.sections.map((section) => (
               <div
@@ -206,7 +226,16 @@ export function BoardViewer({
         ) : null}
 
         <div className="board-body">
-          {active.extras.length > 0 ? (
+          {free ? (
+            <FreeBoardView
+              board={board}
+              selectable={(item: FreeItem) => isDevice(item.state)}
+              marks={freeMarks}
+              onPick={(item: FreeItem) => setSlot(freeSlotKey(item.id))}
+            />
+          ) : null}
+
+          {!free && active.extras.length > 0 ? (
             <section className="board-extras">
               <div className="board-section-head">
                 <h3 className="board-section-title">Additional</h3>
@@ -226,6 +255,7 @@ export function BoardViewer({
             </section>
           ) : null}
 
+          {!free ? (
           <section>
             <div className="board-section-head">
               <h3 className="board-section-title">{active.name.trim() || "Board"}</h3>
@@ -248,6 +278,7 @@ export function BoardViewer({
               ))}
             </div>
           </section>
+          ) : null}
         </div>
         </div>
 
@@ -429,6 +460,19 @@ type Picked = {
 };
 
 function pickedCell(board: Board, slot: string): Picked | null {
+  // A freehand board's devices answer for themselves — no section, no way
+  // number, just the label the board was drawn with.
+  const item = freeItemFor(board, slot);
+  if (item) {
+    return {
+      title: item.label || "Unnamed",
+      kind: STATE_LABELS[item.state],
+      where: item.label || STATE_LABELS[item.state],
+      device: isRcd(item.state) ? "RCD" : STATE_LABELS[item.state].toLowerCase(),
+      fixedType: null,
+    };
+  }
+
   const cell = cellForSlot(board, slot);
   if (!cell) return null;
   return {

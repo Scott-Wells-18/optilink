@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TreeNode } from "@/lib/navTree";
-import { createBoard, describeBoard, normaliseBoard, type Board } from "@/lib/board";
+import {
+  createBoard,
+  createFreeBoard,
+  describeBoard,
+  normaliseBoard,
+  type Board,
+} from "@/lib/board";
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 import { usePersisted } from "@/lib/session";
 import type { Contact, ContactInput } from "@/lib/contacts";
@@ -14,6 +20,13 @@ import type { Contact, ContactInput } from "@/lib/contacts";
  */
 
 export type EquipmentKind = "SWITCHBOARD" | "APPLIANCE" | "MOTOR";
+
+/**
+ * What the chooser offers. A board can be drawn two ways — as a grid of
+ * numbered ways, or freehand for the older boards that are not a grid — and
+ * both are saved as SWITCHBOARD equipment.
+ */
+export type ChosenKind = EquipmentKind | "SWITCHBOARD_FREE";
 
 type EquipmentRecord = {
   id: string;
@@ -226,16 +239,17 @@ export function useClientsTree(enabled: boolean) {
 
   /** Picked from the chooser: appliances go to a form, boards to the editor. */
   const chooseKind = useCallback(
-    (kind: EquipmentKind) => {
+    (kind: ChosenKind) => {
       const site = chooser;
       setChooser(null);
       if (!site) return;
 
-      if (kind === "SWITCHBOARD") {
+      if (kind === "SWITCHBOARD" || kind === "SWITCHBOARD_FREE") {
         setBoardEditor({
-          title: "New switchboard",
+          title:
+            kind === "SWITCHBOARD_FREE" ? "New custom switchboard" : "New switchboard",
           name: "",
-          board: createBoard(),
+          board: kind === "SWITCHBOARD_FREE" ? createFreeBoard() : createBoard(),
           siteId: site.siteId,
         });
         return;

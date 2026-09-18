@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   COLUMNS,
+  freeSlotKey,
+  isFreeBoard,
   isRcd,
   normaliseBoard,
   positionNumber,
@@ -10,6 +12,7 @@ import {
   type Board,
   type CellState,
 } from "@/lib/board";
+import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
 import { countRcdTests } from "@/lib/rcd/map";
 import { uploadFile } from "@/components/ImageUpload";
@@ -343,6 +346,22 @@ export function RcdWizard({
                   ) : null}
                 </div>
 
+                {board && isFreeBoard(board) ? (
+                  <>
+                    <div className="board-section-head rcd-subhead">
+                      <h3 className="board-section-title">The order you set</h3>
+                      <p className="board-section-note">
+                        This board was drawn freehand, so it carries its own
+                        testing order — the one numbered when it was drawn. The
+                        instrument&rsquo;s first reading goes to number 1, and so
+                        on down. Check it against how you actually worked it
+                        before going on.
+                      </p>
+                    </div>
+                    <FreeBoardView board={board} showOrder />
+                  </>
+                ) : (
+                <>
                 <div className="board-section-head rcd-subhead">
                   <h3 className="board-section-title">Order worked</h3>
                   <p className="board-section-note">
@@ -407,6 +426,8 @@ export function RcdWizard({
                     ) : null}
                   </>
                 ) : null}
+                </>
+                )}
               </section>
             ) : null}
 
@@ -421,7 +442,30 @@ export function RcdWizard({
                   </p>
                 </div>
                 {board ? (
-                  <DuplicatePicker board={board} extras={extras} onChange={setExtras} />
+                  isFreeBoard(board) ? (
+                    <FreeBoardView
+                      board={board}
+                      showOrder
+                      selectable={(item) => isRcd(item.state)}
+                      marks={Object.fromEntries(
+                        (board.items ?? [])
+                          .filter((item) => extras[freeSlotKey(item.id)])
+                          .map((item) => [item.id, `\u00d7${extras[freeSlotKey(item.id)]}`]),
+                      )}
+                      onPick={(item) =>
+                        setExtras((current) => {
+                          const next = { ...current };
+                          const slot = freeSlotKey(item.id);
+                          const value = (next[slot] ?? 0) + 1;
+                          if (value > 3) delete next[slot];
+                          else next[slot] = value;
+                          return next;
+                        })
+                      }
+                    />
+                  ) : (
+                    <DuplicatePicker board={board} extras={extras} onChange={setExtras} />
+                  )
                 ) : (
                   <p className="issue-empty">Choose a board first.</p>
                 )}

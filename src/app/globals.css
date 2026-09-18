@@ -3112,17 +3112,44 @@ body {
   }
 
   /*
-   * Two columns of board positions do not fit a phone in any readable size,
-   * so a section's ways run as one column. The numbering printed on each
-   * position is what says where it is, not which side of the grid it is on.
+   * A switchboard is two columns and has to stay two columns — that is how it
+   * reads on the wall, and collapsing it to one loses the left/right pairing
+   * an electrician navigates by. So the cells get narrower and shorter
+   * instead: the label truncates, the number and the colour do not.
    */
   .board-row {
-    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .board-grid {
+    gap: 4px;
   }
 
   .board-cell {
     min-width: 0;
-    min-height: 38px;
+    min-height: 34px;
+    gap: 5px;
+    padding: 0 6px;
+    border-radius: 7px;
+  }
+
+  .board-cell-no {
+    min-width: 14px;
+    font-size: 9px;
+  }
+
+  .board-cell-text {
+    padding: 3px 0;
+    font-size: 11px;
+  }
+
+  .board-cell.is-rcd_3p::after {
+    right: 4px;
+    font-size: 7.5px;
+  }
+
+  .board-extra-row {
+    gap: 5px;
   }
 
   /* The wizard's steps scroll rather than squeezing four into the width. */
@@ -3142,5 +3169,312 @@ body {
 
   .issue-picks {
     gap: 8px;
+  }
+}
+
+/* ===========================================================================
+   The freehand switchboard
+   ===========================================================================
+
+   A board that is not a grid: devices placed where they actually are, inside
+   a frame that stands for the panel. Everything is positioned as a percentage
+   of the frame, so the same drawing holds its shape at any size — which is
+   what lets the phone, the desktop and the report all show the same board.
+   =========================================================================== */
+
+.board.is-free {
+  width: min(880px, 96vw);
+}
+
+.free-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.free-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px 0 10px;
+  border: 1px dashed var(--hair-strong);
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    border-color 220ms var(--ease-soft),
+    color 220ms var(--ease-soft);
+}
+
+.free-add:hover {
+  border-color: rgba(27, 155, 216, 0.55);
+  color: var(--ink);
+}
+
+.free-add-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(10, 29, 46, 0.25);
+}
+
+.free-add.is-blank .free-add-swatch { background: #3fb0e4; }
+.free-add.is-breaker .free-add-swatch { background: #14528f; }
+.free-add.is-rcd .free-add-swatch { background: #0e9f6e; }
+.free-add.is-rcd_3p .free-add-swatch { background: #07724d; }
+.free-add.is-contactor .free-add-swatch { background: #cf2f36; }
+
+/* The panel itself. A hard border, because that is the edge of the board. */
+.free-frame {
+  position: relative;
+  width: 100%;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background:
+    linear-gradient(rgba(11, 42, 68, 0.045) 1px, transparent 1px) 0 0 / 100% 24px,
+    linear-gradient(90deg, rgba(11, 42, 68, 0.045) 1px, transparent 1px) 0 0 / 24px 100%,
+    #fbfdfe;
+  touch-action: none;
+  overflow: hidden;
+  user-select: none;
+}
+
+.free-frame.is-view {
+  touch-action: auto;
+}
+
+.free-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 14%;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-4);
+  pointer-events: none;
+}
+
+.free-item {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid rgba(10, 29, 46, 0.55);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.free-item.is-blank { background: #3fb0e4; border-color: #1b7fae; color: #fff; }
+.free-item.is-breaker { background: #14528f; border-color: #0d3a68; color: #fff; }
+.free-item.is-rcd { background: #0e9f6e; border-color: #0a7350; color: #fff; }
+.free-item.is-rcd_3p { background: #07724d; border-color: #044f35; color: #fff; }
+.free-item.is-contactor { background: #cf2f36; border-color: #9c2026; color: #fff; }
+
+.free-item.is-on {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px var(--accent);
+  z-index: 3;
+}
+
+.free-item.is-locked {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.free-item.is-selectable {
+  cursor: pointer;
+}
+
+/* Shown to be read, not clicked: nothing is dimmed because nothing is "other". */
+.free-item.is-static {
+  cursor: default;
+}
+
+.free-item.is-sequencing {
+  cursor: pointer;
+}
+
+.free-item.is-flagged {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent-deep);
+}
+
+.free-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.free-item-text.is-blank {
+  opacity: 0.65;
+}
+
+.free-item-order {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.free-item-phase {
+  position: absolute;
+  right: 4px;
+  bottom: 1px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+}
+
+/* Adds the next device in a bank, along from this one. */
+.free-item-beside {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--accent-deep);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-rest);
+}
+
+.free-item-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: #fff;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+/* What is selected, and what can be done to it. */
+.free-inspector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.free-inspector .dialog-input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.free-types {
+  display: flex;
+  gap: 6px;
+}
+
+.free-type {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(10, 29, 46, 0.25);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.free-type.is-blank { background: #3fb0e4; }
+.free-type.is-breaker { background: #14528f; }
+.free-type.is-rcd { background: #0e9f6e; }
+.free-type.is-rcd_3p { background: #07724d; }
+.free-type.is-contactor { background: #cf2f36; }
+
+.free-type.is-on {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+}
+
+.free-ratio {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.free-ratio.is-on {
+  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+  color: #fff;
+}
+
+.free-delete {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #c0272d;
+  cursor: pointer;
+}
+
+@media (max-width: 820px) {
+  .free-add {
+    min-height: 34px;
+    padding: 0 10px 0 8px;
+    font-size: 12px;
+  }
+
+  .free-item {
+    font-size: 10.5px;
+    padding: 0 5px;
+  }
+
+  /* Bigger than the box needs, because a finger is not a mouse pointer. */
+  .free-item-handle {
+    width: 18px;
+    height: 18px;
+    right: -7px;
+    bottom: -7px;
+  }
+
+  .free-item-beside {
+    width: 24px;
+    height: 24px;
+    top: -11px;
+    right: -11px;
   }
 }

@@ -11,10 +11,12 @@ import { AddDialog } from "@/components/AddDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { ChooseKindDialog } from "@/components/ChooseKindDialog";
 import { BoardEditor } from "@/components/BoardEditor";
+import { FreeBoardEditor } from "@/components/FreeBoardEditor";
 import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
+import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 import { clearAllSession } from "@/lib/session";
@@ -174,15 +176,27 @@ export function Gateway({
         <RcdWizard runId={clients.rcd.runId} onClose={clients.closeRcd} />
       ) : null}
 
+      {/* Which editor opens is the board's own business: a grid board knows
+          it is a grid, and a freehand one knows it is not. */}
       {open && clients.boardEditor ? (
-        <BoardEditor
-          title={clients.boardEditor.title}
-          initialName={clients.boardEditor.name}
-          initialBoard={clients.boardEditor.board}
-          stateKey={`board:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
-          onCancel={clients.closeBoardEditor}
-          onSave={clients.saveBoard}
-        />
+        isFreeBoard(clients.boardEditor.board) ? (
+          <FreeBoardEditor
+            initialName={clients.boardEditor.name}
+            initialBoard={clients.boardEditor.board}
+            stateKey={`free:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
+            onCancel={clients.closeBoardEditor}
+            onSave={clients.saveBoard}
+          />
+        ) : (
+          <BoardEditor
+            title={clients.boardEditor.title}
+            initialName={clients.boardEditor.name}
+            initialBoard={clients.boardEditor.board}
+            stateKey={`board:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
+            onCancel={clients.closeBoardEditor}
+            onSave={clients.saveBoard}
+          />
+        )
       ) : null}
 
       <nav className="gate-exits" aria-hidden={!open}>

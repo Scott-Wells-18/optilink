@@ -9,7 +9,7 @@ export function ChooseKindDialog({
   onClose,
 }: {
   siteName: string;
-  onChoose: (kind: "SWITCHBOARD" | "APPLIANCE" | "MOTOR") => void;
+  onChoose: (kind: "SWITCHBOARD" | "SWITCHBOARD_FREE" | "APPLIANCE" | "MOTOR") => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -38,7 +38,24 @@ export function ChooseKindDialog({
               <rect x="22" y="25" width="8" height="4.5" rx="1.2" fill="currentColor" opacity=".45" />
             </svg>
             <span className="chooser-label">Switchboard</span>
-            <span className="chooser-note">Draw the board and its circuits</span>
+            <span className="chooser-note">Two columns of numbered ways</span>
+          </button>
+
+          <button
+            type="button"
+            className="chooser-option"
+            onClick={() => onChoose("SWITCHBOARD_FREE")}
+          >
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden>
+              <rect x="4.5" y="5.5" width="31" height="29" rx="3" stroke="currentColor" strokeWidth="1.6" />
+              <rect x="8" y="9" width="13" height="5" rx="1.2" fill="currentColor" opacity=".85" />
+              <rect x="24" y="9" width="8" height="9" rx="1.2" fill="currentColor" opacity=".45" />
+              <rect x="8" y="17" width="6" height="4" rx="1.2" fill="currentColor" opacity=".45" />
+              <rect x="15" y="17" width="6" height="4" rx="1.2" fill="currentColor" opacity=".85" />
+              <rect x="8" y="25" width="19" height="5" rx="1.2" fill="currentColor" opacity=".6" />
+            </svg>
+            <span className="chooser-label">Custom switchboard</span>
+            <span className="chooser-note">Place each device where it really is</span>
           </button>
 
           <button type="button" className="chooser-option" onClick={() => onChoose("APPLIANCE")}>
