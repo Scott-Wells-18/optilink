@@ -46,6 +46,21 @@ export type UploadedImage = {
   originalName: string;
 };
 
+/**
+ * Anything that is not a photo — an instrument's PDF export, say. Uploaded as
+ * it came, with none of the resizing a photo goes through.
+ */
+export async function uploadFile(file: File): Promise<UploadedImage> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const response = await fetch("/api/upload", { method: "POST", body: form });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error ?? "The file could not be uploaded.");
+  }
+  return response.json();
+}
+
 export async function uploadImage(file: File): Promise<UploadedImage> {
   const blob = await downscale(file);
   const form = new FormData();

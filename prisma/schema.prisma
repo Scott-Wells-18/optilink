@@ -46,6 +46,15 @@ model Settings {
   reportIntroText          String?
   nextReportNumber         Int     @default(1)
 
+  /**
+   * RCD limits, overriding the defaults in lib/standards/rcd. Held here so
+   * they can be corrected against the current edition of the standard without
+   * a deploy.
+   */
+  rcdLimits Json?
+  /** A reading at or above this share of its limit is a concern, not a pass. */
+  rcdConcernPercent Int @default(80)
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
@@ -72,6 +81,7 @@ model UploadedFile {
   settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
   issuePhotos       IssuePhoto[]
   jobPhotos         JobPhoto[]
+  rcdSources        RcdTestRun[]     @relation("RcdSource")
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +126,7 @@ model Site {
   inspections Inspection[]
   contacts    Contact[]
   jobs        Job[]
+  rcdRuns     RcdTestRun[]
 
   @@index([clientId])
 }
@@ -165,7 +176,8 @@ model Equipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  issues Issue[]
+  issues  Issue[]
+  rcdRuns RcdTestRun[]
 
   @@index([siteId])
 }
@@ -353,6 +365,83 @@ model JobPhoto {
   createdAt DateTime @default(now())
 
   @@index([itemId])
+}
+
+// ---------------------------------------------------------------------------
+// RCD testing
+//
+// The tester writes its own PDF; we read it, correct it and reissue it. The
+// original file is kept byte-for-byte and bound into the back of the report,
+// so the instrument's own record is always recoverable.
+// ---------------------------------------------------------------------------
+
+model RcdTestRun {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The board that was tested. */
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  name String?
+  date DateTime @default(now()) @db.Date
+
+  /** The tester's own export, untouched. */
+  sourceFileId String?
+  sourceFile   UploadedFile? @relation("RcdSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
+
+  /** The raw parse, so a report can be rebuilt without the file being re-read. */
+  parsed Json?
+
+  /** How the tests were walked, and which positions were tested twice. */
+  corrections Json?
+
+  /** Answers to the checks the instrument cannot record. */
+  checklist Json?
+
+  /** Disagreements between the file and the site, accepted by the operator. */
+  mismatches String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  results RcdResult[]
+
+  @@index([siteId])
+}
+
+model RcdResult {
+  id    String     @id @default(cuid())
+  runId String
+  run   RcdTestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /** Which position on the board, e.g. "main:cell:12". Null when unmatched. */
+  slot  String?
+  label String
+
+  /** Rated residual current in mA, off the tester's own parameters. */
+  ratingMa Int?
+  kind     RcdKind?
+
+  /** Trip times in ms. Null is untested; 2000+ means it did not trip. */
+  halfAt0    Float?
+  halfAt180  Float?
+  ratedAt0   Float?
+  ratedAt180 Float?
+  fiveAt0    Float?
+  fiveAt180  Float?
+
+  touchVolts Float?
+
+  /** PASS, CONCERN or FAIL — see lib/rcd/assess. */
+  verdict String
+  /** Why, in the words the report prints. */
+  reasons String[]
+
+  position Int @default(0)
+
+  @@index([runId])
 }
 
 // ---------------------------------------------------------------------------

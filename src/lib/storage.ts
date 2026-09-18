@@ -18,6 +18,8 @@ const ALLOWED_TYPES = new Set([
   "image/webp",
   "image/gif",
   "image/avif",
+  // Test instruments export their own reports; those are kept as they came.
+  "application/pdf",
 ]);
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -27,7 +29,7 @@ export class UploadError extends Error {}
 export async function saveUpload(file: File) {
   if (!ALLOWED_TYPES.has(file.type)) {
     throw new UploadError(
-      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image.",
+      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image, or a PDF.",
     );
   }
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -92,6 +94,8 @@ function extensionFor(mimeType: string): string {
       return ".gif";
     case "image/avif":
       return ".avif";
+    case "application/pdf":
+      return ".pdf";
     default:
       return ".jpg";
   }

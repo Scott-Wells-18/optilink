@@ -72,3 +72,38 @@ export function yearAfter(date: Date): Date {
   next.setFullYear(next.getFullYear() + 1);
   return next;
 }
+
+/**
+ * Text bound for a PDF page.
+ *
+ * The reports are set in Helvetica, one of the fonts every reader has built
+ * in — which is worth having, but it can only carry the WinAnsi character set.
+ * A site name pasted out of a spreadsheet or a circuit labelled with a Greek
+ * letter would otherwise come out as rubbish or throw, so anything outside
+ * that set is folded down to the nearest thing that is in it.
+ */
+const SUBSTITUTIONS: [RegExp, string][] = [
+  [/[\u2206\u0394]/g, "d"], // increment, delta
+  [/\u2264/g, "<="],
+  [/\u2265/g, ">="],
+  [/[\u2010\u2011\u2012\u2015]/g, "-"], // the hyphens WinAnsi lacks
+  [/\u00a0/g, " "],
+];
+
+/**
+ * WinAnsi carries more than Latin-1: the dashes, curly quotes, the ellipsis
+ * and a handful of others are all there, so they are kept rather than flattened.
+ */
+const ALLOWED_ABOVE_LATIN1 =
+  "\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152" +
+  "\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a" +
+  "\u0153\u017e\u0178";
+
+export function safe(text: string | null | undefined): string {
+  if (!text) return "";
+  let out = text;
+  for (const [pattern, replacement] of SUBSTITUTIONS) out = out.replace(pattern, replacement);
+  // Anything still outside the set has no sensible stand-in, so it goes.
+  const keep = new RegExp(`[^\\u0000-\\u00ff${ALLOWED_ABOVE_LATIN1}]`, "g");
+  return out.replace(keep, "");
+}

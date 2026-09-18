@@ -22,21 +22,21 @@ export type RcdLimits = {
 
 export const RCD_KIND_LIMITS: Record<RcdKind, RcdLimits> = {
   TYPE_I: {
-    kindLabel: "Type I (≤ 10 mA)",
+    kindLabel: "Type I (10 mA and below)",
     description: "High-sensitivity RCD, typically 10 mA.",
     maxAtRatedMs: 40,
     maxAt5xMs: 40,
     minAtRatedMs: null,
   },
   TYPE_II: {
-    kindLabel: "Type II (≤ 30 mA)",
+    kindLabel: "Type II (up to 30 mA)",
     description: "Standard 30 mA personal-protection RCD or RCBO.",
     maxAtRatedMs: 300,
     maxAt5xMs: 40,
     minAtRatedMs: null,
   },
   TYPE_III: {
-    kindLabel: "Type III (> 30 mA)",
+    kindLabel: "Type III (over 30 mA)",
     description: "Equipment or fire-protection RCD, typically 100–300 mA.",
     maxAtRatedMs: 300,
     maxAt5xMs: 40,

@@ -53,6 +53,17 @@ export async function GET() {
               },
             },
           },
+          rcdRuns: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              name: true,
+              date: true,
+              sourceFileId: true,
+              equipment: { select: { id: true, name: true } },
+              _count: { select: { results: true } },
+            },
+          },
           inspections: {
             orderBy: { createdAt: "asc" },
             select: {

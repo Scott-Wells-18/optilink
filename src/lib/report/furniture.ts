@@ -225,9 +225,15 @@ export function footer(doc: Doc, meta: PageMeta) {
   doc.fillColor(COLOURS.ink);
 }
 
-/** "Page 5 of 13", stamped once the document knows how long it turned out. */
-export function stampPageNumbers(doc: Doc) {
+/**
+ * "Page 5 of 13", stamped once the document knows how long it turned out.
+ *
+ * `extraPages` covers anything bound on afterwards — the instrument's own
+ * export, say — so the count matches the file the client actually opens.
+ */
+export function stampPageNumbers(doc: Doc, extraPages = 0) {
   const range = doc.bufferedPageRange();
+  const total = range.count + extraPages;
   for (let index = 1; index < range.count; index += 1) {
     doc.switchToPage(range.start + index);
     const bottom = doc.page.margins.bottom;
@@ -236,7 +242,7 @@ export function stampPageNumbers(doc: Doc) {
       .fillColor(COLOURS.bar)
       .font("Helvetica")
       .fontSize(9)
-      .text(`Page ${index + 1} of ${range.count}`, MARGIN + CONTENT - 150, PAGE.height - 49, {
+      .text(`Page ${index + 1} of ${total}`, MARGIN + CONTENT - 150, PAGE.height - 49, {
         width: 150,
         align: "right",
       });

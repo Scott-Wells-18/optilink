@@ -14,6 +14,7 @@ import {
   type IssueType,
 } from "@/lib/issues";
 import { priorityFor, temperatureRise, PRIORITY_ORDER, type Priority } from "@/lib/priority";
+import { safe } from "@/lib/report/theme";
 
 /**
  * Everything one report needs, gathered in one go: the survey, the equipment
@@ -92,18 +93,18 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
     const device = deviceWord(board, issue.slot, isMotor);
 
     findings.push({
-      equipment: item.name,
-      component: componentDescription(issue.type as IssueType, issue.cause, where, isMotor),
+      equipment: safe(item.name),
+      component: safe(componentDescription(issue.type as IssueType, issue.cause, where, isMotor)),
       priority,
       refTemp: issue.refTemp,
       hotTemp: issue.hotTemp,
       rise,
-      circuitLoad: isMotor ? item.circuitLoading?.trim() || "Not Measured" : "Not Measured",
+      circuitLoad: safe(isMotor ? item.circuitLoading?.trim() || "Not Measured" : "Not Measured"),
       recommendations:
         issue.type === "REPAIRED"
           ? [recommendationText(REPAIRED_RECOMMENDATION, device)]
-          : issue.recommendations.map((key) => recommendationText(key, device)),
-      comments: comments(issue.type as IssueType, issue.cause, where, item.name, priority),
+          : issue.recommendations.map((key) => safe(recommendationText(key, device))),
+      comments: comments(issue.type as IssueType, issue.cause, where, item.name, priority).map(safe),
       thermal: await photoBytes(issue.photos, ["THERMAL", "PLAIN"]),
       visual: await photoBytes(issue.photos, ["VISUAL"]),
       takenAt: issue.createdAt,
@@ -124,20 +125,20 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
     const notes = findings
       .filter((finding) => finding.equipment === item.name)
       .map((finding) => finding.component);
-    return { equipment: item.name, notes, result: notes.length ? "REPORT" : "OK" };
+    return { equipment: safe(item.name), notes, result: notes.length ? "REPORT" : "OK" };
   });
 
   return {
-    clientName: site.client.name,
-    siteName: site.name,
-    siteLocation: site.location,
-    contactName: site.contacts[0]?.name ?? null,
+    clientName: safe(site.client.name),
+    siteName: safe(site.name),
+    siteLocation: site.location ? safe(site.location) : null,
+    contactName: site.contacts[0] ? safe(site.contacts[0].name) : null,
     inspectionDate: inspection.date,
     reportDate: new Date(),
     nextSurveyDue: yearAfter(inspection.date),
     scope: site.equipment
       .filter((item) => item.kind !== "APPLIANCE")
-      .map((item) => item.name),
+      .map((item) => safe(item.name)),
     findings,
     plant,
     logo: await brandBytes("logo.jpg"),

@@ -14,6 +14,7 @@ import { BoardEditor } from "@/components/BoardEditor";
 import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
+import { RcdWizard } from "@/components/RcdWizard";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
 import { clearAllSession } from "@/lib/session";
@@ -52,9 +53,10 @@ export function Gateway({
         if (section.id === "clients") return { ...section, children: clients.nodes };
         if (section.id === "thermal") return { ...section, children: clients.thermalNodes };
         if (section.id === "ba") return { ...section, children: clients.baNodes };
+        if (section.id === "rcd") return { ...section, children: clients.rcdNodes };
         return section;
       }),
-    [clients.nodes, clients.thermalNodes, clients.baNodes],
+    [clients.nodes, clients.thermalNodes, clients.baNodes, clients.rcdNodes],
   );
 
   useEffect(() => {
@@ -159,6 +161,10 @@ export function Gateway({
           onCancel={clients.closeJobItem}
           onSaved={clients.closeJobItem}
         />
+      ) : null}
+
+      {open && clients.rcd ? (
+        <RcdWizard runId={clients.rcd.runId} onClose={clients.closeRcd} />
       ) : null}
 
       {open && clients.boardEditor ? (

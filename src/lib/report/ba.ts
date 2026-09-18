@@ -14,7 +14,7 @@ import {
   type Doc,
   type PageMeta,
 } from "@/lib/report/furniture";
-import { COLOURS, CONTENT, MARGIN, PAGE, longDate, shortDate } from "@/lib/report/theme";
+import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
 
 /**
  * The works completed report — what was found, what was done, and the photos
@@ -97,10 +97,10 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     }
     items.push({
       index: index + 1,
-      title: item.title,
-      location: item.location,
-      found: item.found,
-      done: item.done,
+      title: safe(item.title),
+      location: safe(item.location),
+      found: safe(item.found),
+      done: safe(item.done),
       // Before, then during, then after — the order the story is told in.
       photos: photos.sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage)),
       page: 0,
@@ -109,14 +109,14 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
   }
 
   return {
-    clientName: job.site.client.name,
-    siteName: job.site.name,
-    siteLocation: job.site.location,
-    contactName: job.site.contacts[0]?.name ?? null,
-    jobTitle: job.name?.trim() || shortDate(job.date),
+    clientName: safe(job.site.client.name),
+    siteName: safe(job.site.name),
+    siteLocation: job.site.location ? safe(job.site.location) : null,
+    contactName: job.site.contacts[0] ? safe(job.site.contacts[0].name) : null,
+    jobTitle: safe(job.name?.trim() || shortDate(job.date)),
     jobDate: job.date,
     reportDate: new Date(),
-    recommendations: job.recommendations,
+    recommendations: job.recommendations.map(safe),
     items,
     logo: await brandBytes("logo.jpg"),
     badge: await brandBytes("thermographer.png"),

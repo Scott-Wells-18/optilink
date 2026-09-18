@@ -30,18 +30,6 @@ export type TreeNode = {
   onDownload?: () => void;
 };
 
-function placeholderBranches(prefix: string): TreeNode[] {
-  return [1, 2, 3].map((first) => ({
-    id: `${prefix}.${first}`,
-    label: `Test ${first}`,
-    children: [1, 2].map((second) => ({
-      id: `${prefix}.${first}.${second}`,
-      label: `Test ${second}`,
-      children: [{ id: `${prefix}.${first}.${second}.1`, label: "Test 1" }],
-    })),
-  }));
-}
-
 export const SECTIONS: TreeNode[] = [
   {
     id: "thermal",
@@ -53,7 +41,7 @@ export const SECTIONS: TreeNode[] = [
     id: "rcd",
     label: "RCD",
     detail: "Safety switch testing",
-    children: placeholderBranches("rcd"),
+    children: [],
   },
   {
     id: "ba",
