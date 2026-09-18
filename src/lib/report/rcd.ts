@@ -83,6 +83,8 @@ export type RcdReport = PageMeta & {
   checklist: { question: string; answer: string }[];
   mismatches: string[];
   original: Buffer | null;
+  /** How many pages the instrument's own report runs to. */
+  originalPages: number;
   badge: Buffer | null;
   auspta: Buffer | null;
 };
@@ -115,6 +117,7 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
     walk?: { order?: string; rightToLeft?: boolean };
   };
   const checklist = (run.checklist ?? {}) as Record<string, boolean | string>;
+  const original = run.sourceFile ? await fileBytes(run.sourceFile.storedName) : null;
 
   return {
     clientName: safe(run.site.client.name),
@@ -152,7 +155,8 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
       answer: safe(answerFor(checklist[item.key])),
     })),
     mismatches: run.mismatches.map(safe),
-    original: run.sourceFile ? await fileBytes(run.sourceFile.storedName) : null,
+    original,
+    originalPages: original ? await countPages(original) : 0,
     logo: await brandBytes("logo.jpg"),
     badge: await brandBytes("thermographer.png"),
     auspta: await brandBytes("auspta.png"),
@@ -216,17 +220,16 @@ export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
 
   // The instrument's pages are bound on at the end, and they count towards the
   // total the reader sees at the foot of every page.
-  const appended = data.original ? await countPages(data.original) : 0;
+  const appended = data.originalPages;
 
-  // The results are grouped worst first, and the contents page cites the pages
-  // they land on — so the layout is worked out before anything is drawn.
-  const plan = planGroups(data);
+  const laid = plan(doc, data);
 
   cover(doc, data);
-  contents(doc, data, plan);
+  contents(doc, data, laid);
   basis(doc, data);
-  results(doc, data, plan);
-  corrections(doc, data);
+  results(doc, data, laid);
+  corrections(doc, data, laid);
+  if (appended > 0) originalDivider(doc, data, appended);
 
   stampPageNumbers(doc, appended);
   doc.end();
@@ -237,34 +240,103 @@ export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
 
 type Group = { verdict: Verdict; title: string; blurb: string; rows: RcdResultRow[]; page: number };
 
+/** One thing to draw, and how tall it is. */
+type Block =
+  | { kind: "groupHead"; group: Group; height: number }
+  | { kind: "tableHead"; group: Group; height: number }
+  | { kind: "row"; group: Group; row: RcdResultRow; stripe: number; height: number }
+  | { kind: "reason"; group: Group; text: string; height: number };
+
+type Plan = {
+  groups: Group[];
+  /** The blocks that land on each results page, in order. */
+  pages: Block[][];
+  correctionsPage: number;
+  originalPage: number;
+};
+
 const ROW_HEIGHT = 22;
 const GROUP_HEAD = 46;
+const TABLE_HEAD = 20;
+const GROUP_GAP = 20;
 const BOTTOM = PAGE.height - 82;
+/** Cover, contents, basis — then the results start. */
+const FIRST_RESULTS_PAGE = 4;
 
-function planGroups(data: RcdReport): Group[] {
+/**
+ * Worked out before anything is drawn, because the contents page cites page
+ * numbers and a failure's explanation makes its row as tall as its words.
+ * The drawing below simply plays this back, so the two cannot disagree.
+ */
+function plan(doc: Doc, data: RcdReport): Plan {
   const groups = GROUPS.map((group) => ({
     ...group,
     rows: data.results.filter((result) => result.verdict === group.verdict),
     page: 0,
   })).filter((group) => group.rows.length > 0);
 
-  // Contents is page 2, the basis page 3, so results start on page 4.
-  let page = 4;
-  let y = MARGIN + 34;
+  doc.font("Helvetica").fontSize(8.5);
+  const blocks: Block[] = [];
   for (const group of groups) {
-    const height = GROUP_HEAD + 20 + group.rows.length * ROW_HEIGHT;
-    if (y > MARGIN + 34 && y + Math.min(height, 160) > BOTTOM) {
-      page += 1;
-      y = MARGIN;
-    }
-    group.page = page;
-    y += height + 20;
-    while (y > BOTTOM) {
-      page += 1;
-      y -= BOTTOM - MARGIN;
-    }
+    blocks.push({ kind: "groupHead", group, height: GROUP_HEAD });
+    blocks.push({ kind: "tableHead", group, height: TABLE_HEAD });
+    group.rows.forEach((row, stripe) => {
+      blocks.push({ kind: "row", group, row, stripe, height: ROW_HEIGHT });
+      if (row.verdict === "PASS") return;
+      for (const text of row.reasons) {
+        blocks.push({
+          kind: "reason",
+          group,
+          text,
+          height: doc.heightOfString(text, { width: CONTENT - 40 }) + 7,
+        });
+      }
+    });
   }
-  return groups;
+
+  const pages: Block[][] = [];
+  let page: Block[] = [];
+  let y = MARGIN + 34;
+
+  const breakPage = () => {
+    pages.push(page);
+    page = [];
+    y = MARGIN;
+  };
+
+  for (const [index, block] of blocks.entries()) {
+    // A group heading is no use at the foot of a page with nothing under it.
+    const needs =
+      block.kind === "groupHead"
+        ? block.height + TABLE_HEAD + ROW_HEIGHT
+        : block.height;
+
+    if (page.length > 0 && y + needs > BOTTOM) {
+      breakPage();
+      // A table carried over needs its heading again.
+      if (block.kind === "row" || block.kind === "reason") {
+        page.push({ kind: "tableHead", group: block.group, height: TABLE_HEAD });
+        y += TABLE_HEAD;
+      }
+    }
+
+    if (block.kind === "groupHead" && !groups[0]) continue;
+    if (block.kind === "groupHead") {
+      block.group.page = FIRST_RESULTS_PAGE + pages.length;
+      if (index > 0) y += 0;
+    }
+
+    page.push(block);
+    y += block.height;
+
+    const next = blocks[index + 1];
+    if (next?.kind === "groupHead") y += GROUP_GAP;
+  }
+  if (page.length > 0) pages.push(page);
+  if (pages.length === 0) pages.push([]);
+
+  const correctionsPage = FIRST_RESULTS_PAGE + pages.length;
+  return { groups, pages, correctionsPage, originalPage: correctionsPage + 1 };
 }
 
 function cover(doc: Doc, data: RcdReport) {
@@ -287,7 +359,7 @@ function cover(doc: Doc, data: RcdReport) {
   });
 }
 
-function contents(doc: Doc, data: RcdReport, groups: Group[]) {
+function contents(doc: Doc, data: RcdReport, laid: Plan) {
   doc.addPage();
   sectionBar(doc, "Results at a Glance", MARGIN);
 
@@ -303,7 +375,7 @@ function contents(doc: Doc, data: RcdReport, groups: Group[]) {
   );
 
   let y = doc.y + 22;
-  for (const group of groups) {
+  for (const group of laid.groups) {
     const tone =
       group.verdict === "FAIL"
         ? SEVERITY.fail
@@ -327,6 +399,32 @@ function contents(doc: Doc, data: RcdReport, groups: Group[]) {
     );
     doc.font("Helvetica").fontSize(10).fillColor(COLOURS.bar);
     doc.text(`Page ${group.page}`, MARGIN + CONTENT - 70, y + 11, {
+      width: 60,
+      align: "right",
+    });
+    y += 54;
+  }
+
+  // The instrument's own report is part of what they are being handed, so it
+  // is listed like any other section rather than left to be stumbled upon.
+  if (data.originalPages > 0) {
+    doc.rect(MARGIN, y, CONTENT, 44).fillAndStroke("#ffffff", COLOURS.hair);
+    doc.rect(MARGIN, y, 5, 44).fill(COLOURS.accent);
+    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
+    doc.text("Original instrument report", MARGIN + 18, y + 9, { width: 260 });
+    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
+    doc.text("The tester's own export, reproduced unaltered.", MARGIN + 18, y + 26, {
+      width: CONTENT - 200,
+    });
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.accent);
+    doc.text(
+      `${data.originalPages} ${data.originalPages === 1 ? "page" : "pages"}`,
+      MARGIN + CONTENT - 190,
+      y + 9,
+      { width: 110, align: "right" },
+    );
+    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.bar);
+    doc.text(`Page ${laid.originalPage}`, MARGIN + CONTENT - 70, y + 11, {
       width: 60,
       align: "right",
     });
@@ -422,91 +520,95 @@ function basis(doc: Doc, data: RcdReport) {
   footer(doc, data);
 }
 
-function results(doc: Doc, data: RcdReport, groups: Group[]) {
-  doc.addPage();
-  sectionBar(doc, "Test Results", MARGIN);
-  let y = MARGIN + 34;
+const RESULT_COLUMNS = [150, 60, 64, 64, 64, CONTENT - 150 - 252];
+const RESULT_TITLES = ["Circuit", "Rating", "x 1/2", "x 1", "x 5", "Touch V"];
 
-  const columns = [150, 60, 64, 64, 64, CONTENT - 150 - 252];
-
-  for (const group of groups) {
-    if (y + GROUP_HEAD + 20 + ROW_HEIGHT > BOTTOM) {
-      footer(doc, data);
-      doc.addPage();
-      y = MARGIN;
-    }
-
-    const tone =
-      group.verdict === "FAIL"
-        ? SEVERITY.fail
-        : group.verdict === "CONCERN"
-          ? SEVERITY.concern
-          : SEVERITY.pass;
-    doc.rect(MARGIN, y, 5, 26).fill(tone.fill);
-    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
-    doc.text(`${group.title} — ${group.rows.length}`, MARGIN + 16, y + 5);
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-    doc.text(group.blurb, MARGIN + 16, y + 21, { width: CONTENT - 20 });
-    y += GROUP_HEAD;
-
-    tableHead(doc, y, ["Circuit", "Rating", "× ½", "× 1", "× 5", "Touch V"], columns);
-    y += 20;
-
-    doc.fontSize(9);
-    group.rows.forEach((row, index) => {
-      if (y + ROW_HEIGHT > BOTTOM) {
-        footer(doc, data);
-        doc.addPage();
-        y = MARGIN;
-        tableHead(doc, y, ["Circuit", "Rating", "× ½", "× 1", "× 5", "Touch V"], columns);
-        y += 20;
-      }
-      doc
-        .rect(MARGIN, y, CONTENT, ROW_HEIGHT)
-        .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-      doc.fillColor(COLOURS.ink).font("Helvetica-Bold").text(row.label, MARGIN + 8, y + 6, {
-        width: columns[0] - 12,
-        ellipsis: true,
-        height: 11,
-      });
-      doc.font("Helvetica");
-      const cells = [
-        row.ratingMa ? `${row.ratingMa} mA` : "—",
-        showReading(row.half),
-        showReading(row.rated),
-        showReading(row.five),
-        row.touchVolts === null ? "—" : `${row.touchVolts} V`,
-      ];
-      let x = MARGIN + columns[0];
-      cells.forEach((cell, at) => {
-        doc.text(cell, x, y + 6, { width: columns[at + 1], align: "center" });
-        x += columns[at + 1];
-      });
-      y += ROW_HEIGHT;
-
-      // A failure or a concern says why, right under its own row.
-      if (row.verdict !== "PASS") {
-        for (const reason of row.reasons) {
-          const height = doc.heightOfString(reason, { width: CONTENT - 40 }) + 7;
-          doc.rect(MARGIN, y, CONTENT, height).fillAndStroke("#ffffff", COLOURS.hair);
-          doc.rect(MARGIN, y, 3, height).fill(tone.fill);
-          doc
-            .fillColor(COLOURS.inkSoft)
-            .font("Helvetica")
-            .fontSize(8.5)
-            .text(reason, MARGIN + 18, y + 4, { width: CONTENT - 40 });
-          doc.fontSize(9);
-          y += height;
-        }
-      }
-    });
-    y += 20;
-  }
-
-  footer(doc, data);
+function toneFor(verdict: Verdict) {
+  return verdict === "FAIL"
+    ? SEVERITY.fail
+    : verdict === "CONCERN"
+      ? SEVERITY.concern
+      : SEVERITY.pass;
 }
 
-function corrections(doc: Doc, data: RcdReport) {
+function results(doc: Doc, data: RcdReport, laid: Plan) {
+  laid.pages.forEach((blocks, index) => {
+    doc.addPage();
+    let y = MARGIN;
+    if (index === 0) {
+      sectionBar(doc, "Test Results", MARGIN);
+      y = MARGIN + 34;
+      if (blocks.length === 0) {
+        doc
+          .font("Helvetica-Oblique")
+          .fontSize(10)
+          .fillColor(COLOURS.ink)
+          .text("No devices were tested on this run.", MARGIN, y, { width: CONTENT });
+      }
+    }
+
+    for (const block of blocks) {
+      const tone = toneFor(block.group.verdict);
+
+      if (block.kind === "groupHead") {
+        doc.rect(MARGIN, y, 5, 26).fill(tone.fill);
+        doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
+        doc.text(`${block.group.title} — ${block.group.rows.length}`, MARGIN + 16, y + 5);
+        doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
+        doc.text(block.group.blurb, MARGIN + 16, y + 21, { width: CONTENT - 20 });
+      }
+
+      if (block.kind === "tableHead") {
+        tableHead(doc, y, RESULT_TITLES, RESULT_COLUMNS);
+      }
+
+      if (block.kind === "row") {
+        doc
+          .rect(MARGIN, y, CONTENT, block.height)
+          .fillAndStroke(block.stripe % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+        doc
+          .fillColor(COLOURS.ink)
+          .font("Helvetica-Bold")
+          .fontSize(9)
+          .text(block.row.label, MARGIN + 8, y + 6, {
+            width: RESULT_COLUMNS[0] - 12,
+            ellipsis: true,
+            height: 11,
+          });
+        doc.font("Helvetica");
+        const cells = [
+          block.row.ratingMa ? `${block.row.ratingMa} mA` : "—",
+          showReading(block.row.half),
+          showReading(block.row.rated),
+          showReading(block.row.five),
+          block.row.touchVolts === null ? "—" : `${block.row.touchVolts} V`,
+        ];
+        let x = MARGIN + RESULT_COLUMNS[0];
+        cells.forEach((cell, at) => {
+          doc.text(cell, x, y + 6, { width: RESULT_COLUMNS[at + 1], align: "center" });
+          x += RESULT_COLUMNS[at + 1];
+        });
+      }
+
+      // A failure or a concern says why, right under its own row.
+      if (block.kind === "reason") {
+        doc.rect(MARGIN, y, CONTENT, block.height).fillAndStroke("#ffffff", COLOURS.hair);
+        doc.rect(MARGIN, y, 3, block.height).fill(tone.fill);
+        doc
+          .fillColor(COLOURS.inkSoft)
+          .font("Helvetica")
+          .fontSize(8.5)
+          .text(block.text, MARGIN + 18, y + 4, { width: CONTENT - 40 });
+      }
+
+      y += block.height;
+    }
+
+    footer(doc, data);
+  });
+}
+
+function corrections(doc: Doc, data: RcdReport, laid: Plan) {
   doc.addPage();
   sectionBar(doc, "Corrections Applied", MARGIN);
 
@@ -559,21 +661,56 @@ function corrections(doc: Doc, data: RcdReport) {
     y += height;
   });
 
-  y += 24;
-  if (data.original) {
-    sectionBar(doc, "Original Instrument Report", y);
-    y += 32;
-    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
-    doc.text(
-      "The pages that follow are the test instrument's own export, reproduced exactly as it was downloaded and not edited in any way. The same file is also attached to this PDF, so the original can be extracted and checked independently.",
-      MARGIN,
-      y,
-      { width: CONTENT, lineGap: 2 },
-    );
-    y = doc.y + 14;
-  }
+  signOff(doc, y + 26);
+  footer(doc, data);
+}
 
-  signOff(doc, y + 10);
+/**
+ * A page of its own, so the instrument's report cannot be missed when the
+ * client flips through — and so it is obvious where ours stops and theirs
+ * starts.
+ */
+function originalDivider(doc: Doc, data: RcdReport, pages: number) {
+  doc.addPage();
+  sectionBar(doc, "Original Instrument Report", MARGIN);
+
+  let y = MARGIN + 52;
+  doc.font("Helvetica-Bold").fontSize(15).fillColor(COLOURS.ink);
+  doc.text(
+    pages === 1
+      ? "The page that follows is the test instrument's own report."
+      : `The ${pages} pages that follow are the test instrument's own report.`,
+    MARGIN,
+    y,
+    { width: CONTENT, lineGap: 2 },
+  );
+  y = doc.y + 16;
+
+  doc.font("Helvetica").fontSize(11).fillColor(COLOURS.ink);
+  doc.text(
+    pages === 1
+      ? "It is reproduced exactly as it was downloaded from the instrument and has not been edited, reformatted or re-typed in any way. Nothing in this report changes it."
+      : "They are reproduced exactly as they were downloaded from the instrument and have not been edited, reformatted or re-typed in any way. Nothing in this report changes them.",
+    MARGIN,
+    y,
+    { width: CONTENT, lineGap: 3 },
+  );
+  y = doc.y + 14;
+  doc.text(
+    `The same file is also attached to this PDF as \u201coriginal-instrument-report.pdf\u201d, so the instrument's own record can be extracted and checked against ${
+      pages === 1 ? "this page" : "these pages"
+    } independently.`,
+    MARGIN,
+    y,
+    { width: CONTENT, lineGap: 3 },
+  );
+  y = doc.y + 26;
+
+  doc.rect(MARGIN, y, CONTENT, 2).fill(COLOURS.accent);
+  y += 18;
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.inkSoft);
+  doc.text(`Instrument: ${data.instrument ?? "—"}`, MARGIN, y, { width: CONTENT });
+
   footer(doc, data);
 }
 
