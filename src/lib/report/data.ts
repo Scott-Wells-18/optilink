@@ -29,7 +29,12 @@ export type ReportFinding = {
   refTemp: number | null;
   hotTemp: number | null;
   rise: number | null;
-  circuitLoad: string;
+  /**
+   * A motor's circuit loading, recorded when the motor was added. Null for a
+   * switchboard: a breaker has no single load worth printing, and the box was
+   * only ever reading "Not Measured".
+   */
+  circuitLoad: string | null;
   recommendations: string[];
   comments: string[];
   thermal: Buffer | null;
@@ -99,7 +104,7 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
       refTemp: issue.refTemp,
       hotTemp: issue.hotTemp,
       rise,
-      circuitLoad: safe(isMotor ? item.circuitLoading?.trim() || "Not Measured" : "Not Measured"),
+      circuitLoad: isMotor ? safe(item.circuitLoading?.trim() || "Not measured") : null,
       recommendations:
         issue.type === "REPAIRED"
           ? [recommendationText(REPAIRED_RECOMMENDATION, device)]
@@ -161,9 +166,11 @@ function describeSlot(board: Board | null, slot: string): string {
   const cell = kind === "extra" ? section.extras[index] : section.cells[index];
   if (!cell) return "";
   if (cell.label.trim()) return cell.label.trim();
+  // A way on the grid is a circuit breaker, and that is what an electrician
+  // reading the report calls it — "CB12", not "Position 12".
   return kind === "extra"
     ? `Additional ${index + 1}`
-    : `Position ${positionNumber(section, index, board.numbering)}`;
+    : `CB${positionNumber(section, index, board.numbering)}`;
 }
 
 /** How a recommendation names the thing: "Replace the breaker". */

@@ -733,11 +733,45 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startRcdTest, setRcdDate, setRcd],
   );
 
+  /**
+   * Safe work method statements. Nothing is wired up behind this yet — the
+   * walk is here so the shape can be looked at and argued with before the
+   * paperwork side is built.
+   */
+  const swmsNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => ({
+          id: `swms:client:${client.id}`,
+          label: client.name,
+          detail: countLabel(client.sites.length, "site", "sites"),
+          children: client.sites.map<TreeNode>((site) => ({
+            id: `swms:site:${site.id}`,
+            label: site.name,
+            detail: site.location?.trim() || "Nothing filed yet",
+            children: [1, 2, 3].map<TreeNode>((n) => ({
+              id: `swms:site:${site.id}:test:${n}`,
+              label: `Test option ${n}`,
+              detail: "Not built yet",
+              variant: "info",
+              onActivate: () =>
+                setInfo({
+                  title: `Test option ${n}`,
+                  body: "Nothing sits behind this yet.\n\nThis is where the SWMS and JSA paperwork will go: the job's own file uploaded, the statements that apply to it picked out, the JSA filled in from them, and the finished paperwork downloaded.",
+                }),
+            })),
+          })),
+        }))
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, setInfo],
+  );
+
   return {
     nodes,
     thermalNodes,
     baNodes,
     rcdNodes,
+    swmsNodes,
     dialog,
     closeDialog: () => setDialog(null),
     info,

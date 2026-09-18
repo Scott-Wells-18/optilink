@@ -180,7 +180,6 @@ export function JobItemDialog({
                     <input
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       multiple
                       hidden
                       onChange={(event) => {

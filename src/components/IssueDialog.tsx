@@ -275,7 +275,6 @@ export function IssueDialog({
                         <input
                           type="file"
                           accept="image/*"
-                          capture="environment"
                           multiple
                           hidden
                           onChange={(event) => {

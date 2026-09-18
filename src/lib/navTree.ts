@@ -50,6 +50,12 @@ export const SECTIONS: TreeNode[] = [
     children: [],
   },
   {
+    id: "swms",
+    label: "SWMS",
+    detail: "Safe work method statements",
+    children: [],
+  },
+  {
     id: "clients",
     label: "Clients",
     detail: "Sites & contacts",

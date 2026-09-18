@@ -36,7 +36,6 @@ const HEAD = COLOURS.bar;
 const HEAD_INK = COLOURS.onBar;
 const HAIR = COLOURS.hair;
 const SOFT = COLOURS.soft;
-const RED = COLOURS.alert;
 
 export function buildReport(data: ReportData): Promise<Buffer> {
   const { doc, done } = newDocument();
@@ -179,62 +178,92 @@ function terms(doc: Doc, data: ReportData) {
 
 /* --- what was found ------------------------------------------------------- */
 
+/**
+ * What was found, grouped by priority, worst first.
+ *
+ * Every band prints whether or not anything landed in it. A client reading
+ * this has to be able to see that nothing was extreme, rather than work it out
+ * from the absence of a row — so an empty band says so, with a dash where its
+ * findings would be.
+ */
 function abnormalities(doc: Doc, data: ReportData) {
   doc.addPage();
   sectionBar(doc, "Identified Thermal Abnormalities / Issues", MARGIN);
 
   const columns = [186, CONTENT - 186 - 54 - 44, 54, 44];
   let y = MARGIN + 30;
-  tableHead(doc, y, ["Equipment", "Component Description", "Priority", "Page"], columns);
-  y += 20;
 
-  if (data.findings.length === 0) {
-    doc.rect(MARGIN, y, CONTENT, 24).fillAndStroke("#ffffff", "#cccccc");
-    doc
-      .fillColor(INK)
-      .font("Helvetica-Oblique")
-      .fontSize(10)
-      .text("No thermal abnormalities were identified during this survey.", MARGIN + 8, y + 7, {
-        width: CONTENT - 16,
+  // Worst first: the bands are declared coolest-first for the guidelines table.
+  for (const band of [...PRIORITY_BANDS].reverse()) {
+    const found = data.findings.filter((finding) => finding.priority === band.priority);
+    const colours = printColours(band.priority);
+
+    doc.rect(MARGIN, y, CONTENT, 26).fillAndStroke("#ffffff", "#cccccc");
+    doc.rect(MARGIN, y, 5, 26).fill(colours.print);
+    doc.fillColor(INK).font("Helvetica-Bold").fontSize(11);
+    doc.text(`${band.band} (${priorityLabel(band.priority)})`, MARGIN + 16, y + 8, {
+      width: 250,
+      ellipsis: true,
+      height: 13,
+    });
+    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
+    doc.text(
+      found.length === 0
+        ? "None found"
+        : `${found.length} ${found.length === 1 ? "finding" : "findings"}`,
+      MARGIN + CONTENT - 160,
+      y + 9,
+      { width: 150, align: "right" },
+    );
+    y += 26;
+
+    if (found.length === 0) {
+      doc.rect(MARGIN, y, CONTENT, 22).fillAndStroke(SOFT, "#cccccc");
+      doc.fillColor(COLOURS.inkSoft).font("Helvetica-Oblique").fontSize(9);
+      doc.text("—", MARGIN + 10, y + 7, { width: CONTENT - 20 });
+      y += 32;
+      continue;
+    }
+
+    tableHead(doc, y, ["Equipment", "Component Description", "Priority", "Page"], columns);
+    y += 20;
+
+    found.forEach((finding, index) => {
+      const height = 23;
+      doc.rect(MARGIN, y, CONTENT, height).fillAndStroke(index % 2 ? SOFT : "#ffffff", "#cccccc");
+      doc.fillColor(INK).font("Helvetica").fontSize(9);
+      doc.text(finding.equipment, MARGIN + 8, y + 7, {
+        width: columns[0] - 12,
+        ellipsis: true,
+        height: 12,
       });
-    y += 24;
+      doc.text(finding.component, MARGIN + columns[0] + 8, y + 7, {
+        width: columns[1] - 12,
+        ellipsis: true,
+        height: 12,
+      });
+
+      const chipX = MARGIN + columns[0] + columns[1];
+      doc.rect(chipX + 4, y + 3, columns[2] - 8, height - 6).fill(colours.print);
+      doc
+        .fillColor(colours.printInk)
+        .font("Helvetica-Bold")
+        .text(priorityLabel(finding.priority), chipX + 4, y + 7, {
+          width: columns[2] - 8,
+          align: "center",
+        });
+
+      doc
+        .fillColor(INK)
+        .font("Helvetica")
+        .text(String(finding.page), chipX + columns[2], y + 7, {
+          width: columns[3],
+          align: "center",
+        });
+      y += height;
+    });
+    y += 10;
   }
-
-  doc.fontSize(9);
-  data.findings.forEach((finding, index) => {
-    const height = 23;
-    doc.rect(MARGIN, y, CONTENT, height).fillAndStroke(index % 2 ? SOFT : "#ffffff", "#cccccc");
-    doc.fillColor(INK).font("Helvetica").text(finding.equipment, MARGIN + 8, y + 7, {
-      width: columns[0] - 12,
-      ellipsis: true,
-      height: 12,
-    });
-    doc.text(finding.component, MARGIN + columns[0] + 8, y + 7, {
-      width: columns[1] - 12,
-      ellipsis: true,
-      height: 12,
-    });
-
-    const chipX = MARGIN + columns[0] + columns[1];
-    const colours = printColours(finding.priority);
-    doc.rect(chipX + 4, y + 3, columns[2] - 8, height - 6).fill(colours.print);
-    doc
-      .fillColor(colours.printInk)
-      .font("Helvetica-Bold")
-      .text(priorityLabel(finding.priority), chipX + 4, y + 7, {
-        width: columns[2] - 8,
-        align: "center",
-      });
-
-    doc
-      .fillColor(INK)
-      .font("Helvetica")
-      .text(String(finding.page), chipX + columns[2], y + 7, {
-        width: columns[3],
-        align: "center",
-      });
-    y += height;
-  });
 
   footer(doc, data);
 }
@@ -320,12 +349,20 @@ function findingPage(doc: Doc, data: ReportData, finding: ReportFinding) {
     doc.text(value, ax + aw / 2 + 8, rowY + 6);
   });
 
-  const loadY = y + 118;
-  doc.rect(ax, loadY, 74, 36).fillAndStroke(SOFT, HAIR);
-  doc.rect(ax + 74, loadY, aw - 74, 36).fillAndStroke("#ffffff", HAIR);
-  doc.fillColor(INK).font("Helvetica").fontSize(9.5);
-  doc.text("Circuit Load", ax + 6, loadY + 13, { width: 68 });
-  doc.text(finding.circuitLoad, ax + 82, loadY + 13, { width: aw - 88, ellipsis: true, height: 12 });
+  // Only a motor has a circuit loading worth printing; on a switchboard the
+  // box said "Not Measured" every time, which is noise.
+  if (finding.circuitLoad !== null) {
+    const loadY = y + 118;
+    doc.rect(ax, loadY, 74, 36).fillAndStroke(SOFT, HAIR);
+    doc.rect(ax + 74, loadY, aw - 74, 36).fillAndStroke("#ffffff", HAIR);
+    doc.fillColor(INK).font("Helvetica").fontSize(9.5);
+    doc.text("Circuit Load", ax + 6, loadY + 13, { width: 68 });
+    doc.text(finding.circuitLoad, ax + 82, loadY + 13, {
+      width: aw - 88,
+      ellipsis: true,
+      height: 12,
+    });
+  }
 
   // Visual image and the recommendations against it.
   y += panelHeight + 12;
@@ -365,14 +402,6 @@ function findingPage(doc: Doc, data: ReportData, finding: ReportFinding) {
     doc.text(paragraph, MARGIN + 10, cy, { width: CONTENT - 20, lineGap: 1.5 });
     cy = doc.y + 7;
   }
-
-  y += commentsHeight + 12;
-  bar(doc, MARGIN, y, CONTENT, "Corrective Action", "left", RED);
-  y += 19;
-  doc.rect(MARGIN, y, CONTENT, 64).lineWidth(1).stroke(RED);
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(9.5);
-  doc.text("Date:", MARGIN + 170, y + 46);
-  doc.text("Repaired By:", MARGIN + 270, y + 46);
 
   footer(doc, data);
 }

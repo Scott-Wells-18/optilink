@@ -54,9 +54,16 @@ export function Gateway({
         if (section.id === "thermal") return { ...section, children: clients.thermalNodes };
         if (section.id === "ba") return { ...section, children: clients.baNodes };
         if (section.id === "rcd") return { ...section, children: clients.rcdNodes };
+        if (section.id === "swms") return { ...section, children: clients.swmsNodes };
         return section;
       }),
-    [clients.nodes, clients.thermalNodes, clients.baNodes, clients.rcdNodes],
+    [
+      clients.nodes,
+      clients.thermalNodes,
+      clients.baNodes,
+      clients.rcdNodes,
+      clients.swmsNodes,
+    ],
   );
 
   useEffect(() => {

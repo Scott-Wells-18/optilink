@@ -247,8 +247,10 @@ export function RcdWizard({
                   <p key={line}>{line}</p>
                 ))}
                 <p className="issue-empty">
-                  You can still use it — the report will say so plainly rather than
-                  hide it.
+                  You can still use it. The report will then be issued under the
+                  names on the export, not the ones it is filed against — these
+                  readings came off whatever the instrument was standing in front
+                  of, and the report has to say so.
                 </p>
               </section>
             ) : null}

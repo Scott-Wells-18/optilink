@@ -28,8 +28,20 @@ import { usePersisted } from "@/lib/session";
 const REVEAL_MS = 560;
 /** The tree slides aside first; branches start drawing part-way through. */
 const SLIDE_LEAD_MS = 220;
-/** Width of the gutter the connecting curves are drawn in. */
-const LINK_WIDTH = 92;
+/**
+ * Width of the gutter the connecting curves are drawn in.
+ *
+ * The stylesheet owns this — it is the same measurement as the left padding
+ * that makes room for the gutter, and a phone shrinks both. Read off the
+ * element rather than repeated here, or the curves miss their cards.
+ */
+const LINK_WIDTH_FALLBACK = 92;
+
+function gutterWidth(element: HTMLElement): number {
+  const value = getComputedStyle(element).getPropertyValue("--tree-link-width");
+  const width = Number.parseFloat(value);
+  return Number.isFinite(width) && width > 0 ? width : LINK_WIDTH_FALLBACK;
+}
 /**
  * Curves run a little way underneath the cards at both ends. Cards paint over
  * the top, so a card nudging sideways on hover can never leave a gap.
@@ -423,9 +435,9 @@ function Branch({
           >
             <svg
               className="tree-links"
-              width={LINK_WIDTH}
+              width={links.width}
               height={links.height}
-              viewBox={`0 0 ${LINK_WIDTH} ${Math.max(links.height, 1)}`}
+              viewBox={`0 0 ${links.width} ${Math.max(links.height, 1)}`}
               fill="none"
               aria-hidden
             >
@@ -492,16 +504,17 @@ function useLinkGeometry(
   mounted: boolean,
   childCount: number,
 ) {
-  const [links, setLinks] = useState<{ paths: string[]; height: number }>({
+  const [links, setLinks] = useState<{ paths: string[]; height: number; width: number }>({
     paths: [],
     height: 0,
+    width: LINK_WIDTH_FALLBACK,
   });
 
   useLayoutEffect(() => {
     const card = cardRef.current;
     const kids = kidsRef.current;
     if (!mounted || !card || !kids || childCount === 0) {
-      setLinks({ paths: [], height: 0 });
+      setLinks({ paths: [], height: 0, width: LINK_WIDTH_FALLBACK });
       return;
     }
 
@@ -523,8 +536,9 @@ function useLinkGeometry(
 
       // Where the curve leaves the parent card, in the gutter's coordinates.
       const from = cardBox.top + cardBox.height / 2 - kidsBox.top;
+      const linkWidth = gutterWidth(kids!);
       const startX = -LINK_TUCK;
-      const endX = LINK_WIDTH + LINK_TUCK;
+      const endX = linkWidth + LINK_TUCK;
 
       let lowest = from;
       const paths: string[] = [];
@@ -534,15 +548,15 @@ function useLinkGeometry(
         const box = target.getBoundingClientRect();
         const to = box.top + box.height / 2 - kidsBox.top;
         lowest = Math.max(lowest, to);
-        const bend = LINK_WIDTH * 0.52;
+        const bend = linkWidth * 0.52;
         paths.push(
           `M ${startX} ${from.toFixed(1)} C ${bend} ${from.toFixed(1)}, ${(
-            LINK_WIDTH - bend
+            linkWidth - bend
           ).toFixed(1)} ${to.toFixed(1)}, ${endX} ${to.toFixed(1)}`,
         );
       });
 
-      setLinks({ paths, height: Math.ceil(lowest) + 2 });
+      setLinks({ paths, height: Math.ceil(lowest) + 2, width: linkWidth });
     }
 
     measure();
