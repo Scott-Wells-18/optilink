@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { readUpload } from "@/lib/storage";
-import { STAGE_LABELS, type JobPhotoStage } from "@/lib/jobs";
+import { JOB_STAGES, STAGE_LABELS, type JobPhotoStage } from "@/lib/jobs";
+import { COMPANY } from "@/lib/company";
+import { tidy, titleCase } from "@/lib/writing";
 import {
   coverPage,
   footer,
@@ -14,34 +16,38 @@ import {
   type Doc,
   type PageMeta,
 } from "@/lib/report/furniture";
-import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
+import {
+  layout,
+  measureText,
+  render,
+  type Layout,
+  type Piece,
+  type Section,
+} from "@/lib/report/flow";
+import { COLOURS, CONTENT, MARGIN, longDate, safe, shortDate } from "@/lib/report/theme";
 
 /**
  * The works completed report — what was found, what was done, and the photos
  * that prove it.
  *
  * The hard part is thirty photos of mixed orientation not reading as a photo
- * dump. So a piece of work is a row, not a page: a heading, two lines of
- * explanation, and a strip of fixed tiles. Every photo sits whole inside its
- * tile, which means a portrait from a phone gets bars at the sides and a
- * landscape gets them top and bottom — but every row is the same height and
- * nothing is ever cropped, which is what makes the page look designed.
+ * dump. So an item is a heading, two lines of explanation, and a strip of
+ * tiles per stage — before, then during, then after — with the stage named
+ * once above its strip rather than under every photo.
+ *
+ * How many tiles go across depends on how many photos that stage holds: a pair
+ * gets half the page each, four go two by two rather than three and a straggler,
+ * and past six they come down in size so one item does not eat three pages.
+ * Whatever the size, a photo is contained and never cropped — a phone portrait
+ * gets bars at the sides, a landscape gets them above and below — because a
+ * crop can hide the very thing the photo was taken to show.
  */
 
-/**
- * Tiles are sized to fill the page rather than fixed: items are packed at the
- * smallest tile that still reads, then the tiles on each page grow into
- * whatever height is left over. A page of three and a page of two therefore
- * both end up full, instead of one of them trailing off into white paper.
- */
-const MIN_TILE = 118;
-const MAX_TILE = 178;
+/** The gap between tiles, and the strip of label above them. */
 const TILE_GAP = 12;
 const LABEL_HEIGHT = 15;
-/** Heading, the found/done lines, the tiles, their labels, and room after. */
+/** Clear space under one item before the next one starts. */
 const ITEM_GAP = 22;
-/** Text is allowed down to here; below it is the footer. */
-const BOTTOM = PAGE.height - 82;
 
 type Photo = { stage: JobPhotoStage; bytes: Buffer };
 
@@ -52,9 +58,6 @@ type Item = {
   found: string;
   done: string;
   photos: Photo[];
-  page: number;
-  /** Set during layout, once it is known how much room the page can spare. */
-  tile: number;
 };
 
 export type JobReport = PageMeta & {
@@ -95,14 +98,12 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     }
     items.push({
       index: index + 1,
-      title: safe(item.title),
-      location: safe(item.location),
-      found: safe(item.found),
-      done: safe(item.done),
+      title: safe(titleCase(item.title)),
+      location: safe(titleCase(item.location)),
+      found: safe(tidy(item.found)),
+      done: safe(tidy(item.done)),
       // Before, then during, then after — the order the story is told in.
       photos: photos.sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage)),
-      page: 0,
-      tile: MIN_TILE,
     });
   }
 
@@ -145,17 +146,19 @@ async function brandBytes(name: string): Promise<Buffer | null> {
 
 /* --- drawing -------------------------------------------------------------- */
 
+/** Cover and summary are drawn by hand; the work follows. */
+const FIRST_SECTION_PAGE = 3;
+
 export function buildJobReport(data: JobReport): Promise<Buffer> {
   const { doc, done } = newDocument();
 
-  // Laid out before anything is drawn, because the summary cites page numbers
-  // and an item's height depends on how much was written about it.
-  const pages = layout(doc, data);
+  // Measured and packed before anything is drawn, because the summary cites
+  // page numbers and an item is as tall as what was written and shot for it.
+  const laid = layout([work(doc, data), closing(doc, data)], FIRST_SECTION_PAGE);
 
   cover(doc, data);
-  summary(doc, data);
-  work(doc, data, pages);
-  closing(doc, data);
+  summary(doc, data, laid);
+  render(doc, data, laid);
 
   stampPageNumbers(doc);
   doc.end();
@@ -175,27 +178,29 @@ function cover(doc: Doc, data: JobReport) {
       ["Prepared for:", data.contactName ?? data.clientName],
       ["Report Date:", shortDate(data.reportDate)],
       ["Site:", data.siteName],
-      ["Works By:", "Optilink Electrical & Communications"],
+      ["Works By:", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
     marks: [],
   });
 }
 
-function summary(doc: Doc, data: JobReport) {
+function summary(doc: Doc, data: JobReport, laid: Layout) {
   doc.addPage();
   sectionBar(doc, "Summary of Works", MARGIN);
 
   const where = data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName;
   const count = data.items.length;
+  const photos = data.items.reduce((total, item) => total + item.photos.length, 0);
+
   doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
   doc.text(
     `The following works were carried out for ${data.clientName} at ${where} on ${longDate(
       data.jobDate,
     )}. ${
-      count === 1
-        ? "One item of work was completed"
-        : `${count} items of work were completed`
-    }, each photographed as it was found and as it was left.`,
+      count === 1 ? "One item of work was completed" : `${count} items of work were completed`
+    }, photographed as found and as left — ${photos} ${
+      photos === 1 ? "photograph" : "photographs"
+    } in all.`,
     MARGIN,
     MARGIN + 46,
     { width: CONTENT, lineGap: 2.5 },
@@ -229,183 +234,234 @@ function summary(doc: Doc, data: JobReport) {
       ellipsis: true,
       height: 12,
     });
-    doc.text(String(item.page), MARGIN + columns[0] + columns[1] + columns[2], y + 7, {
-      width: columns[3],
-      align: "center",
-    });
+    doc.text(
+      String(laid.pageOf[`item:${item.index}`] ?? ""),
+      MARGIN + columns[0] + columns[1] + columns[2],
+      y + 7,
+      { width: columns[3], align: "center" },
+    );
     y += height;
   });
 
   footer(doc, data);
 }
 
+/* --- how a strip of photos is laid out ------------------------------------ */
+
 /**
- * Which items fall on which page, worked out from their measured heights.
- * Page 1 is the cover and page 2 the summary, so the work starts on page 3.
+ * How many tiles across, for a given number of photos in one stage.
+ *
+ * The answer is not "always three". Two photos across the full width read as a
+ * pair; four read better as two rows of two than as a row of three with one
+ * stranded underneath; and past six, tiles have to get smaller or a single
+ * item eats three pages. Nothing is ever cropped at any size, so the only
+ * thing that changes is how much paper each photo is given.
  */
-function layout(doc: Doc, data: JobReport): Item[][] {
-  const pages: Item[][] = [];
-  let page: Item[] = [];
-  let y = MARGIN + 34;
+function columnsFor(count: number): number {
+  if (count <= 2) return Math.max(1, count);
+  if (count === 3) return 3;
+  if (count === 4) return 2;
+  if (count <= 6) return 3;
+  return 4;
+}
+
+/** A tile never spans more than half the page, however few photos there are. */
+function tileSize(count: number): { columns: number; width: number; height: number } {
+  const columns = columnsFor(count);
+  const across = Math.max(2, columns);
+  const width = (CONTENT - TILE_GAP * (across - 1)) / across;
+  return { columns, width, height: Math.round(width * 0.78) };
+}
+
+/** A photo in its well: contained, centred, never cropped. */
+function drawTile(doc: Doc, bytes: Buffer, x: number, y: number, width: number, height: number) {
+  doc.rect(x, y, width, height).fillAndStroke(COLOURS.well, COLOURS.hair);
+  doc.image(bytes, x + 4, y + 4, {
+    fit: [width - 8, height - 8],
+    align: "center",
+    valign: "center",
+  });
+}
+
+/* --- the work ------------------------------------------------------------- */
+
+function work(doc: Doc, data: JobReport): Section {
+  const pieces: Piece[] = [];
+
+  if (data.items.length === 0) {
+    pieces.push({
+      height: 30,
+      draw: (y) => {
+        doc.font("Helvetica-Oblique").fontSize(10.5).fillColor(COLOURS.inkSoft);
+        doc.text("No work has been written up against this report yet.", MARGIN, y, {
+          width: CONTENT,
+        });
+      },
+    });
+    return { id: "work", title: "The Work", pieces };
+  }
 
   for (const item of data.items) {
-    const height = itemHeight(doc, item, MIN_TILE);
-    if (page.length > 0 && y + height > BOTTOM) {
-      pages.push(page);
-      page = [];
-      y = MARGIN;
-    }
-    item.page = pages.length + 3;
-    page.push(item);
-    y += height + ITEM_GAP;
-  }
-  if (page.length > 0) pages.push(page);
-
-  // Share out whatever height is left on each page between its own items.
-  pages.forEach((items, index) => {
-    const top = index === 0 ? MARGIN + 34 : MARGIN;
-    const used = items.reduce(
-      (total, item) => total + itemHeight(doc, item, MIN_TILE) + ITEM_GAP,
-      0,
-    );
-    const rows = items.reduce((total, item) => total + tileRows(item), 0);
-    const spare = BOTTOM - top - used;
-    const growth = rows > 0 ? Math.max(0, Math.floor(spare / rows)) : 0;
-    for (const item of items) item.tile = Math.min(MAX_TILE, MIN_TILE + growth);
-  });
-
-  return pages;
-}
-
-/** How many rows of tiles an item needs — three across, or two when paired. */
-function tileRows(item: Item): number {
-  return Math.max(1, Math.ceil(item.photos.length / (item.photos.length === 2 ? 2 : 3)));
-}
-
-function work(doc: Doc, data: JobReport, pages: Item[][]) {
-  pages.forEach((items, index) => {
-    doc.addPage();
-    let y = MARGIN;
-    if (index === 0) {
-      sectionBar(doc, "The Work", MARGIN);
-      y = MARGIN + 34;
-    }
-    for (const item of items) {
-      drawItem(doc, item, y);
-      y += itemHeight(doc, item, item.tile) + ITEM_GAP;
-    }
-    footer(doc, data);
-  });
-}
-
-/** Measured before drawing, so an item is never split across two pages. */
-function itemHeight(doc: Doc, item: Item, tile: number): number {
-  doc.font("Helvetica").fontSize(9.5);
-  const textWidth = CONTENT - 46;
-  const lines =
-    doc.heightOfString(item.found, { width: textWidth }) +
-    doc.heightOfString(item.done, { width: textWidth }) +
-    6;
-  return 20 + lines + 10 + tileRows(item) * (tile + LABEL_HEIGHT + 6);
-}
-
-function drawItem(doc: Doc, item: Item, top: number) {
-  let y = top;
-
-  // The heading: a numbered rule, the title, and where it was.
-  doc.rect(MARGIN, y + 1, 3, 15).fill(COLOURS.accent);
-  doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(11.5);
-  doc.text(`${item.index}.  ${item.title}`, MARGIN + 12, y, { width: CONTENT - 160 });
-  doc
-    .font("Helvetica")
-    .fontSize(9.5)
-    .fillColor(COLOURS.inkSoft)
-    .text(item.location, MARGIN + CONTENT - 150, y + 2, { width: 150, align: "right" });
-  y += 20;
-
-  const textWidth = CONTENT - 46;
-  for (const [label, body] of [
-    ["Found", item.found],
-    ["Done", item.done],
-  ] as const) {
-    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.accent);
-    doc.text(label.toUpperCase(), MARGIN + 12, y + 1, { width: 34 });
-    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
-    doc.text(body, MARGIN + 46, y, { width: textWidth, lineGap: 1 });
-    y = doc.y + 3;
-  }
-
-  y += 7;
-
-  // Tiles: three across, or two wider ones when there is no "during" shot, so
-  // a row of two never looks like a row of three with a hole in it.
-  const perRow = item.photos.length === 2 ? 2 : 3;
-  const tileWidth = (CONTENT - TILE_GAP * (perRow - 1)) / perRow;
-
-  item.photos.forEach((photo, index) => {
-    const column = index % perRow;
-    const row = Math.floor(index / perRow);
-    const x = MARGIN + column * (tileWidth + TILE_GAP);
-    const tileY = y + row * (item.tile + LABEL_HEIGHT + 6);
-
-    doc.rect(x, tileY, tileWidth, item.tile).fillAndStroke(COLOURS.well, COLOURS.hair);
-    // Contained, not cropped: whatever shape it is, all of it is there.
-    doc.image(photo.bytes, x + 4, tileY + 4, {
-      fit: [tileWidth - 8, item.tile - 8],
-      align: "center",
-      valign: "center",
+    // The heading, and enough of what follows that it is never left alone at
+    // the foot of a page.
+    pieces.push({
+      height: 22,
+      keepWith: 2,
+      mark: `item:${item.index}`,
+      draw: (y) => {
+        doc.rect(MARGIN, y + 1, 3, 15).fill(COLOURS.accent);
+        doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(11.5);
+        doc.text(`${item.index}.  ${item.title}`, MARGIN + 12, y, {
+          width: CONTENT - 160,
+          ellipsis: true,
+          height: 14,
+        });
+        doc
+          .font("Helvetica")
+          .fontSize(9.5)
+          .fillColor(COLOURS.inkSoft)
+          .text(item.location, MARGIN + CONTENT - 150, y + 2, { width: 150, align: "right" });
+      },
     });
 
-    const repeat = item.photos.filter(
-      (other, at) => other.stage === photo.stage && at < index,
-    ).length;
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(8)
-      .fillColor(COLOURS.inkSoft)
-      .text(
-        repeat ? `${STAGE_LABELS[photo.stage].toUpperCase()} ${repeat + 1}` : STAGE_LABELS[photo.stage].toUpperCase(),
-        x,
-        tileY + item.tile + 4,
-        { width: tileWidth, align: "center", characterSpacing: 0.6 },
-      );
-  });
-
-  doc.fillColor(COLOURS.ink);
-}
-
-function closing(doc: Doc, data: JobReport) {
-  doc.addPage();
-  sectionBar(doc, "Completion", MARGIN);
-
-  let y = MARGIN + 46;
-  doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
-  doc.text(
-    "The works listed in this report have been completed and left in a safe and serviceable condition. All work has been carried out in accordance with AS/NZS 3000 and tested on completion.",
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 2.5 },
-  );
-  y = doc.y + 24;
-
-  if (data.recommendations.length > 0) {
-    sectionBar(doc, "Further Recommendations", y);
-    y += 32;
-    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
-    doc.text(
-      "The following was noted during the works but fell outside the agreed scope. We would recommend it is attended to.",
-      MARGIN,
-      y,
-      { width: CONTENT, lineGap: 2 },
-    );
-    y = doc.y + 10;
-    for (const line of data.recommendations) {
-      doc.text(`•  ${line}`, MARGIN + 8, y, { width: CONTENT - 16, lineGap: 1.5 });
-      y = doc.y + 5;
+    const textWidth = CONTENT - 46;
+    for (const [label, body] of [
+      ["Found", item.found],
+      ["Done", item.done],
+    ] as const) {
+      const height = measureText(doc, body, { width: textWidth, size: 9.5, lineGap: 1 }) + 3;
+      pieces.push({
+        height,
+        draw: (y) => {
+          doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.accent);
+          doc.text(label.toUpperCase(), MARGIN + 12, y + 1, { width: 34 });
+          doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+          doc.text(body, MARGIN + 46, y, { width: textWidth, lineGap: 1 });
+        },
+      });
     }
-    y += 14;
+
+    pieces.push({ height: 9, draw: () => {} });
+
+    const stages = JOB_STAGES.map((stage) => ({
+      stage,
+      shots: item.photos.filter((photo) => photo.stage === stage),
+    })).filter((entry) => entry.shots.length > 0);
+
+    // The classic case — one shot of each — reads as a single row, each tile
+    // labelled under itself. Stacking a strip per stage would give it half a
+    // page for two photographs.
+    const single = stages.length > 0 && stages.every((entry) => entry.shots.length === 1);
+
+    if (single) {
+      const { width, height } = tileSize(stages.length);
+      pieces.push({
+        height: height + LABEL_HEIGHT + 6,
+        draw: (y) => {
+          stages.forEach((entry, column) => {
+            const x = MARGIN + column * (width + TILE_GAP);
+            drawTile(doc, entry.shots[0].bytes, x, y, width, height);
+            doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
+            doc.text(STAGE_LABELS[entry.stage].toUpperCase(), x, y + height + 4, {
+              width,
+              align: "center",
+              characterSpacing: 0.6,
+            });
+          });
+          doc.fillColor(COLOURS.ink);
+        },
+      });
+    } else {
+      // One strip per stage, so the story reads before, during, after — and the
+      // stage is named once over the strip rather than under every tile.
+      for (const { stage, shots } of stages) {
+        const { columns, width, height } = tileSize(shots.length);
+        const rows = Math.ceil(shots.length / columns);
+
+        pieces.push({
+          height: LABEL_HEIGHT,
+          keepWith: 1,
+          draw: (y) => {
+            doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
+            doc.text(
+              shots.length > 1
+                ? `${STAGE_LABELS[stage].toUpperCase()}  \u00b7  ${shots.length}`
+                : STAGE_LABELS[stage].toUpperCase(),
+              MARGIN + 1,
+              y + 2,
+              { width: CONTENT, characterSpacing: 0.6 },
+            );
+            doc.fillColor(COLOURS.ink);
+          },
+        });
+
+        for (let row = 0; row < rows; row += 1) {
+          const inRow = shots.slice(row * columns, row * columns + columns);
+          pieces.push({
+            height: height + 7,
+            draw: (y) => {
+              inRow.forEach((photo, column) => {
+                drawTile(doc, photo.bytes, MARGIN + column * (width + TILE_GAP), y, width, height);
+              });
+            },
+          });
+        }
+      }
+    }
+
+    pieces.push({ height: ITEM_GAP, draw: () => {} });
   }
 
-  signOff(doc, y + 20);
-  footer(doc, data);
+  return { id: "work", title: "The Work", pieces };
+}
+
+/* --- signing it off ------------------------------------------------------- */
+
+function closing(doc: Doc, data: JobReport): Section {
+  const pieces: Piece[] = [];
+
+  const opener = safe(
+    "The works listed in this report have been completed and left in a safe and serviceable condition. All work has been carried out in accordance with AS/NZS 3000 and tested on completion.",
+  );
+  pieces.push({
+    height: measureText(doc, opener, { width: CONTENT, size: 10.5, lineGap: 2.5 }) + 24,
+    draw: (y) => {
+      doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
+      doc.text(opener, MARGIN, y, { width: CONTENT, lineGap: 2.5 });
+    },
+  });
+
+  if (data.recommendations.length > 0) {
+    pieces.push({
+      height: 32,
+      keepWith: 2,
+      draw: (y) => sectionBar(doc, "Further Recommendations", y),
+    });
+    const note = safe(
+      "The following was noted during the works but fell outside the agreed scope. We would recommend it is attended to.",
+    );
+    pieces.push({
+      height: measureText(doc, note, { width: CONTENT, size: 10 }) + 10,
+      draw: (y) => {
+        doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
+        doc.text(note, MARGIN, y, { width: CONTENT, lineGap: 2 });
+      },
+    });
+    for (const line of data.recommendations) {
+      const height = measureText(doc, line, { width: CONTENT - 20, size: 10, lineGap: 1.5 }) + 5;
+      pieces.push({
+        height,
+        draw: (y) => {
+          doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
+          doc.text("•", MARGIN + 6, y, { width: 10 });
+          doc.text(line, MARGIN + 18, y, { width: CONTENT - 20, lineGap: 1.5 });
+        },
+      });
+    }
+    pieces.push({ height: 14, draw: () => {} });
+  }
+
+  pieces.push({ height: 92, draw: (y) => signOff(doc, y + 20) });
+
+  return { id: "closing", title: "Completion", pieces };
 }

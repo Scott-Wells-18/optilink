@@ -546,7 +546,7 @@ export function useClientsTree(enabled: boolean) {
     [refresh],
   );
 
-  /** Starting a job needs no form either — today's date names it. */
+  /** Starting a report needs no form either — today's date names it. */
   const startJob = useCallback(
     async (siteId: string) => {
       const response = await fetch("/api/jobs", {
@@ -564,9 +564,12 @@ export function useClientsTree(enabled: boolean) {
   );
 
   /**
-   * Before & after walks client → site → job → the work done. A job is a day
-   * at a site; each item under it is one discrete piece of work, photographed
-   * as it was found and as it was left.
+   * Before & after walks client → site → report → the work done.
+   *
+   * A report is not a job. It is whatever you want to hand the client as one
+   * document: a single GPO replacement, a week of call-outs, or twenty
+   * switchboards cleaned on the one visit. Each item under it is one discrete
+   * piece of work, photographed as it was found and as it was left.
    */
   const baNodes = useMemo<TreeNode[]>(
     () =>
@@ -576,7 +579,8 @@ export function useClientsTree(enabled: boolean) {
             id: `ba:site:${site.id}`,
             label: site.name,
             detail:
-              site.location?.trim() || countLabel(site.jobs.length, "job", "jobs"),
+              site.location?.trim() ||
+              countLabel(site.jobs.length, "report", "reports"),
             children: [
               ...site.jobs.map<TreeNode>((job) => {
                 const title = jobTitle(job);
@@ -620,7 +624,7 @@ export function useClientsTree(enabled: boolean) {
               {
                 id: `add:job:${site.id}`,
                 label: "Add new",
-                detail: "Job",
+                detail: "Report",
                 variant: "add",
                 onActivate: () => void startJob(site.id),
               },
