@@ -7,8 +7,8 @@ import {
   normaliseBoard,
   positionNumber,
   slotKey,
-  testsFor,
   type Board,
+  type CellState,
 } from "@/lib/board";
 import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
 import { countRcdTests } from "@/lib/rcd/map";
@@ -44,7 +44,7 @@ type Run = {
 };
 
 /** An additional RCD, as the operator picks the order they tested them in. */
-type Extra = { slot: string; label: string; tests: number };
+type Extra = { slot: string; label: string; state: CellState };
 
 export function RcdWizard({
   runId,
@@ -109,7 +109,7 @@ export function RcdWizard({
                     {
                       slot: slotKey(section.id, "extra", index),
                       label: cell.label.trim() || `Additional ${index + 1}`,
-                      tests: testsFor(cell.state),
+                      state: cell.state,
                     },
                   ]
                 : [],
@@ -551,22 +551,28 @@ function ExtraOrder({
           </button>
         ) : null}
       </p>
-      <div className="rcd-order">
+      <div className="board-extra-row">
         {devices.map((device, drawn) => {
           const at = known.indexOf(device.slot);
           return (
-            <button
+            <div
               key={device.slot}
-              type="button"
-              className={`rcd-order-item ${at >= 0 ? "is-on" : ""}`}
+              role="button"
+              tabIndex={0}
+              className={`board-cell is-${device.state.toLowerCase()} is-selectable ${
+                at >= 0 ? "is-ranked" : ""
+              }`}
               onClick={() => toggle(device.slot)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggle(device.slot);
+                }
+              }}
             >
-              <span className="rcd-order-rank">{at >= 0 ? at + 1 : drawn + 1}</span>
-              <span className="rcd-order-label">{device.label}</span>
-              {device.tests > 1 ? (
-                <span className="rcd-order-tests">{device.tests} tests</span>
-              ) : null}
-            </button>
+              <span className="board-cell-no">{at >= 0 ? at + 1 : drawn + 1}</span>
+              <span className="board-cell-text">{device.label}</span>
+            </div>
           );
         })}
       </div>

@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import { COMPANY, reportBy } from "@/lib/company";
+import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { COLOURS, CONTENT, MARGIN, PAGE, shortDate } from "@/lib/report/theme";
 
 /**
@@ -250,23 +250,31 @@ export function stampPageNumbers(doc: Doc, extraPages = 0) {
   }
 }
 
-/** Who signed the report off, above a ruled line. */
-export function signOff(doc: Doc, y: number) {
+/**
+ * Who signed the report off, above a ruled line.
+ *
+ * The thermography certificate belongs on a thermographic survey and nowhere
+ * else: an RCD test or a record of works is signed as the electrical
+ * contractor, under the licence that actually authorises the work.
+ */
+export function signOff(doc: Doc, y: number, options: { thermography?: boolean } = {}) {
   doc.font("Helvetica").fontSize(11).fillColor(COLOURS.ink);
   doc.text("……………………………………………", MARGIN, y);
-  const [name, rest] = reportBy().split(" (");
-  doc.font("Helvetica-Bold").fontSize(11).text(name, MARGIN, y + 22);
-  doc
-    .font("Helvetica")
-    .fontSize(10)
-    .fillColor(COLOURS.inkSoft)
-    .text(rest ? rest.replace(/\)$/, "") : "", MARGIN, y + 38);
+  doc.font("Helvetica-Bold").fontSize(11).text(THERMOGRAPHER.name, MARGIN, y + 22);
+  doc.font("Helvetica").fontSize(10).fillColor(COLOURS.inkSoft);
+  if (options.thermography) {
+    doc.text(
+      `${THERMOGRAPHER.level} - ${THERMOGRAPHER.certificateNumber}`,
+      MARGIN,
+      y + 38,
+    );
+  }
   doc
     .fontSize(9.5)
     .text(
       `${COMPANY.name} · Lic ${COMPANY.licence} · Supervisor ${COMPANY.supervisor}`,
       MARGIN,
-      y + 53,
+      y + (options.thermography ? 53 : 38),
     );
   doc.fillColor(COLOURS.ink);
 }

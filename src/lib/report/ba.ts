@@ -64,8 +64,6 @@ export type JobReport = PageMeta & {
   contactName: string | null;
   recommendations: string[];
   items: Item[];
-  badge: Buffer | null;
-  auspta: Buffer | null;
 };
 
 /* --- gathering ------------------------------------------------------------ */
@@ -119,8 +117,6 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     recommendations: job.recommendations.map(safe),
     items,
     logo: await brandBytes("logo.jpg"),
-    badge: await brandBytes("thermographer.png"),
-    auspta: await brandBytes("auspta.png"),
   };
 }
 
@@ -181,7 +177,7 @@ function cover(doc: Doc, data: JobReport) {
       ["Site:", data.siteName],
       ["Works By:", "Optilink Electrical & Communications"],
     ],
-    marks: [data.badge, data.auspta],
+    marks: [],
   });
 }
 

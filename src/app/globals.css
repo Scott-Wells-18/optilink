@@ -2979,56 +2979,21 @@ body {
   cursor: pointer;
 }
 
-.rcd-order {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/*
+ * A picked device keeps its own colour — it is the same box that is on the
+ * board — and says where it falls in the run with a ring round its number.
+ */
+.board-cell.is-ranked {
+  box-shadow: 0 0 0 2px #fff inset, 0 0 0 4px currentColor;
 }
 
-.rcd-order-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  padding: 0 14px 0 10px;
-  border: 1px solid var(--hair-strong);
-  border-radius: 9px;
-  background: #fff;
-  font: inherit;
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.rcd-order-item.is-on {
-  border-color: #0e9f6e;
-  background: #0e9f6e;
-  color: #fff;
-}
-
-.rcd-order-rank {
+.board-cell.is-ranked .board-cell-no {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: rgba(11, 42, 68, 0.08);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-4);
-}
-
-.rcd-order-item.is-on .rcd-order-rank {
   background: rgba(255, 255, 255, 0.92);
-  color: #0a6a49;
-}
-
-.rcd-order-tests {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--ink-4);
-}
-
-.rcd-order-item.is-on .rcd-order-tests {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  font-weight: 700;
 }

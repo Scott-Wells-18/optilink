@@ -101,7 +101,7 @@ function surveyNotes(doc: Doc, data: ReportData) {
   }
 
   y += 40;
-  signOff(doc, y);
+  signOff(doc, y, { thermography: true });
 
   footer(doc, data);
 }

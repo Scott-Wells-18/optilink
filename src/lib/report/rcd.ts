@@ -9,6 +9,14 @@ import { loadTuning } from "@/lib/rcd/settings";
 import { CHECKLIST } from "@/lib/rcd/checklist";
 import { normaliseWalk } from "@/lib/rcd/map";
 import { namesMatch } from "@/lib/rcd/names";
+import {
+  IN_NEW_SOUTH_WALES,
+  WHAT_IS_AN_RCD,
+  WHAT_WAS_DONE,
+  instrumentPassage,
+  verdictPassages,
+  type Passage,
+} from "@/lib/rcd/explain";
 import type { Reading } from "@/lib/rcd/parse";
 import type { RcdLimits } from "@/lib/standards/rcd";
 import {
@@ -23,6 +31,14 @@ import {
   type Doc,
   type PageMeta,
 } from "@/lib/report/furniture";
+import {
+  layout,
+  measureText,
+  render,
+  type Layout,
+  type Piece,
+  type Section,
+} from "@/lib/report/flow";
 import {
   COLOURS,
   CONTENT,
@@ -83,21 +99,9 @@ export type RcdReport = PageMeta & {
     walk: string;
   };
   checklist: { question: string; answer: string }[];
-  mismatches: string[];
-  /**
-   * What the record says, when the report is not printing it.
-   *
-   * An export that names a different site or board is the one that counts —
-   * the readings came off it. So the report carries the instrument's own
-   * names throughout and says here what it was filed against, rather than
-   * printing one board's name over another board's results.
-   */
-  filedUnder: { siteName: string; siteLocation: string | null; boardName: string } | null;
   original: Buffer | null;
   /** How many pages the instrument's own report runs to. */
   originalPages: number;
-  badge: Buffer | null;
-  auspta: Buffer | null;
 };
 
 /* --- gathering ------------------------------------------------------------ */
@@ -145,15 +149,6 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
     siteLocation: identity.siteLocation ? safe(identity.siteLocation) : null,
     contactName: run.site.contacts[0] ? safe(run.site.contacts[0].name) : null,
     boardName: safe(identity.boardName),
-    filedUnder: identity.filedUnder
-      ? {
-          siteName: safe(identity.filedUnder.siteName),
-          siteLocation: identity.filedUnder.siteLocation
-            ? safe(identity.filedUnder.siteLocation)
-            : null,
-          boardName: safe(identity.filedUnder.boardName),
-        }
-      : null,
     testDate: run.date,
     reportDate: new Date(),
     instrument: parsed.company ? safe(parsed.company) : null,
@@ -183,12 +178,9 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
       question: item.question,
       answer: safe(answerFor(checklist[item.key])),
     })),
-    mismatches: run.mismatches.map(safe),
     original,
     originalPages: original ? await countPages(original) : 0,
     logo: await brandBytes("logo.jpg"),
-    badge: await brandBytes("thermographer.png"),
-    auspta: await brandBytes("auspta.png"),
   };
 }
 
@@ -219,31 +211,34 @@ type Names = { siteName: string; siteLocation: string | null; boardName: string 
  *
  * Normally the record's, which is also the instrument's, spelled properly. But
  * if the export names a different site or a different board, the export wins
- * outright: these readings came off whatever the instrument was standing in
- * front of, and a report that labels them with the board they were filed
- * against is a report that says something untrue. The record's own names are
- * kept to be printed alongside, so nothing is quietly swapped.
+ * outright and without comment: these readings came off whatever the
+ * instrument was standing in front of, and a report that labels them with the
+ * board they were filed against is a report that says something untrue.
  *
- * The location goes with the record's site, so once the site is in doubt the
+ * The operator is told at the time, in the wizard, where they can still change
+ * what it is filed against. By the time a report is being drawn that decision
+ * is made, and the report has no business arguing with itself in front of the
+ * client.
+ *
+ * The location belongs to the record's site, so once the site is in doubt the
  * location is dropped rather than carried over onto somewhere else.
  */
 function resolveIdentity(
   parsed: { siteName?: string | null; boardName?: string | null },
   record: Names,
-): Names & { filedUnder: Names | null } {
+): Names {
   const exportSite = parsed.siteName?.trim() || null;
   const exportBoard = parsed.boardName?.trim() || null;
 
-  const siteDiffers = Boolean(exportSite) && !namesMatch(exportSite!, record.siteName);
-  const boardDiffers = Boolean(exportBoard) && !namesMatch(exportBoard!, record.boardName);
+  const siteDiffers = exportSite !== null && !namesMatch(exportSite, record.siteName);
+  const boardDiffers = exportBoard !== null && !namesMatch(exportBoard, record.boardName);
 
-  if (!siteDiffers && !boardDiffers) return { ...record, filedUnder: null };
+  if (!siteDiffers && !boardDiffers) return record;
 
   return {
     siteName: exportSite ?? record.siteName,
     siteLocation: null,
     boardName: exportBoard ?? record.boardName,
-    filedUnder: record,
   };
 }
 
@@ -270,19 +265,35 @@ async function brandBytes(name: string): Promise<Buffer | null> {
 
 /* --- drawing -------------------------------------------------------------- */
 
-const GROUPS: { verdict: Verdict; title: string; blurb: string }[] = [
+const GROUPS: { verdict: Verdict; title: string; blurb: string; empty: string }[] = [
   {
     verdict: "FAIL",
     title: "Failed",
-    blurb: "These devices did not meet the standard and need attention.",
+    blurb: "Did not meet the standard. These need replacing.",
+    empty: "No device failed. Nothing in this section needs acting on.",
   },
   {
     verdict: "CONCERN",
     title: "Concerns",
-    blurb: "These passed, but close enough to their limit to be worth watching.",
+    blurb: "Passed, but close enough to the limit to be worth watching.",
+    empty: "No device was close enough to its limit to raise.",
   },
-  { verdict: "PASS", title: "Passed", blurb: "These met the standard comfortably." },
+  {
+    verdict: "PASS",
+    title: "Passed",
+    blurb: "Met the standard with margin in hand.",
+    empty: "No device passed on this run.",
+  },
 ];
+
+/** Cover and contents are drawn by hand; the sections follow. */
+const FIRST_SECTION_PAGE = 3;
+
+const ROW_HEIGHT = 22;
+const TABLE_HEAD = 20;
+
+const RESULT_COLUMNS = [150, 60, 64, 64, 64, CONTENT - 150 - 252];
+const RESULT_TITLES = ["Circuit", "Rating", "x 1/2", "x 1", "x 5", "Touch V"];
 
 export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
   const { doc, done } = newDocument();
@@ -291,14 +302,13 @@ export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
   // total the reader sees at the foot of every page.
   const appended = data.originalPages;
 
-  const laid = plan(doc, data);
+  // Everything after the contents is measured and packed first, so the page
+  // numbers the contents prints are the pages things actually landed on.
+  const laid = layout(sections(doc, data, appended), FIRST_SECTION_PAGE);
 
   cover(doc, data);
   contents(doc, data, laid);
-  basis(doc, data);
-  results(doc, data, laid);
-  corrections(doc, data, laid);
-  if (appended > 0) originalDivider(doc, data, appended);
+  render(doc, data, laid);
 
   stampPageNumbers(doc, appended);
   doc.end();
@@ -307,106 +317,19 @@ export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
   return data.original ? await append(ours, data.original) : ours;
 }
 
-type Group = { verdict: Verdict; title: string; blurb: string; rows: RcdResultRow[]; page: number };
-
-/** One thing to draw, and how tall it is. */
-type Block =
-  | { kind: "groupHead"; group: Group; height: number }
-  | { kind: "tableHead"; group: Group; height: number }
-  | { kind: "row"; group: Group; row: RcdResultRow; stripe: number; height: number }
-  | { kind: "reason"; group: Group; text: string; height: number };
-
-type Plan = {
-  groups: Group[];
-  /** The blocks that land on each results page, in order. */
-  pages: Block[][];
-  correctionsPage: number;
-  originalPage: number;
-};
-
-const ROW_HEIGHT = 22;
-const GROUP_HEAD = 46;
-const TABLE_HEAD = 20;
-const GROUP_GAP = 20;
-const BOTTOM = PAGE.height - 82;
-/** Cover, contents, basis — then the results start. */
-const FIRST_RESULTS_PAGE = 4;
-
-/**
- * Worked out before anything is drawn, because the contents page cites page
- * numbers and a failure's explanation makes its row as tall as its words.
- * The drawing below simply plays this back, so the two cannot disagree.
- */
-function plan(doc: Doc, data: RcdReport): Plan {
-  const groups = GROUPS.map((group) => ({
-    ...group,
-    rows: data.results.filter((result) => result.verdict === group.verdict),
-    page: 0,
-  })).filter((group) => group.rows.length > 0);
-
-  doc.font("Helvetica").fontSize(8.5);
-  const blocks: Block[] = [];
-  for (const group of groups) {
-    blocks.push({ kind: "groupHead", group, height: GROUP_HEAD });
-    blocks.push({ kind: "tableHead", group, height: TABLE_HEAD });
-    group.rows.forEach((row, stripe) => {
-      blocks.push({ kind: "row", group, row, stripe, height: ROW_HEIGHT });
-      if (row.verdict === "PASS") return;
-      for (const text of row.reasons) {
-        blocks.push({
-          kind: "reason",
-          group,
-          text,
-          height: doc.heightOfString(text, { width: CONTENT - 40 }) + 7,
-        });
-      }
-    });
-  }
-
-  const pages: Block[][] = [];
-  let page: Block[] = [];
-  let y = MARGIN + 34;
-
-  const breakPage = () => {
-    pages.push(page);
-    page = [];
-    y = MARGIN;
-  };
-
-  for (const [index, block] of blocks.entries()) {
-    // A group heading is no use at the foot of a page with nothing under it.
-    const needs =
-      block.kind === "groupHead"
-        ? block.height + TABLE_HEAD + ROW_HEIGHT
-        : block.height;
-
-    if (page.length > 0 && y + needs > BOTTOM) {
-      breakPage();
-      // A table carried over needs its heading again.
-      if (block.kind === "row" || block.kind === "reason") {
-        page.push({ kind: "tableHead", group: block.group, height: TABLE_HEAD });
-        y += TABLE_HEAD;
-      }
-    }
-
-    if (block.kind === "groupHead" && !groups[0]) continue;
-    if (block.kind === "groupHead") {
-      block.group.page = FIRST_RESULTS_PAGE + pages.length;
-      if (index > 0) y += 0;
-    }
-
-    page.push(block);
-    y += block.height;
-
-    const next = blocks[index + 1];
-    if (next?.kind === "groupHead") y += GROUP_GAP;
-  }
-  if (page.length > 0) pages.push(page);
-  if (pages.length === 0) pages.push([]);
-
-  const correctionsPage = FIRST_RESULTS_PAGE + pages.length;
-  return { groups, pages, correctionsPage, originalPage: correctionsPage + 1 };
+/** Every section of the report, in the order it is read. */
+function sections(doc: Doc, data: RcdReport, appended: number): Section[] {
+  const out: Section[] = [
+    definitions(doc, data),
+    basis(doc, data),
+    results(doc, data),
+    corrections(doc, data),
+  ];
+  if (appended > 0) out.push(originalDivider(doc, data, appended));
+  return out;
 }
+
+/* --- the cover and the contents ------------------------------------------- */
 
 function cover(doc: Doc, data: RcdReport) {
   const failed = data.results.filter((result) => result.verdict === "FAIL").length;
@@ -415,27 +338,25 @@ function cover(doc: Doc, data: RcdReport) {
     subtitle: data.siteLocation || data.siteName,
     dateLabel: "Test Date:",
     date: data.testDate,
-    scope: `${data.boardName} — ${data.results.length} ${
+    scope: `${data.boardName} — one switchboard, ${data.results.length} ${
       data.results.length === 1 ? "device" : "devices"
     } tested${failed ? `, ${failed} failed` : ""}`,
     rows: [
       ["Prepared for:", data.contactName ?? data.clientName],
       ["Report Date:", shortDate(data.reportDate)],
       ["Switchboard:", data.boardName],
-      // Spelled out when it is not the record's own, so the cover cannot be
-      // read as naming one place while the results came off another.
-      ...(data.filedUnder
-        ? ([["Site (per instrument):", data.siteName]] as [string, string][])
-        : []),
       ["Tested By:", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
-    marks: [data.badge, data.auspta],
+    marks: [],
   });
 }
 
-function contents(doc: Doc, data: RcdReport, laid: Plan) {
+/** One row of the contents: what it is, how much of it there is, and where. */
+type Entry = { title: string; note: string; count: string; page: string; tone: string };
+
+function contents(doc: Doc, data: RcdReport, laid: Layout) {
   doc.addPage();
-  sectionBar(doc, "Results at a Glance", MARGIN);
+  sectionBar(doc, "Contents", MARGIN);
 
   const where = data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName;
   doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
@@ -448,166 +369,246 @@ function contents(doc: Doc, data: RcdReport, laid: Plan) {
     { width: CONTENT, lineGap: 2.5 },
   );
 
-  let y = doc.y + 22;
-  for (const group of laid.groups) {
-    const tone =
-      group.verdict === "FAIL"
-        ? SEVERITY.fail
-        : group.verdict === "CONCERN"
-          ? SEVERITY.concern
-          : SEVERITY.pass;
+  const counted = (verdict: Verdict) =>
+    data.results.filter((result) => result.verdict === verdict).length;
 
-    doc.rect(MARGIN, y, CONTENT, 44).fillAndStroke("#ffffff", COLOURS.hair);
-    doc.rect(MARGIN, y, 5, 44).fill(tone.fill);
-    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
-    doc.text(group.title, MARGIN + 18, y + 9, { width: 200 });
-    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-    doc.text(group.blurb, MARGIN + 18, y + 26, { width: CONTENT - 200 });
+  const entries: Entry[] = [
+    {
+      title: "Definitions",
+      note: "What an RCD does, what was tested, and what each verdict means.",
+      count: "",
+      page: String(laid.pageOf.definitions),
+      tone: COLOURS.accent,
+    },
+    {
+      title: "Basis of assessment",
+      note: "The limits every reading was judged against, and their source.",
+      count: "",
+      page: String(laid.pageOf.basis),
+      tone: COLOURS.accent,
+    },
+    // Every verdict is listed whether or not anything landed in it: a client
+    // has to be able to see at a glance that nothing failed, rather than infer
+    // it from a section that is not there.
+    ...GROUPS.map((group) => {
+      const total = counted(group.verdict);
+      return {
+        title: group.title,
+        note: group.blurb,
+        count: `${total} ${total === 1 ? "device" : "devices"}`,
+        page: total > 0 ? String(laid.pageOf[group.verdict] ?? laid.pageOf.results) : "—",
+        tone: toneFor(group.verdict).fill,
+      };
+    }),
+    {
+      title: "Corrections applied",
+      note: "What was set aside before the results were drawn up, and why.",
+      count: "",
+      page: String(laid.pageOf.corrections),
+      tone: COLOURS.accent,
+    },
+  ];
 
-    doc.font("Helvetica-Bold").fontSize(13).fillColor(tone.fill);
-    doc.text(
-      `${group.rows.length} ${group.rows.length === 1 ? "device" : "devices"}`,
-      MARGIN + CONTENT - 190,
-      y + 9,
-      { width: 110, align: "right" },
-    );
-    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.bar);
-    doc.text(`Page ${group.page}`, MARGIN + CONTENT - 70, y + 11, {
-      width: 60,
-      align: "right",
-    });
-    y += 54;
-  }
-
-  // The instrument's own report is part of what they are being handed, so it
-  // is listed like any other section rather than left to be stumbled upon.
   if (data.originalPages > 0) {
-    doc.rect(MARGIN, y, CONTENT, 44).fillAndStroke("#ffffff", COLOURS.hair);
-    doc.rect(MARGIN, y, 5, 44).fill(COLOURS.accent);
-    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
-    doc.text("Original instrument report", MARGIN + 18, y + 9, { width: 260 });
-    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-    doc.text("The tester's own export, reproduced unaltered.", MARGIN + 18, y + 26, {
-      width: CONTENT - 200,
+    entries.push({
+      title: "Original instrument report",
+      note: "The tester's own export, reproduced unaltered.",
+      count: `${data.originalPages} ${data.originalPages === 1 ? "page" : "pages"}`,
+      page: String(laid.pageOf.original),
+      tone: COLOURS.accent,
     });
-    doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.accent);
-    doc.text(
-      `${data.originalPages} ${data.originalPages === 1 ? "page" : "pages"}`,
-      MARGIN + CONTENT - 190,
-      y + 9,
-      { width: 110, align: "right" },
-    );
+  }
+
+  let y = doc.y + 22;
+  for (const entry of entries) {
+    doc.rect(MARGIN, y, CONTENT, 40).fillAndStroke("#ffffff", COLOURS.hair);
+    doc.rect(MARGIN, y, 5, 40).fill(entry.tone);
+
+    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(12);
+    doc.text(entry.title, MARGIN + 18, y + 8, { width: 230, ellipsis: true, height: 14 });
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(entry.note, MARGIN + 18, y + 24, {
+      width: CONTENT - 210,
+      ellipsis: true,
+      height: 11,
+    });
+
+    if (entry.count) {
+      doc.font("Helvetica-Bold").fontSize(11.5).fillColor(entry.tone);
+      doc.text(entry.count, MARGIN + CONTENT - 180, y + 9, { width: 108, align: "right" });
+    }
     doc.font("Helvetica").fontSize(10).fillColor(COLOURS.bar);
-    doc.text(`Page ${laid.originalPage}`, MARGIN + CONTENT - 70, y + 11, {
-      width: 60,
+    doc.text(entry.page === "—" ? "—" : `Page ${entry.page}`, MARGIN + CONTENT - 66, y + 11, {
+      width: 56,
       align: "right",
     });
-    y += 54;
-  }
-
-  const notes = [...data.mismatches];
-  if (data.filedUnder) {
-    // Said in one sentence, because it is the sentence that decides how every
-    // reading in this report should be read.
-    const was = data.filedUnder.siteLocation
-      ? `${data.filedUnder.siteName}, ${data.filedUnder.siteLocation}`
-      : data.filedUnder.siteName;
-    notes.push(
-      `The site and switchboard named throughout this report are the instrument's own, as recorded on the export reproduced at the back. They are what these readings were taken from. The test was filed in our records against ${data.filedUnder.boardName} at ${was}.`,
-    );
-  }
-
-  if (notes.length > 0) {
-    y += 6;
-    sectionBar(doc, "Please Note", y);
-    y += 30;
-    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
-    for (const line of notes) {
-      doc.text(`•  ${line}`, MARGIN + 8, y, { width: CONTENT - 16, lineGap: 1.5 });
-      y = doc.y + 5;
-    }
+    y += 48;
   }
 
   footer(doc, data);
 }
 
-function basis(doc: Doc, data: RcdReport) {
-  doc.addPage();
-  sectionBar(doc, "Basis of Assessment", MARGIN);
+/* --- definitions ---------------------------------------------------------- */
 
-  let y = MARGIN + 42;
+/**
+ * Written out rather than assumed. A client handed trip times and three
+ * colours has been given data; this is what turns it into a report they can
+ * act on without ringing up to ask what any of it means.
+ */
+function definitions(doc: Doc, data: RcdReport): Section {
+  const passages: Passage[] = [
+    WHAT_IS_AN_RCD,
+    IN_NEW_SOUTH_WALES,
+    WHAT_WAS_DONE,
+    ...verdictPassages(data.concernPercent),
+    instrumentPassage(data.instrument),
+  ];
+
+  const verdictTone: Record<string, Verdict> = {
+    Failed: "FAIL",
+    Concern: "CONCERN",
+    Passed: "PASS",
+  };
+  const pieces: Piece[] = [];
+
+  for (const passage of passages) {
+    const verdict = verdictTone[passage.heading];
+    const tone = verdict ? toneFor(verdict).fill : COLOURS.accent;
+
+    pieces.push({
+      height: 24,
+      keepWith: 1,
+      draw: (y) => {
+        doc.rect(MARGIN, y + 3, 3, 13).fill(tone);
+        doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(11.5);
+        doc.text(safe(passage.heading), MARGIN + 12, y + 2, { width: CONTENT - 12 });
+      },
+    });
+
+    for (const paragraph of passage.body) {
+      const text = safe(paragraph);
+      const height = measureText(doc, text, { width: CONTENT - 12, size: 9.5 }) + 9;
+      pieces.push({
+        height,
+        // The first paragraph stays with its heading; the rest may break.
+        draw: (y) => {
+          doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+          doc.text(text, MARGIN + 12, y, { width: CONTENT - 12, lineGap: 2 });
+        },
+      });
+    }
+
+    pieces.push({ height: 8, draw: () => {} });
+  }
+
+  return { id: "definitions", title: "Definitions", pieces };
+}
+
+/* --- the limits, the site checks and the limitations ---------------------- */
+
+function basis(doc: Doc, data: RcdReport): Section {
+  const pieces: Piece[] = [];
   const columns = [168, 104, 104, CONTENT - 168 - 208];
-  tableHead(doc, y, ["Device", "Max at rated", "Max at 5 x rated", "Min at rated"], columns);
-  y += 20;
-  doc.fontSize(9.5);
-  data.limits.forEach((entry, index) => {
-    doc
-      .rect(MARGIN, y, CONTENT, ROW_HEIGHT)
-      .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-    doc.fillColor(COLOURS.ink).font("Helvetica").text(entry.kindLabel, MARGIN + 8, y + 6, {
-      width: columns[0] - 12,
-    });
-    const cells = [
-      `${entry.limits.maxAtRatedMs} ms`,
-      entry.limits.maxAt5xMs === null ? "—" : `${entry.limits.maxAt5xMs} ms`,
-      entry.limits.minAtRatedMs === null ? "—" : `${entry.limits.minAtRatedMs} ms`,
-    ];
-    let x = MARGIN + columns[0];
-    cells.forEach((cell, at) => {
-      doc.text(cell, x, y + 6, { width: columns[at + 1], align: "center" });
-      x += columns[at + 1];
-    });
-    y += ROW_HEIGHT;
+
+  pieces.push({
+    height: TABLE_HEAD,
+    keepWith: 2,
+    draw: (y) =>
+      tableHead(doc, y, ["Device", "Max at rated", "Max at 5 x rated", "Min at rated"], columns),
   });
 
-  y += 14;
-  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text(
-    `At half the rated residual current the device must NOT operate; a trip at that current is recorded as a failure. A device that passes but reads at or above ${data.concernPercent}% of its limit is raised as a concern rather than a clean pass.`,
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 2 },
+  data.limits.forEach((entry, index) => {
+    pieces.push({
+      height: ROW_HEIGHT,
+      draw: (y) => {
+        doc
+          .rect(MARGIN, y, CONTENT, ROW_HEIGHT)
+          .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+        doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9.5);
+        doc.text(entry.kindLabel, MARGIN + 8, y + 6, { width: columns[0] - 12, ellipsis: true, height: 11 });
+        const cells = [
+          `${entry.limits.maxAtRatedMs} ms`,
+          entry.limits.maxAt5xMs === null ? "—" : `${entry.limits.maxAt5xMs} ms`,
+          entry.limits.minAtRatedMs === null ? "—" : `${entry.limits.minAtRatedMs} ms`,
+        ];
+        let x = MARGIN + columns[0];
+        cells.forEach((cell, at) => {
+          doc.text(cell, x, y + 6, { width: columns[at + 1], align: "center" });
+          x += columns[at + 1];
+        });
+      },
+    });
+  });
+
+  const rule = safe(
+    `At half the rated residual current the device must NOT operate; an operation at that current is recorded as a failure. A device that passes but reads at or above ${data.concernPercent}% of its limit is raised as a concern rather than a clean pass.`,
   );
-  y = doc.y + 8;
-  doc.fontSize(9).fillColor(COLOURS.inkSoft).text(LIMIT_SOURCE, MARGIN, y, { width: CONTENT });
-  y = doc.y + 18;
+  pieces.push({ height: 14, draw: () => {} });
+  pieces.push({
+    height: measureText(doc, rule, { width: CONTENT, size: 9.5 }) + 8,
+    draw: (y) => {
+      doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+      doc.text(rule, MARGIN, y, { width: CONTENT, lineGap: 2 });
+    },
+  });
+  pieces.push({
+    height: measureText(doc, safe(LIMIT_SOURCE), { width: CONTENT, size: 9 }) + 20,
+    draw: (y) => {
+      doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
+      doc.text(safe(LIMIT_SOURCE), MARGIN, y, { width: CONTENT, lineGap: 2 });
+    },
+  });
 
   if (data.checklist.length > 0) {
-    sectionBar(doc, "Site Checks", y);
-    y += 30;
-    doc.fontSize(9.5);
+    pieces.push({
+      height: 30,
+      keepWith: 1,
+      draw: (y) => sectionBar(doc, "Site Checks", y),
+    });
     data.checklist.forEach((item, index) => {
       const height = Math.max(
         ROW_HEIGHT,
-        doc.heightOfString(item.question, { width: CONTENT - 130 }) + 10,
+        measureText(doc, item.question, { width: CONTENT - 140, size: 9.5, lineGap: 0 }) + 10,
       );
-      doc
-        .rect(MARGIN, y, CONTENT, height)
-        .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-      doc.fillColor(COLOURS.ink).font("Helvetica").text(item.question, MARGIN + 8, y + 6, {
-        width: CONTENT - 130,
+      pieces.push({
+        height,
+        draw: (y) => {
+          doc
+            .rect(MARGIN, y, CONTENT, height)
+            .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+          doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9.5);
+          doc.text(item.question, MARGIN + 8, y + 6, { width: CONTENT - 140 });
+          doc
+            .font("Helvetica-Bold")
+            .text(item.answer, MARGIN + CONTENT - 124, y + 6, { width: 116, align: "right" });
+        },
       });
-      doc
-        .font("Helvetica-Bold")
-        .text(item.answer, MARGIN + CONTENT - 116, y + 6, { width: 108, align: "right" });
-      y += height;
     });
-    y += 18;
+    pieces.push({ height: 18, draw: () => {} });
   }
 
-  sectionBar(doc, "Limitations", y);
-  y += 30;
-  doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
+  pieces.push({
+    height: 30,
+    keepWith: 1,
+    draw: (y) => sectionBar(doc, "Limitations", y),
+  });
   for (const line of LIMITATIONS) {
-    doc.text(`•  ${line}`, MARGIN + 6, y, { width: CONTENT - 12, lineGap: 1.5 });
-    y = doc.y + 6;
+    const text = safe(line);
+    const height = measureText(doc, text, { width: CONTENT - 18, size: 9, lineGap: 1.5 }) + 7;
+    pieces.push({
+      height,
+      draw: (y) => {
+        doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
+        doc.text("•", MARGIN + 2, y, { width: 10 });
+        doc.text(text, MARGIN + 14, y, { width: CONTENT - 18, lineGap: 1.5 });
+      },
+    });
   }
 
-  footer(doc, data);
+  return { id: "basis", title: "Basis of Assessment", pieces };
 }
 
-const RESULT_COLUMNS = [150, 60, 64, 64, 64, CONTENT - 150 - 252];
-const RESULT_TITLES = ["Circuit", "Rating", "x 1/2", "x 1", "x 5", "Touch V"];
+/* --- the results ---------------------------------------------------------- */
 
 function toneFor(verdict: Verdict) {
   return verdict === "FAIL"
@@ -617,187 +618,251 @@ function toneFor(verdict: Verdict) {
       : SEVERITY.pass;
 }
 
-function results(doc: Doc, data: RcdReport, laid: Plan) {
-  laid.pages.forEach((blocks, index) => {
-    doc.addPage();
-    let y = MARGIN;
-    if (index === 0) {
-      sectionBar(doc, "Test Results", MARGIN);
-      y = MARGIN + 34;
-      if (blocks.length === 0) {
-        doc
-          .font("Helvetica-Oblique")
-          .fontSize(10)
-          .fillColor(COLOURS.ink)
-          .text("No devices were tested on this run.", MARGIN, y, { width: CONTENT });
-      }
-    }
+function results(doc: Doc, data: RcdReport): Section {
+  const pieces: Piece[] = [];
 
-    for (const block of blocks) {
-      const tone = toneFor(block.group.verdict);
+  for (const group of GROUPS) {
+    const rows = data.results.filter((result) => result.verdict === group.verdict);
+    const tone = toneFor(group.verdict);
 
-      if (block.kind === "groupHead") {
+    pieces.push({
+      height: 34,
+      // The heading has to bring the table head and a row with it, or an
+      // empty group's sentence, so it is never stranded at the foot of a page.
+      keepWith: 2,
+      mark: group.verdict,
+      draw: (y) => {
         doc.rect(MARGIN, y, 5, 26).fill(tone.fill);
         doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(13);
-        doc.text(`${block.group.title} — ${block.group.rows.length}`, MARGIN + 16, y + 5);
+        doc.text(`${group.title} — ${rows.length}`, MARGIN + 16, y + 3, {
+          width: CONTENT - 20,
+          ellipsis: true,
+          height: 15,
+        });
         doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-        doc.text(block.group.blurb, MARGIN + 16, y + 21, { width: CONTENT - 20 });
-      }
+        doc.text(group.blurb, MARGIN + 16, y + 19, {
+          width: CONTENT - 20,
+          ellipsis: true,
+          height: 11,
+        });
+      },
+    });
 
-      if (block.kind === "tableHead") {
-        tableHead(doc, y, RESULT_TITLES, RESULT_COLUMNS);
-      }
+    // An empty group still prints, saying so in as many words.
+    if (rows.length === 0) {
+      pieces.push({
+        height: 40,
+        draw: (y) => {
+          doc.rect(MARGIN, y, CONTENT, 28).fillAndStroke(COLOURS.soft, COLOURS.hair);
+          doc.font("Helvetica-Oblique").fontSize(9.5).fillColor(COLOURS.inkSoft);
+          doc.text(group.empty, MARGIN + 10, y + 9, {
+            width: CONTENT - 20,
+            ellipsis: true,
+            height: 12,
+          });
+        },
+      });
+      continue;
+    }
 
-      if (block.kind === "row") {
-        doc
-          .rect(MARGIN, y, CONTENT, block.height)
-          .fillAndStroke(block.stripe % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-        doc
-          .fillColor(COLOURS.ink)
-          .font("Helvetica-Bold")
-          .fontSize(9)
-          .text(block.row.label, MARGIN + 8, y + 6, {
+    pieces.push({
+      height: TABLE_HEAD,
+      tag: "head",
+      draw: (y) => tableHead(doc, y, RESULT_TITLES, RESULT_COLUMNS),
+    });
+
+    rows.forEach((row, stripe) => {
+      pieces.push({
+        height: ROW_HEIGHT,
+        tag: "row",
+        draw: (y) => {
+          doc
+            .rect(MARGIN, y, CONTENT, ROW_HEIGHT)
+            .fillAndStroke(stripe % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+          doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9);
+          doc.text(row.label, MARGIN + 8, y + 6, {
             width: RESULT_COLUMNS[0] - 12,
             ellipsis: true,
             height: 11,
           });
-        doc.font("Helvetica");
-        const cells = [
-          block.row.ratingMa ? `${block.row.ratingMa} mA` : "—",
-          showReading(block.row.half),
-          showReading(block.row.rated),
-          showReading(block.row.five),
-          block.row.touchVolts === null ? "—" : `${block.row.touchVolts} V`,
-        ];
-        let x = MARGIN + RESULT_COLUMNS[0];
-        cells.forEach((cell, at) => {
-          doc.text(cell, x, y + 6, { width: RESULT_COLUMNS[at + 1], align: "center" });
-          x += RESULT_COLUMNS[at + 1];
-        });
-      }
+          doc.font("Helvetica");
+          const cells = [
+            row.ratingMa ? `${row.ratingMa} mA` : "—",
+            showReading(row.half),
+            showReading(row.rated),
+            showReading(row.five),
+            row.touchVolts === null ? "—" : `${row.touchVolts} V`,
+          ];
+          let x = MARGIN + RESULT_COLUMNS[0];
+          cells.forEach((cell, at) => {
+            doc.text(cell, x, y + 6, { width: RESULT_COLUMNS[at + 1], align: "center" });
+            x += RESULT_COLUMNS[at + 1];
+          });
+        },
+      });
 
       // A failure or a concern says why, right under its own row.
-      if (block.kind === "reason") {
-        doc.rect(MARGIN, y, CONTENT, block.height).fillAndStroke("#ffffff", COLOURS.hair);
-        doc.rect(MARGIN, y, 3, block.height).fill(tone.fill);
-        doc
-          .fillColor(COLOURS.inkSoft)
-          .font("Helvetica")
-          .fontSize(8.5)
-          .text(block.text, MARGIN + 18, y + 4, { width: CONTENT - 40 });
+      if (row.verdict === "PASS") return;
+      for (const reason of row.reasons) {
+        const text = safe(reason);
+        const height = measureText(doc, text, { width: CONTENT - 40, size: 8.5, lineGap: 0 }) + 7;
+        pieces.push({
+          height,
+          tag: "row",
+          draw: (y) => {
+            doc.rect(MARGIN, y, CONTENT, height).fillAndStroke("#ffffff", COLOURS.hair);
+            doc.rect(MARGIN, y, 3, height).fill(tone.fill);
+            doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+            doc.text(text, MARGIN + 18, y + 4, { width: CONTENT - 40 });
+          },
+        });
       }
+    });
 
-      y += block.height;
-    }
+    pieces.push({ height: 20, draw: () => {} });
+  }
 
-    footer(doc, data);
-  });
+  return {
+    id: "results",
+    title: "Test Results",
+    pieces,
+    // A table that runs over the page keeps its column headings; a page that
+    // opens on a heading or an empty group's note does not want them.
+    repeat: (next) =>
+      next.tag === "row"
+        ? {
+            height: TABLE_HEAD,
+            draw: (y) => tableHead(doc, y, RESULT_TITLES, RESULT_COLUMNS),
+          }
+        : null,
+  };
 }
 
-function corrections(doc: Doc, data: RcdReport, laid: Plan) {
-  doc.addPage();
-  sectionBar(doc, "Corrections Applied", MARGIN);
+/* --- what was set aside --------------------------------------------------- */
 
-  let y = MARGIN + 46;
-  doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
-  doc.text(
-    "The instrument records every fetch, including those taken without a device connected, and an RCD tested more than once leaves a record each time. The following was set aside before the results above were drawn up.",
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 2 },
+function corrections(doc: Doc, data: RcdReport): Section {
+  const pieces: Piece[] = [];
+
+  const intro = safe(
+    "The instrument records every fetch, including those taken without a device connected, and an RCD tested more than once leaves a record each time. The following was set aside before the results were drawn up.",
   );
-  y = doc.y + 16;
+  pieces.push({
+    height: measureText(doc, intro, { width: CONTENT, size: 10 }) + 16,
+    draw: (y) => {
+      doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
+      doc.text(intro, MARGIN, y, { width: CONTENT, lineGap: 2 });
+    },
+  });
+
+  const listed = (values: string[]) =>
+    values.length ? `${values.length} (${values.join(", ")})` : "None";
 
   const lines: [string, string][] = [
     ["Order worked", data.corrections.walk],
-    [
-      "Empty tests discarded",
-      data.corrections.droppedEmpty.length
-        ? `${data.corrections.droppedEmpty.length} (${data.corrections.droppedEmpty.join(", ")})`
-        : "None",
-    ],
-    [
-      "Repeat tests discarded",
-      data.corrections.droppedDuplicate.length
-        ? `${data.corrections.droppedDuplicate.length} (${data.corrections.droppedDuplicate.join(", ")})`
-        : "None",
-    ],
-    [
-      "RCDs not tested",
-      data.corrections.untested.length
-        ? `${data.corrections.untested.length} (${data.corrections.untested.join(", ")})`
-        : "None",
-    ],
+    ["Empty tests discarded", listed(data.corrections.droppedEmpty)],
+    ["Repeat tests discarded", listed(data.corrections.droppedDuplicate)],
+    ["RCDs not tested", listed(data.corrections.untested)],
     ["Instrument", data.instrument ?? "—"],
   ];
 
-  doc.fontSize(9.5);
   lines.forEach(([label, value], index) => {
     const height = Math.max(
       ROW_HEIGHT,
-      doc.heightOfString(value, { width: CONTENT - 180 }) + 10,
+      measureText(doc, value, { width: CONTENT - 190, size: 9.5, lineGap: 0 }) + 10,
     );
-    doc
-      .rect(MARGIN, y, CONTENT, height)
-      .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").text(label, MARGIN + 8, y + 6, {
-      width: 164,
+    pieces.push({
+      height,
+      draw: (y) => {
+        doc
+          .rect(MARGIN, y, CONTENT, height)
+          .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+        doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9.5);
+        doc.text(label, MARGIN + 8, y + 6, { width: 164, ellipsis: true, height: 11 });
+        doc.font("Helvetica").text(value, MARGIN + 180, y + 6, { width: CONTENT - 190 });
+      },
     });
-    doc.font("Helvetica").text(value, MARGIN + 180, y + 6, { width: CONTENT - 190 });
-    y += height;
   });
 
-  signOff(doc, y + 26);
-  footer(doc, data);
+  pieces.push({
+    height: 96,
+    draw: (y) => signOff(doc, y + 26),
+  });
+
+  return { id: "corrections", title: "Corrections Applied", pieces };
 }
+
+/* --- the instrument's own report ------------------------------------------ */
 
 /**
  * A page of its own, so the instrument's report cannot be missed when the
  * client flips through — and so it is obvious where ours stops and theirs
  * starts.
  */
-function originalDivider(doc: Doc, data: RcdReport, pages: number) {
-  doc.addPage();
-  sectionBar(doc, "Original Instrument Report", MARGIN);
+function originalDivider(doc: Doc, data: RcdReport, pages: number): Section {
+  const one = pages === 1;
+  const lines = [
+    {
+      text: safe(
+        one
+          ? "The page that follows is the test instrument's own report."
+          : `The ${pages} pages that follow are the test instrument's own report.`,
+      ),
+      size: 15,
+      font: "Helvetica-Bold",
+      gap: 16,
+    },
+    {
+      text: safe(
+        one
+          ? "It is reproduced exactly as it was downloaded from the instrument and has not been edited, reformatted or re-typed in any way. Nothing in this report changes it."
+          : "They are reproduced exactly as they were downloaded from the instrument and have not been edited, reformatted or re-typed in any way. Nothing in this report changes them.",
+      ),
+      size: 11,
+      font: "Helvetica",
+      gap: 14,
+    },
+    {
+      text: safe(
+        `The same file is also attached to this PDF as \u201coriginal-instrument-report.pdf\u201d, so the instrument's own record can be extracted and checked against ${
+          one ? "this page" : "these pages"
+        } independently.`,
+      ),
+      size: 11,
+      font: "Helvetica",
+      gap: 26,
+    },
+  ];
 
-  let y = MARGIN + 52;
-  doc.font("Helvetica-Bold").fontSize(15).fillColor(COLOURS.ink);
-  doc.text(
-    pages === 1
-      ? "The page that follows is the test instrument's own report."
-      : `The ${pages} pages that follow are the test instrument's own report.`,
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 2 },
-  );
-  y = doc.y + 16;
+  const pieces: Piece[] = [{ height: 18, draw: () => {} }];
+  for (const line of lines) {
+    const height =
+      measureText(doc, line.text, { width: CONTENT, size: line.size, font: line.font, lineGap: 3 }) +
+      line.gap;
+    pieces.push({
+      height,
+      draw: (y) => {
+        doc.font(line.font).fontSize(line.size).fillColor(COLOURS.ink);
+        doc.text(line.text, MARGIN, y, { width: CONTENT, lineGap: 3 });
+      },
+    });
+  }
 
-  doc.font("Helvetica").fontSize(11).fillColor(COLOURS.ink);
-  doc.text(
-    pages === 1
-      ? "It is reproduced exactly as it was downloaded from the instrument and has not been edited, reformatted or re-typed in any way. Nothing in this report changes it."
-      : "They are reproduced exactly as they were downloaded from the instrument and have not been edited, reformatted or re-typed in any way. Nothing in this report changes them.",
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 3 },
-  );
-  y = doc.y + 14;
-  doc.text(
-    `The same file is also attached to this PDF as \u201coriginal-instrument-report.pdf\u201d, so the instrument's own record can be extracted and checked against ${
-      pages === 1 ? "this page" : "these pages"
-    } independently.`,
-    MARGIN,
-    y,
-    { width: CONTENT, lineGap: 3 },
-  );
-  y = doc.y + 26;
+  pieces.push({
+    height: 22,
+    draw: (y) => {
+      doc.rect(MARGIN, y, CONTENT, 2).fill(COLOURS.accent);
+    },
+  });
+  pieces.push({
+    height: 16,
+    draw: (y) => {
+      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.inkSoft);
+      doc.text(`Instrument: ${data.instrument ?? "\u2014"}`, MARGIN, y, { width: CONTENT });
+      doc.fillColor(COLOURS.ink);
+    },
+  });
 
-  doc.rect(MARGIN, y, CONTENT, 2).fill(COLOURS.accent);
-  y += 18;
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(`Instrument: ${data.instrument ?? "—"}`, MARGIN, y, { width: CONTENT });
-
-  footer(doc, data);
+  return { id: "original", title: "Original Instrument Report", pieces };
 }
 
 async function countPages(pdf: Buffer): Promise<number> {
