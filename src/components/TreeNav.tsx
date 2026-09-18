@@ -457,6 +457,8 @@ function Branch({
                     style={
                       {
                         "--stagger": `${childIndex * 80}ms`,
+                        // Earlier rows paint above later ones — see .tree-row.
+                        "--row-index": childIndex,
                       } as React.CSSProperties
                     }
                   >

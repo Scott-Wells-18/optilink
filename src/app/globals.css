@@ -711,11 +711,24 @@ body {
   --kid-gap: 20px;
   display: flex;
   flex-direction: column;
+  /*
+   * Each row is only as wide as its own card. Stretched to the list — which is
+   * as wide as whichever row is open — a closed row becomes an invisible slab
+   * lying right across its neighbour's branch, and swallows every click on it.
+   */
+  align-items: flex-start;
   gap: var(--kid-gap);
 }
 
+/*
+ * Branches hang out of a zero-height box, so an open row's children fall
+ * across the rows beneath it. Those rows come later in the source and would
+ * otherwise paint on top, so the order has to be turned around by hand:
+ * earlier rows sit above later ones, and each row's subtree travels with it.
+ */
 .tree-kid-list > .tree-row {
   position: relative;
+  z-index: calc(999 - var(--row-index, 0));
 }
 
 /* --- the card itself ----------------------------------------------------- */
