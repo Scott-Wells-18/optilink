@@ -71,6 +71,12 @@ export function BoardViewer({
   const [issues, setIssues] = useState<Issue[]>([]);
   const [slot, setSlot] = usePersisted<string | null>(`${key}:slot`, null);
   const [reporting, setReporting] = usePersisted(`${key}:reporting`, false);
+  /**
+   * The preview takes up to 38vh, which on a phone is most of the board. It
+   * stays open by default — you want to see what you just saved — and folds
+   * away when you are working through a board rather than reading it.
+   */
+  const [preview, setPreview] = usePersisted(`${key}:preview`, true);
   const [activeId, setActiveId] = usePersisted(
     `${key}:tab`,
     board.sections[0]?.id ?? "",
@@ -283,20 +289,35 @@ export function BoardViewer({
         </div>
 
         {slot && picked ? (
-          <section className="board-picked">
+          <section className={`board-picked ${preview ? "" : "is-folded"}`}>
             <div className="board-picked-head">
-              <div>
-                <p className="board-picked-title">
-                  {picked.title}{" "}
-                  {picked.kind ? (
-                    <span className="board-picked-kind">{picked.kind}</span>
-                  ) : null}
-                </p>
-                <p className="board-section-note">
-                  {selectedIssues.length
-                    ? `${selectedIssues.length} finding${selectedIssues.length === 1 ? "" : "s"} this inspection`
-                    : "Nothing reported here yet"}
-                </p>
+              <div className="board-picked-what">
+                {selectedIssues.length ? (
+                  <button
+                    type="button"
+                    className={`board-fold ${preview ? "is-open" : ""}`}
+                    aria-expanded={preview}
+                    aria-label={preview ? "Hide what was reported" : "Show what was reported"}
+                    onClick={() => setPreview(!preview)}
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                      <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                ) : null}
+                <div>
+                  <p className="board-picked-title">
+                    {picked.title}{" "}
+                    {picked.kind ? (
+                      <span className="board-picked-kind">{picked.kind}</span>
+                    ) : null}
+                  </p>
+                  <p className="board-section-note">
+                    {selectedIssues.length
+                      ? `${selectedIssues.length} finding${selectedIssues.length === 1 ? "" : "s"} this inspection`
+                      : "Nothing reported here yet"}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -309,7 +330,7 @@ export function BoardViewer({
 
             {error ? <p className="dialog-error">{error}</p> : null}
 
-            {selectedIssues.length ? (
+            {preview && selectedIssues.length ? (
               <div className="board-findings">
                 {selectedIssues.map((issue) => (
                   <article className="board-finding" key={issue.id}>

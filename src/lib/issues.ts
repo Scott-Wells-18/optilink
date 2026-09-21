@@ -207,8 +207,22 @@ export function recommendationsFor(
   return BY_CAUSE[cause].map((key) => ({ key, label: RECOMMENDATIONS[key](device) }));
 }
 
+/**
+ * The prefix on a recommendation that was written rather than picked.
+ *
+ * A custom one is stored as its own words rather than as a key into a table,
+ * so a report issued last year still reads the same if the sentence is later
+ * reworded or dropped from the library.
+ */
+export const CUSTOM_PREFIX = "TEXT:";
+
+export function customRecommendation(text: string): string {
+  return `${CUSTOM_PREFIX}${text.trim()}`;
+}
+
 /** One stored recommendation, put back into words. */
 export function recommendationText(key: string, device: string): string {
+  if (key.startsWith(CUSTOM_PREFIX)) return key.slice(CUSTOM_PREFIX.length);
   return RECOMMENDATIONS[key]?.(device) ?? key;
 }
 

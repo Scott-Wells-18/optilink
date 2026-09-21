@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CAUSE_LABELS,
   CAUSE_NOTES,
@@ -9,6 +9,7 @@ import {
   ISSUE_NOTES,
   POSITION_ISSUE_TYPES,
   causesFor,
+  customRecommendation,
   needsSurvey,
   photoSlotsFor,
   recommendationsFor,
@@ -76,6 +77,10 @@ export function IssueDialog({
   const [onSurvey, setOnSurvey] = usePersisted(`${key}:survey`, false);
   const [busy, setBusy] = useState<PhotoKind | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The ones written on site and kept, for whichever cause is picked. */
+  const [kept, setKept] = useState<{ id: string; text: string }[]>([]);
+  const [writing, setWriting] = useState(false);
+  const [draft, setDraft] = useState("");
 
   function forget() {
     for (const part of ["type", "photos", "cause", "picks", "survey", "ref", "hot"]) {
@@ -115,6 +120,64 @@ export function IssueDialog({
   const ready = survey ? pageDone && picks.length > 0 : photosIn;
   const options = cause ? recommendationsFor(cause, device) : [];
   const causes = causesFor(device);
+
+  const loadKept = useCallback(async () => {
+    if (!cause) {
+      setKept([]);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/recommendations?cause=${cause}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      setKept((await response.json()) as { id: string; text: string }[]);
+    } catch {
+      // The built-in list still works; a kept one missing is not worth a
+      // message in the middle of writing up a finding.
+    }
+  }, [cause]);
+
+  useEffect(() => {
+    void loadKept();
+  }, [loadKept]);
+
+  /** Writes one down and keeps it, then ticks it on this finding. */
+  async function keep() {
+    const text = draft.trim();
+    if (!cause || text.length < 4) return;
+    try {
+      const response = await fetch("/api/recommendations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cause, text }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error ?? "That could not be kept.");
+      }
+      const saved = (await response.json()) as { id: string; text: string };
+      setKept((current) =>
+        current.some((entry) => entry.id === saved.id) ? current : [...current, saved],
+      );
+      setPicks((current) =>
+        current.includes(customRecommendation(saved.text))
+          ? current
+          : [...current, customRecommendation(saved.text)],
+      );
+      setDraft("");
+      setWriting(false);
+      setError(null);
+    } catch (keepError) {
+      setError(keepError instanceof Error ? keepError.message : "That could not be kept.");
+    }
+  }
+
+  async function forgetKept(id: string, text: string) {
+    setKept((current) => current.filter((entry) => entry.id !== id));
+    setPicks((current) => current.filter((entry) => entry !== customRecommendation(text)));
+    await fetch(`/api/recommendations/${id}`, { method: "DELETE" }).catch(() => {});
+  }
 
   async function add(kindWanted: PhotoKind, files: FileList | null) {
     if (!files?.length) return;
@@ -413,8 +476,42 @@ export function IssueDialog({
                     Back
                   </button>
                 </div>
-                <h3 className="board-section-title">Recommendations</h3>
-                <p className="issue-empty">As many as apply.</p>
+                <div className="issue-slot-head">
+                  <h3 className="board-section-title">Recommendations</h3>
+                  <button
+                    type="button"
+                    className="issue-add"
+                    onClick={() => setWriting((current) => !current)}
+                  >
+                    {writing ? "Cancel" : "+  Write one"}
+                  </button>
+                </div>
+                <p className="issue-empty">
+                  As many as apply. One you write is kept and offered under{" "}
+                  {cause ? CAUSE_LABELS[cause].toLowerCase() : "this cause"} from now on.
+                </p>
+
+                {writing ? (
+                  <div className="issue-write">
+                    <textarea
+                      rows={2}
+                      autoFocus
+                      className="dialog-input dialog-textarea"
+                      placeholder="e.g. Replace the busbar link and retorque to the manufacturer's figure"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="dialog-confirm"
+                      disabled={draft.trim().length < 4}
+                      onClick={() => void keep()}
+                    >
+                      Keep it
+                    </button>
+                  </div>
+                ) : null}
+
                 <div className="issue-picks">
                   {options.map((option) => {
                     const on = picks.includes(option.key);
@@ -434,6 +531,38 @@ export function IssueDialog({
                         <span className="issue-pick-mark" aria-hidden />
                         {option.label}
                       </button>
+                    );
+                  })}
+
+                  {kept.map((entry) => {
+                    const value = customRecommendation(entry.text);
+                    const on = picks.includes(value);
+                    return (
+                      <div key={entry.id} className="issue-kept">
+                        <button
+                          type="button"
+                          className={`issue-pick ${on ? "is-on" : ""}`}
+                          onClick={() =>
+                            setPicks((current) =>
+                              on
+                                ? current.filter((held) => held !== value)
+                                : [...current, value],
+                            )
+                          }
+                        >
+                          <span className="issue-pick-mark" aria-hidden />
+                          {entry.text}
+                        </button>
+                        <button
+                          type="button"
+                          className="issue-forget"
+                          aria-label={`Stop offering "${entry.text}"`}
+                          title="Stop offering this one"
+                          onClick={() => void forgetKept(entry.id, entry.text)}
+                        >
+                          ×
+                        </button>
+                      </div>
                     );
                   })}
                 </div>

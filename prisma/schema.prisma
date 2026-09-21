@@ -729,3 +729,26 @@ model SafetyDoc {
 
   @@index([siteId])
 }
+
+/**
+ * A recommendation written on site, kept for next time.
+ *
+ * The catalogue in src/lib/issues.ts covers what comes up most, but a board
+ * always throws something it does not. Rather than make that a free-text box
+ * on every finding — which is how a report ends up with the same sentence
+ * typed six different ways — one is written once and offered under its cause
+ * from then on, alongside the built-in ones.
+ */
+model CustomRecommendation {
+  id String @id @default(cuid())
+
+  /** The cause it belongs under, e.g. "TERMINAL_CONNECTION". */
+  cause String
+  /** What it says. Stored as written, not as a key. */
+  text  String
+
+  createdAt DateTime @default(now())
+
+  @@unique([cause, text])
+  @@index([cause])
+}

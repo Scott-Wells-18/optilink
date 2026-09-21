@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import {
+  CUSTOM_PREFIX,
   ISSUE_CAUSES,
   ISSUE_TYPES,
   RECOMMENDATION_KEYS,
@@ -49,9 +50,20 @@ export async function POST(request: Request) {
       : null;
     if (needsSurvey(type) && !cause) return badRequest("Pick what is behind it.");
 
-    const recommendations = (body.recommendations ?? []).filter((key) =>
-      RECOMMENDATION_KEYS.includes(key),
-    );
+    // A recommendation is either a key into the catalogue or, where one was
+    // written on site, its own words — kept verbatim so a report issued today
+    // still reads the same if the sentence is later reworded or dropped.
+    const recommendations = (body.recommendations ?? [])
+      .map((key) =>
+        key.startsWith(CUSTOM_PREFIX)
+          ? `${CUSTOM_PREFIX}${key.slice(CUSTOM_PREFIX.length).trim().slice(0, 300)}`
+          : key,
+      )
+      .filter(
+        (key) =>
+          RECOMMENDATION_KEYS.includes(key) ||
+          (key.startsWith(CUSTOM_PREFIX) && key.length > CUSTOM_PREFIX.length + 3),
+      );
     if (cause && recommendations.length === 0) {
       return badRequest("Pick at least one recommendation.");
     }

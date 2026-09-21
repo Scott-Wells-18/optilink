@@ -1880,6 +1880,44 @@ body {
   gap: 12px;
 }
 
+.board-picked-what {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* The chevron that folds the preview away. Points down when it is open. */
+.board-fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color 200ms var(--ease-soft), border-color 200ms var(--ease-soft);
+}
+
+.board-fold:hover {
+  color: var(--accent-deep);
+  border-color: rgba(27, 155, 216, 0.45);
+}
+
+.board-fold svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 220ms var(--ease-soft);
+  transform: rotate(-90deg);
+}
+
+.board-fold.is-open svg {
+  transform: none;
+}
+
 .board-picked-title {
   font-size: 14.5px;
   font-weight: 600;
@@ -2091,8 +2129,63 @@ body {
   overflow-y: auto;
 }
 
+/* Folded, it is just the header — the board gets the height back. */
+.board-picked.is-folded {
+  max-height: none;
+  overflow: visible;
+}
+
 .board-cell.is-flagged {
   box-shadow: inset 0 0 0 2px rgba(194, 65, 12, 0.55);
+}
+
+/*
+ * A way with something reported against it is striped like caution tape.
+ *
+ * A 2px ring is invisible on a phone held at arm's length in a plant room,
+ * which is exactly where this gets read — the whole point of opening the board
+ * is seeing at a glance what has been done and what has not.
+ */
+.board-cell.is-flagged,
+.board-main-switch.is-flagged,
+.free-item.is-flagged {
+  /* The stripes are drawn inside the cell, so the cell has to be the thing
+     they are positioned against — otherwise they escape to the dialog. */
+  position: relative;
+}
+
+.board-cell.is-flagged::before,
+.board-main-switch.is-flagged::before,
+.free-item.is-flagged::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* A device cell is always a strong colour, so the stripe is the light one —
+     white on navy, green or red is the hazard marking everyone knows. */
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.26) 0 6px,
+    rgba(255, 255, 255, 0) 6px 13px
+  );
+}
+
+/* The main switch is white, so there it goes the other way round. */
+.board-main-switch.is-flagged::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(194, 65, 12, 0.22) 0 6px,
+    rgba(194, 65, 12, 0) 6px 13px
+  );
+}
+
+/* The label has to stay on top of its own stripes. */
+.board-cell.is-flagged > *,
+.board-main-switch.is-flagged > *,
+.free-item.is-flagged > * {
+  position: relative;
+  z-index: 1;
 }
 
 .board-findings {
@@ -2646,6 +2739,49 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Writing one down: the box and the button that keeps it. */
+.issue-write {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.issue-write textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A kept one sits in the same list, with a way to stop offering it. */
+.issue-kept {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.issue-kept .issue-pick {
+  flex: 1;
+  min-width: 0;
+}
+
+.issue-forget {
+  flex: none;
+  width: 30px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  background: #fff;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 200ms var(--ease-soft), border-color 200ms var(--ease-soft);
+}
+
+.issue-forget:hover {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.4);
 }
 
 .issue-pick-label {
