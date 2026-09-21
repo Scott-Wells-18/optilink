@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import { readUpload } from "@/lib/storage";
 import { extractText, getDocumentProxy } from "unpdf";
+import { asLines, parseCsv } from "@/lib/csv";
 import { suggest } from "@/lib/safety/catalogue";
 
 export const runtime = "nodejs";
@@ -15,6 +16,9 @@ export const runtime = "nodejs";
  * template's tags. Nothing is chosen here: the words that matched come back
  * with the suggestion, and the operator decides. A wrong SWMS picked silently
  * is worse than picking from a list.
+ *
+ * A quote arrives as a PDF or as the CSV the accounting software exports.
+ * Both end up as the same lines of text; only the way they are opened differs.
  */
 export async function POST(request: Request) {
   try {
@@ -23,16 +27,29 @@ export async function POST(request: Request) {
 
     const file = await prisma.uploadedFile.findUnique({ where: { id: body.fileId } });
     if (!file) return badRequest("That file could not be found.");
-    if (file.mimeType !== "application/pdf") {
-      return badRequest("The quote needs to be a PDF.");
+
+    const isCsv = file.mimeType === "text/csv";
+    if (!isCsv && file.mimeType !== "application/pdf") {
+      return badRequest("The quote needs to be a PDF or a CSV.");
     }
 
-    const pdf = await readUpload(file.storedName);
-    const document = await getDocumentProxy(new Uint8Array(pdf));
-    const { text } = await extractText(document, { mergePages: true });
-    const whole = Array.isArray(text) ? text.join("\n") : text;
+    const bytes = await readUpload(file.storedName);
+    let whole: string;
+    let described = "";
 
-    const description = jobDescription(whole);
+    if (isCsv) {
+      const rows = parseCsv(bytes.toString("utf8"));
+      whole = asLines(rows);
+      // A CSV usually carries the description in a column of its own, which a
+      // heading pattern would never find.
+      described = descriptionColumn(rows);
+    } else {
+      const document = await getDocumentProxy(new Uint8Array(bytes));
+      const { text } = await extractText(document, { mergePages: true });
+      whole = Array.isArray(text) ? text.join("\n") : text;
+    }
+
+    const description = described || jobDescription(whole);
     const found = suggest(description || whole);
 
     return NextResponse.json({
@@ -74,6 +91,49 @@ function jobDescription(text: string): string {
   return body.replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
+/**
+ * The description out of a CSV's own column.
+ *
+ * An exported quote is a table: a header row, then a line per item, with the
+ * work written out under a heading like "Description" or "Details". So the
+ * column is found by its heading and its cells are read down, longest first —
+ * the line that describes the job is always longer than "Call-out fee".
+ *
+ * Failing that, a row that puts a label beside its value is tried, then the
+ * longest cell in the file, which on a one-line quote is the job.
+ */
+function descriptionColumn(rows: string[][]): string {
+  const heading = /^(?:description|details|scope|work(?:s)?(?: description| required| to be done)?|job(?: description)?|notes?|comments?)$/i;
+
+  for (const [at, row] of rows.entries()) {
+    const column = row.findIndex((cell) => heading.test(cell));
+    if (column < 0) continue;
+    const below = rows
+      .slice(at + 1)
+      .map((line) => line[column] ?? "")
+      .filter((cell) => cell.length >= 12);
+    if (below.length === 0) continue;
+    return tidyBlock(below.join(". "));
+  }
+
+  // "Job description","Attend site to ..." on a row of its own.
+  for (const row of rows) {
+    const at = row.findIndex((cell) =>
+      /job\s*description|scope\s*of\s*works?|description\s*of\s*works?/i.test(cell),
+    );
+    if (at < 0) continue;
+    const value = row.slice(at + 1).find((cell) => cell.length >= 12);
+    if (value) return tidyBlock(value);
+  }
+
+  const longest = rows.flat().reduce((best, cell) => (cell.length > best.length ? cell : best), "");
+  return longest.length >= 40 ? tidyBlock(longest) : "";
+}
+
+function tidyBlock(text: string): string {
+  return text.replace(/\s+/g, " ").replace(/\.\s*\./g, ".").trim().slice(0, 2000);
+}
+
 /* --- answers to offer ----------------------------------------------------- */
 
 /**
@@ -86,7 +146,8 @@ function jobDescription(text: string): string {
 function projectNames(text: string, description: string): string[] {
   const out: string[] = [];
   for (const match of text.matchAll(
-    /(?:^|\n)\s*(?:project|job|job name|re|reference|quote for)\s*[:\-]\s*([^\n]{4,80})/gi,
+    // ":" in a PDF, "|" where a CSV row held more than a label and a value.
+    /(?:^|\n|\|)\s*(?:project|job|job name|re|reference|quote for)\s*[:\-|]\s*([^\n|]{4,80})/gi,
   )) {
     out.push(match[1]);
   }
@@ -107,7 +168,7 @@ function shorten(value: string): string {
 function people(text: string): string[] {
   const out: string[] = [];
   for (const match of text.matchAll(
-    /(?:^|\n)\s*(?:attention|attn|contact|site contact|project manager|supervisor|prepared for)\s*[:\-]\s*([A-Za-z][A-Za-z'\-. ]{2,48})/gi,
+    /(?:^|\n|\|)\s*(?:attention|attn|contact|site contact|project manager|supervisor|prepared for)\s*[:\-|]\s*([A-Za-z][A-Za-z'\-. ]{2,48})/gi,
   )) {
     out.push(match[1]);
   }

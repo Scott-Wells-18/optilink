@@ -310,16 +310,20 @@ export function SafetyDocDialog({
                   <h3 className="board-section-title">The quote for this job</h3>
                   <p className="board-section-note">
                     The job description in it says how the work is going to be done, which
-                    is what decides the paperwork. Upload it and the statements that cover
-                    it are put forward — or skip, and pick them yourself.
+                    is what decides the paperwork. Upload it as a PDF or the CSV the
+                    accounting software exports, and the statements that cover it are put
+                    forward — or skip, and pick them yourself.
                   </p>
                 </div>
 
                 <label className="rcd-drop">
                   {busy === "quote" ? "Reading…" : read ? "Use a different quote" : "Choose the quote"}
+                  {/* Both spellings of a CSV, because a browser asks the
+                      operating system what a .csv is and gets a different
+                      answer on every one of them. */}
                   <input
                     type="file"
-                    accept="application/pdf"
+                    accept=".csv,.pdf,text/csv,application/pdf"
                     hidden
                     onChange={(event) => {
                       void readQuote(event.target.files);

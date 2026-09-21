@@ -20,16 +20,43 @@ const ALLOWED_TYPES = new Set([
   "image/avif",
   // Test instruments export their own reports; those are kept as they came.
   "application/pdf",
+  // Quotes come out of the accounting software as CSV.
+  "text/csv",
 ]);
+
+/**
+ * What a CSV can arrive claiming to be.
+ *
+ * A browser reports a .csv by asking the operating system, and on Windows with
+ * Excel installed the answer is "application/vnd.ms-excel"; on some Android
+ * builds it is nothing at all. None of that changes what is in the file, so
+ * the extension decides and the claim is corrected.
+ */
+const CSV_TYPES = new Set([
+  "text/csv",
+  "text/plain",
+  "application/csv",
+  "application/vnd.ms-excel",
+  "application/octet-stream",
+  "",
+]);
+
+function declaredType(file: File): string {
+  const type = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".csv") && CSV_TYPES.has(type)) return "text/csv";
+  return type;
+}
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export class UploadError extends Error {}
 
 export async function saveUpload(file: File) {
-  if (!ALLOWED_TYPES.has(file.type)) {
+  const mimeType = declaredType(file);
+  if (!ALLOWED_TYPES.has(mimeType)) {
     throw new UploadError(
-      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image, or a PDF.",
+      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image, a PDF, or a CSV.",
     );
   }
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -37,7 +64,7 @@ export async function saveUpload(file: File) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const extension = extensionFor(file.type);
+  const extension = extensionFor(mimeType);
   // Two levels of fan-out keeps directory listings small on a big installation.
   const id = randomUUID();
   const storedName = path.join(id.slice(0, 2), id.slice(2, 4), `${id}${extension}`);
@@ -46,13 +73,13 @@ export async function saveUpload(file: File) {
   await mkdir(path.dirname(destination), { recursive: true });
   await writeFile(destination, bytes);
 
-  const dimensions = readDimensions(bytes, file.type);
+  const dimensions = readDimensions(bytes, mimeType);
 
   return prisma.uploadedFile.create({
     data: {
       originalName: file.name?.slice(0, 200) || "upload",
       storedName,
-      mimeType: file.type,
+      mimeType,
       sizeBytes: bytes.byteLength,
       width: dimensions?.width ?? null,
       height: dimensions?.height ?? null,
@@ -96,6 +123,8 @@ function extensionFor(mimeType: string): string {
       return ".avif";
     case "application/pdf":
       return ".pdf";
+    case "text/csv":
+      return ".csv";
     default:
       return ".jpg";
   }
