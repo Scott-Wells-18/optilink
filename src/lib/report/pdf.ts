@@ -57,18 +57,25 @@ export function buildReport(data: ReportData): Promise<Buffer> {
 function cover(doc: Doc, data: ReportData) {
   coverPage(doc, data, {
     title: "Thermographic and Preventive Maintenance Report",
+    eyebrow: "Infrared survey",
     subtitle: data.siteLocation || data.siteName,
-    dateLabel: "Inspection Date:",
+    dateLabel: "Inspection date",
     date: data.inspectionDate,
+    scopeLabel: "Surveyed on this visit",
     scope: data.scope.length
       ? data.scope.join(", ")
       : "Electrical switchboards and equipment",
     rows: [
-      ["Prepared for:", data.contactName ?? data.clientName],
-      ["Report Date:", shortDate(data.reportDate)],
-      ["Next Survey Due:", shortDate(data.nextSurveyDue)],
-      ["Survey/Report By:", reportBy()],
+      ["Site contact", data.contactName ?? data.clientName],
+      ["Report date", shortDate(data.reportDate)],
+      ["Next survey due", shortDate(data.nextSurveyDue)],
+      ["Surveyed and reported by", reportBy()],
     ],
+    note:
+      "This report is issued to the addressee named above and relates only to the site and equipment listed on it. " +
+      "A thermographic survey examines the safety provisions of an installation, not its efficient performance, and " +
+      "covers only what was accessible on the day. It records the condition found under the load and conditions " +
+      "present at the time of inspection.",
     marks: [data.badge, data.auspta],
   });
 }
@@ -100,7 +107,7 @@ function surveyNotes(doc: Doc, data: ReportData) {
   }
 
   y += 40;
-  signOff(doc, y, { thermography: true });
+  signOff(doc, data, y, { thermography: true });
 
   footer(doc, data);
 }

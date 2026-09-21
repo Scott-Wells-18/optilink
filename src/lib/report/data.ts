@@ -22,6 +22,7 @@ import {
 } from "@/lib/issues";
 import { priorityFor, temperatureRise, PRIORITY_ORDER, type Priority } from "@/lib/priority";
 import { safe } from "@/lib/report/theme";
+import { reportSignature } from "@/lib/signatures";
 
 /**
  * Everything one report needs, gathered in one go: the survey, the equipment
@@ -66,6 +67,7 @@ export type ReportData = {
   findings: ReportFinding[];
   plant: PlantRow[];
   logo: Buffer | null;
+  signature: Buffer | null;
   auspta: Buffer | null;
   badge: Buffer | null;
 };
@@ -154,6 +156,7 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
     findings,
     plant,
     logo: await brandBytes("logo.jpg"),
+    signature: await reportSignature(),
     auspta: await brandBytes("auspta.png"),
     badge: await brandBytes("thermographer.png"),
   };

@@ -25,6 +25,7 @@ import {
   type Section,
 } from "@/lib/report/flow";
 import { COLOURS, CONTENT, MARGIN, longDate, safe, shortDate } from "@/lib/report/theme";
+import { reportSignature } from "@/lib/signatures";
 
 /**
  * The works completed report — what was found, what was done, and the photos
@@ -118,6 +119,7 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     recommendations: job.recommendations.map(safe),
     items,
     logo: await brandBytes("logo.jpg"),
+    signature: await reportSignature(),
   };
 }
 
@@ -168,18 +170,24 @@ export function buildJobReport(data: JobReport): Promise<Buffer> {
 function cover(doc: Doc, data: JobReport) {
   coverPage(doc, data, {
     title: "Works Completed Report",
+    eyebrow: "Before and after record",
     subtitle: data.siteLocation || data.siteName,
-    dateLabel: "Work Carried Out:",
+    dateLabel: "Work carried out",
     date: data.jobDate,
+    scopeLabel: "Work carried out",
     scope: data.items.length
       ? data.items.map((item) => item.title).join(", ")
       : "Electrical maintenance works",
     rows: [
-      ["Prepared for:", data.contactName ?? data.clientName],
-      ["Report Date:", shortDate(data.reportDate)],
-      ["Site:", data.siteName],
-      ["Works By:", `${COMPANY.name} · Lic ${COMPANY.licence}`],
+      ["Site contact", data.contactName ?? data.clientName],
+      ["Report date", shortDate(data.reportDate)],
+      ["Items of work", `${data.items.length}`],
+      ["Works carried out by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
+    note:
+      "This report is issued to the addressee named above and relates only to the site and the work listed on it. " +
+      "Every photograph in it was taken on site during the work it appears beside, and shows the equipment as it " +
+      "was found and as it was left.",
     marks: [],
   });
 }
@@ -461,7 +469,8 @@ function closing(doc: Doc, data: JobReport): Section {
     pieces.push({ height: 14, draw: () => {} });
   }
 
-  pieces.push({ height: 92, draw: (y) => signOff(doc, y + 20) });
+  // Tall enough for the signature, which is drawn above the rule it sits on.
+  pieces.push({ height: 110, draw: (y) => signOff(doc, data, y + 40) });
 
   return { id: "closing", title: "Completion", pieces };
 }

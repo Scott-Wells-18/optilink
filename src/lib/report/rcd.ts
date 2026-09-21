@@ -49,6 +49,7 @@ import {
   safe,
   shortDate,
 } from "@/lib/report/theme";
+import { reportSignature } from "@/lib/signatures";
 
 /**
  * The RCD test report.
@@ -181,6 +182,7 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
     original,
     originalPages: original ? await countPages(original) : 0,
     logo: await brandBytes("logo.jpg"),
+    signature: await reportSignature(),
   };
 }
 
@@ -335,18 +337,24 @@ function cover(doc: Doc, data: RcdReport) {
   const failed = data.results.filter((result) => result.verdict === "FAIL").length;
   coverPage(doc, data, {
     title: "Residual Current Device Test Report",
+    eyebrow: "Safety switch testing",
     subtitle: data.siteLocation || data.siteName,
-    dateLabel: "Test Date:",
+    dateLabel: "Test date",
     date: data.testDate,
+    scopeLabel: "Tested on this visit",
     scope: `${data.boardName} — one switchboard, ${data.results.length} ${
       data.results.length === 1 ? "device" : "devices"
     } tested${failed ? `, ${failed} failed` : ""}`,
     rows: [
-      ["Prepared for:", data.contactName ?? data.clientName],
-      ["Report Date:", shortDate(data.reportDate)],
-      ["Switchboard:", data.boardName],
-      ["Tested By:", `${COMPANY.name} · Lic ${COMPANY.licence}`],
+      ["Site contact", data.contactName ?? data.clientName],
+      ["Report date", shortDate(data.reportDate)],
+      ["Switchboard", data.boardName],
+      ["Tested by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
+    note:
+      "This report is issued to the addressee named above and relates only to the switchboard and devices listed " +
+      "on it. Testing was carried out with a calibrated instrument and assessed against AS/NZS 3017. It records " +
+      "how each device performed on the day of testing; it is not a warranty of future performance.",
     marks: [],
   });
 }
@@ -784,8 +792,9 @@ function corrections(doc: Doc, data: RcdReport): Section {
   });
 
   pieces.push({
-    height: 96,
-    draw: (y) => signOff(doc, y + 26),
+    // Tall enough for the signature, which is drawn above the rule it sits on.
+    height: 114,
+    draw: (y) => signOff(doc, data, y + 44),
   });
 
   return { id: "corrections", title: "Corrections Applied", pieces };

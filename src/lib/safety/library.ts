@@ -122,15 +122,7 @@ export async function templateBytes(code: string): Promise<Buffer | null> {
   }
 }
 
-export async function signatureBytes(key: string): Promise<Buffer | null> {
-  const held = await prisma.signature.findUnique({ where: { key }, include: { file: true } });
-  if (!held) return null;
-  try {
-    return await readUpload(held.file.storedName);
-  } catch {
-    return null;
-  }
-}
+export { signatureBytes } from "@/lib/signatures";
 
 export function templateFor(code: string): Template | undefined {
   return BY_CODE.get(code);
