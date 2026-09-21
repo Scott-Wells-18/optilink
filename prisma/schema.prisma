@@ -723,6 +723,12 @@ model SafetyDoc {
   sourceFile   UploadedFile? @relation("SafetyDocSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
   /** What was read out of it, so a suggestion can be explained afterwards. */
   jobDescription String?
+  /** The job's name as the quote gave it. */
+  jobTitle       String?
+  /** What was answered about the work, keyed by question. */
+  answers        Json?
+  /** The quote and the answers written out as one description. */
+  workDescription String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

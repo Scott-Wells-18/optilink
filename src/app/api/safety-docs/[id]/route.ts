@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { notFound, readJson, serverError } from "@/lib/api";
 import { BY_CODE } from "@/lib/safety/catalogue";
+import { decide } from "@/lib/safety/decide";
 
 export const runtime = "nodejs";
 
@@ -30,15 +31,44 @@ export async function PATCH(
       projectName?: string;
       projectManager?: string;
       contactNumber?: string;
+      jobTitle?: string;
       jobDescription?: string;
+      workDescription?: string;
+      answers?: Record<string, string>;
       sourceFileId?: string | null;
       date?: string;
     };
 
     const data: Record<string, unknown> = {};
-    if (body.codes) data.codes = body.codes.filter((code) => BY_CODE.has(code));
-    for (const key of ["projectName", "projectManager", "contactNumber", "jobDescription"] as const) {
+
+    // The answers decide the documents, so they arrive together: whatever was
+    // said about the work, and what that works out to.
+    if (body.answers) {
+      const answers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(body.answers)) {
+        if (typeof value === "string" && value.length < 40) answers[key] = value;
+      }
+      data.answers = answers;
+      const decision = decide(answers, {
+        title: body.jobTitle ?? null,
+        description: body.jobDescription ?? null,
+      });
+      data.codes = decision.codes;
+    }
+    if (body.codes && !body.answers) {
+      data.codes = body.codes.filter((code) => BY_CODE.has(code));
+    }
+
+    for (const key of [
+      "projectName",
+      "projectManager",
+      "contactNumber",
+      "jobTitle",
+    ] as const) {
       if (body[key] !== undefined) data[key] = body[key]?.slice(0, 400) || null;
+    }
+    for (const key of ["jobDescription", "workDescription"] as const) {
+      if (body[key] !== undefined) data[key] = body[key]?.slice(0, 3000) || null;
     }
     if (body.sourceFileId !== undefined) data.sourceFileId = body.sourceFileId;
     if (body.date) {

@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import JSZip from "jszip";
+import { PDFDocument } from "pdf-lib";
 import { notFound, pdfResponse, serverError } from "@/lib/api";
 import { buildSafetyDocs } from "@/lib/safety/build";
 
 export const runtime = "nodejs";
 
 /**
- * The finished paperwork.
+ * The finished paperwork, as one PDF.
  *
- * One document comes down on its own; several come down as a zip, because a
- * browser will only accept one file from one click and a SWMS without its JSA
- * is half the job.
+ * A browser will only take one file from one click, and a zip holding a Word
+ * document is not what anyone wants to receive on a phone on site. So every
+ * document is a PDF and they are bound into a single file, in the order they
+ * are meant to be read — the SWMS, then the JSA behind it. One tap, one file,
+ * ready to forward.
+ *
+ * `?only=SWMS014` fetches one of them on its own.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -22,38 +26,33 @@ export async function GET(
     if (!built) return notFound("That paperwork could not be found.");
     if (built.length === 0) {
       return NextResponse.json(
-        { error: "No documents have been chosen for this job yet." },
+        {
+          error:
+            "Nothing could be built for this job yet. Answer the questions so the documents can be chosen, and check the template library has been fetched.",
+        },
         { status: 400 },
       );
     }
 
-    if (built.length === 1) {
-      const only = built[0];
-      const extension = only.mimeType.includes("word") ? "docx" : "pdf";
-      if (extension === "pdf") return pdfResponse(only.bytes, `${only.name}.pdf`);
-      return file(only.bytes, `${only.name}.docx`, only.mimeType);
+    const only = new URL(request.url).searchParams.get("only");
+    if (only) {
+      const wanted = built.find((one) => one.name.startsWith(`${only} `));
+      if (!wanted) return notFound("That document is not part of this job.");
+      return pdfResponse(wanted.bytes, `${wanted.name}.pdf`);
     }
 
-    const zip = new JSZip();
+    if (built.length === 1) return pdfResponse(built[0].bytes, `${built[0].name}.pdf`);
+
+    const merged = await PDFDocument.create();
     for (const one of built) {
-      const extension = one.mimeType.includes("word") ? "docx" : "pdf";
-      zip.file(`${one.name}.${extension}`, one.bytes, { createFolders: false });
+      const source = await PDFDocument.load(one.bytes);
+      const pages = await merged.copyPages(source, source.getPageIndices());
+      for (const page of pages) merged.addPage(page);
     }
-    const bytes: Buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
-    return file(bytes, `${built[0].name.split(" - ").slice(1).join(" - ")} paperwork.zip`, "application/zip");
+    const bytes = Buffer.from(await merged.save());
+    const suffix = built[0].name.split(" - ").slice(1).join(" - ");
+    return pdfResponse(bytes, `Safe work paperwork - ${suffix}.pdf`);
   } catch (error) {
     return serverError(error, "That paperwork could not be built.");
   }
-}
-
-function file(bytes: Buffer, name: string, mimeType: string) {
-  const plain = name.replace(/[^\w .\-()]+/g, " ").replace(/\s+/g, " ").trim();
-  return new NextResponse(new Uint8Array(bytes), {
-    headers: {
-      "content-type": mimeType,
-      "content-length": String(bytes.byteLength),
-      "content-disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
-      "cache-control": "no-store",
-    },
-  });
 }

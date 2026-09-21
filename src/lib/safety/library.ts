@@ -107,13 +107,60 @@ export async function libraryState() {
   };
 }
 
+/* --- getting it there without anyone having to ask ------------------------ */
+
+/**
+ * Makes sure the library is in place, importing it if it is not.
+ *
+ * A fresh deployment starts with an empty database: no templates, so nothing
+ * to download, and no signature, so every report prints a dotted line. Nobody
+ * should have to know there is an endpoint to call — the first thing that
+ * needs a document fetches the library, once, and from then on it is there.
+ *
+ * The result is held so a page that asks for six templates does not start six
+ * imports, and a failure is held too, for a minute, so a release that has been
+ * deleted does not mean an outbound request on every single report.
+ */
+let inFlight: Promise<void> | null = null;
+let failedAt = 0;
+const RETRY_AFTER = 60_000;
+
+export async function ensureLibrary(): Promise<void> {
+  if (inFlight) return inFlight;
+  if (Date.now() - failedAt < RETRY_AFTER) return;
+
+  inFlight = (async () => {
+    try {
+      const state = await libraryState();
+      if (state.missing.length === 0 && state.signatures > 0) return;
+      await importLibrary();
+      const after = await libraryState();
+      if (after.missing.length > 0 || after.signatures === 0) failedAt = Date.now();
+      else failedAt = 0;
+    } catch {
+      failedAt = Date.now();
+    } finally {
+      inFlight = null;
+    }
+  })();
+
+  return inFlight;
+}
+
 /* --- reading them back ---------------------------------------------------- */
 
 export async function templateBytes(code: string): Promise<Buffer | null> {
-  const held = await prisma.safetyTemplate.findUnique({
+  let held = await prisma.safetyTemplate.findUnique({
     where: { code },
     include: { file: true },
   });
+  if (!held) {
+    await ensureLibrary();
+    held = await prisma.safetyTemplate.findUnique({
+      where: { code },
+      include: { file: true },
+    });
+  }
   if (!held) return null;
   try {
     return await readUpload(held.file.storedName);

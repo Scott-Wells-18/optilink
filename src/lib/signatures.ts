@@ -17,7 +17,15 @@ import { readUpload } from "@/lib/storage";
  */
 export async function signatureBytes(key: string): Promise<Buffer | null> {
   try {
-    const held = await prisma.signature.findUnique({ where: { key }, include: { file: true } });
+    let held = await prisma.signature.findUnique({ where: { key }, include: { file: true } });
+    if (!held) {
+      // A fresh deployment has never fetched the library, so the first report
+      // it draws is the one that goes and gets it. Imported through a dynamic
+      // import because library.ts reaches back here for this same function.
+      const { ensureLibrary } = await import("@/lib/safety/library");
+      await ensureLibrary();
+      held = await prisma.signature.findUnique({ where: { key }, include: { file: true } });
+    }
     if (!held) return null;
     return trim(await readUpload(held.file.storedName));
   } catch {

@@ -4,7 +4,7 @@ import { badRequest, readJson, serverError } from "@/lib/api";
 import { readUpload } from "@/lib/storage";
 import { extractText, getDocumentProxy } from "unpdf";
 import { asLines, parseCsv } from "@/lib/csv";
-import { suggest } from "@/lib/safety/catalogue";
+import { readAnswers } from "@/lib/safety/decide";
 
 export const runtime = "nodejs";
 
@@ -50,21 +50,20 @@ export async function POST(request: Request) {
     }
 
     const description = described || jobDescription(whole);
-    const found = suggest(description || whole);
+    const names = projectNames(whole, description);
+    const title = jobTitle(whole) || names[0] || "";
+
+    // What the quote already settles, so it is not asked about again.
+    const answered = readAnswers(`${title} ${description} ${whole}`);
 
     return NextResponse.json({
+      jobTitle: title,
       jobDescription: description,
-      suggestions: found.slice(0, 8).map((entry) => ({
-        code: entry.template.code,
-        kind: entry.template.kind,
-        title: entry.template.title,
-        pairs: entry.template.pairs ?? null,
-        matched: entry.matched,
-      })),
+      answered,
       // Offered as answers rather than filled in, so the questions stay
       // tappable and nobody has to type a phone number off a quote.
       candidates: {
-        projectNames: projectNames(whole, description),
+        projectNames: names,
         people: people(whole),
         numbers: numbers(whole),
       },
@@ -132,6 +131,36 @@ function descriptionColumn(rows: string[][]): string {
 
 function tidyBlock(text: string): string {
   return text.replace(/\s+/g, " ").replace(/\.\s*\./g, ".").trim().slice(0, 2000);
+}
+
+/**
+ * What the quote calls the job.
+ *
+ * Tried against every heading a quote puts it under, then against the biggest
+ * line of text near the top of the page — a quote that names the job at all
+ * names it early, and a line set in the title is the one the reader takes as
+ * the job.
+ */
+function jobTitle(text: string): string {
+  const labelled =
+    /(?:^|\n|\|)\s*(?:job(?:\s*title|\s*name)?|project(?:\s*name)?|title|subject|re|work\s*order|description\s*of\s*job|quote\s*(?:for|title))\s*[:\-|]\s*([^\n|]{4,90})/i.exec(
+      text,
+    );
+  if (labelled) return shorten(labelled[1].trim());
+
+  // Nothing labelled it, so the first line that reads like a name rather than
+  // an address, a number or a heading.
+  for (const line of text.split("\n").slice(0, 14)) {
+    const value = line.replace(/\s+/g, " ").trim();
+    if (value.length < 8 || value.length > 90) continue;
+    if (/[:|]/.test(value)) continue;
+    if (/^\d|abn|acn|gst|total|invoice|quote\s*(?:no|number|#)|phone|email|www\./i.test(value)) {
+      continue;
+    }
+    if (!/[a-z]/.test(value)) continue;
+    return shorten(value);
+  }
+  return "";
 }
 
 /* --- answers to offer ----------------------------------------------------- */

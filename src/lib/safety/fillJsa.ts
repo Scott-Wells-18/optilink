@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { RATINGS, type Hazard } from "@/lib/safety/hazards";
 
 /**
  * Filling in a JSA.
@@ -25,7 +26,11 @@ export type Signatory = {
 /** A cell holding one signatory's details, in the order they appear in a row. */
 const CELL = { name: 1, date: 3, signature: 5, position: 7 } as const;
 
-export async function fillJsa(template: Buffer, signatories: Signatory[]): Promise<Buffer> {
+export async function fillJsa(
+  template: Buffer,
+  signatories: Signatory[],
+  hazards: Hazard[] = [],
+): Promise<Buffer> {
   const zip = await JSZip.loadAsync(template);
   const documentXml = await zip.file("word/document.xml")?.async("string");
   if (!documentXml) return template;
@@ -33,7 +38,7 @@ export async function fillJsa(template: Buffer, signatories: Signatory[]): Promi
   const relsPath = "word/_rels/document.xml.rels";
   let rels = (await zip.file(relsPath)?.async("string")) ?? "";
 
-  let xml = documentXml;
+  let xml = addHazards(documentXml, hazards);
   let nextRel = highestRelId(rels) + 1;
   let nextDocPr = highestDocPr(xml) + 1;
 
@@ -70,6 +75,102 @@ export async function fillJsa(template: Buffer, signatories: Signatory[]): Promi
   zip.file("word/document.xml", xml, { createFolders: false });
   if (rels) zip.file(relsPath, rels, { createFolders: false });
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+}
+
+/* --- the rows a job brings with it ---------------------------------------- */
+
+/**
+ * Adds a job's own hazards to the end of the risk table.
+ *
+ * Each new row is a copy of a row already in the table with different words in
+ * it — chosen so its six risk ratings match the ones the new row needs, which
+ * means the cell shading, the column widths and the fonts all come across
+ * without any of them being written out here. Get that wrong and the added row
+ * is the one with the green "Severe" in it, which is worse than no row at all.
+ *
+ * Nothing existing is touched, and a hazard with no matching donor row is left
+ * out rather than guessed at.
+ */
+function addHazards(xml: string, hazards: Hazard[]): string {
+  if (hazards.length === 0) return xml;
+
+  const rows = xml.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [];
+  const data = rows.filter((row) => (row.match(/<w:tc>/g) ?? []).length === 10);
+  // The first ten-cell row is the table's own heading, not a hazard.
+  const donors = data.slice(1);
+  if (donors.length === 0) return xml;
+
+  const last = donors[donors.length - 1];
+  const added: string[] = [];
+
+  for (const hazard of hazards) {
+    const wanted = RATINGS[hazard.rating];
+    const donor = donors.find((row) => matchesRatings(row, wanted));
+    if (!donor) continue;
+    added.push(
+      writeRow(donor, [
+        hazard.task,
+        hazard.hazard,
+        hazard.who,
+        wanted[0],
+        wanted[1],
+        wanted[2],
+        hazard.controls,
+        wanted[3],
+        wanted[4],
+        wanted[5],
+      ]),
+    );
+  }
+
+  if (added.length === 0) return xml;
+  return xml.replace(last, last + added.join(""));
+}
+
+const RATING_CELLS = [3, 4, 5, 7, 8, 9] as const;
+
+function matchesRatings(row: string, wanted: string[]): boolean {
+  const cells = row.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? [];
+  return RATING_CELLS.every(
+    (at, index) => text(cells[at] ?? "").trim().toLowerCase() === wanted[index].toLowerCase(),
+  );
+}
+
+/**
+ * The donor row with every cell's words replaced.
+ *
+ * A cell's formatting lives on its paragraphs, so the first paragraph is kept
+ * and its runs are swapped for one carrying the new text; the rest of the
+ * paragraphs go, which is what stops a two-line donor leaving half of its old
+ * wording behind a one-line replacement.
+ */
+function writeRow(donor: string, values: string[]): string {
+  const cells = donor.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? [];
+  let out = donor;
+  cells.forEach((cell, index) => {
+    const value = values[index];
+    if (value === undefined) return;
+    out = out.replace(cell, replaceCellText(cell, value));
+  });
+  return out;
+}
+
+function replaceCellText(cell: string, value: string): string {
+  const paragraphs = cell.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? [];
+  const first = paragraphs[0];
+  if (!first) return cell;
+  const rest = paragraphs.slice(1);
+
+  const properties = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(first)?.[0] ?? "";
+  // The run properties of the paragraph's own first run, so the replacement
+  // keeps the size, weight and colour the cell was set in.
+  const runProps = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(first)?.[0] ?? "";
+  const rebuilt =
+    `<w:p>${properties}<w:r>${runProps}<w:t xml:space="preserve">${escape(value)}</w:t></w:r></w:p>`;
+
+  let out = cell.replace(first, rebuilt);
+  for (const extra of rest) out = out.replace(extra, "");
+  return out;
 }
 
 /* --- finding the blocks --------------------------------------------------- */
