@@ -17,6 +17,7 @@ import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
 import { SafetyDocDialog } from "@/components/SafetyDocDialog";
+import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -175,6 +176,10 @@ export function Gateway({
 
       {open && clients.rcd ? (
         <RcdWizard runId={clients.rcd.runId} onClose={clients.closeRcd} />
+      ) : null}
+
+      {open && clients.rcdLimits ? (
+        <RcdLimitsDialog onClose={clients.closeRcdLimits} />
       ) : null}
 
       {open && clients.safety ? (

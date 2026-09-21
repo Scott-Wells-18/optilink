@@ -2741,6 +2741,88 @@ body {
   gap: 2px;
 }
 
+/* --- the RCD limits table ------------------------------------------------ */
+
+.rcd-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rcd-limit-head,
+.rcd-limit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 92px 92px;
+  align-items: center;
+  gap: 10px;
+}
+
+.rcd-limit-head {
+  padding: 0 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.rcd-limit-head > span:not(:first-child) {
+  text-align: center;
+}
+
+.rcd-limit {
+  padding: 9px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 11px;
+  background: #fff;
+}
+
+.rcd-limit-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rcd-limit-name strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rcd-limit-name em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.rcd-limit input {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: center;
+  color: var(--ink);
+}
+
+@media (max-width: 620px) {
+  .rcd-limit-head {
+    display: none;
+  }
+
+  .rcd-limit {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rcd-limit-name {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Writing one down: the box and the button that keeps it. */
 .issue-write {
   display: flex;

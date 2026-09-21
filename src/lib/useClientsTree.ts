@@ -186,6 +186,7 @@ export function useClientsTree(enabled: boolean) {
   const [jobItem, setJobItem] = usePersisted<JobItemSpec | null>("jobitem", null);
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
+  const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -716,8 +717,8 @@ export function useClientsTree(enabled: boolean) {
    * report comes out.
    */
   const rcdNodes = useMemo<TreeNode[]>(
-    () =>
-      clients
+    () => [
+      ...clients
         .map<TreeNode>((client) => {
           const sites = client.sites.map<TreeNode>((site) => ({
             id: `rcd:site:${site.id}`,
@@ -770,7 +771,17 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startRcdTest, setRcdDate, setRcd],
+      // Last in the list rather than first: it is opened once when a standard
+      // is revised, not on the way to a test.
+      {
+        id: "rcd:limits",
+        label: "Limits",
+        detail: "What a device is judged against",
+        variant: "info",
+        onActivate: () => setRcdLimits(true),
+      },
+    ],
+    [clients, remove, startRcdTest, setRcdDate, setRcd, setRcdLimits],
   );
 
   const setSafetyDate = useCallback(
@@ -930,6 +941,8 @@ export function useClientsTree(enabled: boolean) {
       setSafety(null);
       void refresh();
     },
+    rcdLimits,
+    closeRcdLimits: () => setRcdLimits(false),
     submit,
     error,
   };
