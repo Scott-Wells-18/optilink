@@ -210,13 +210,23 @@ function place(page, box, image, size, words) {
   };
 }
 
-/** The left edge of the next thing printed on this line, if there is one. */
+/**
+ * The left edge of the next thing printed beside this label, if there is one.
+ *
+ * Anything to the right whose own band overlaps the label's is a candidate,
+ * and the leftmost of them is the bound. Testing one scanline through the
+ * label's middle is not enough: where the neighbouring cell holds a paragraph,
+ * that middle can fall in the gap between two of its lines, so only a stray
+ * descender qualifies — and the bound lands a whole column too far right.
+ */
 function nextOnRow(box, words) {
-  const midY = (box.y0 + box.y1) / 2;
-  const after = words
-    .filter((w) => w.x0 > box.x1 + 4 && w.y0 < midY && w.y1 > midY)
-    .sort((a, b) => a.x0 - b.x0);
-  return after[0]?.x0 ?? null;
+  let bound = null;
+  for (const word of words) {
+    if (word.x0 <= box.x1 + 4) continue;
+    if (word.y1 <= box.y0 - 2 || word.y0 >= box.y1 + 2) continue;
+    if (bound === null || word.x0 < bound) bound = word.x0;
+  }
+  return bound;
 }
 
 /**

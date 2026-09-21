@@ -78,6 +78,17 @@ type RcdRunRecord = {
   _count: { results: number };
 };
 
+type SafetyDocRecord = {
+  id: string;
+  date: string;
+  codes: string[];
+  projectName: string | null;
+  projectManager: string | null;
+  contactNumber: string | null;
+  jobDescription: string | null;
+  sourceFileId: string | null;
+};
+
 type SiteRecord = {
   id: string;
   name: string;
@@ -87,6 +98,7 @@ type SiteRecord = {
   inspections: InspectionRecord[];
   jobs: JobRecord[];
   rcdRuns: RcdRunRecord[];
+  safetyDocs: SafetyDocRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -134,6 +146,15 @@ export type ViewerSpec = {
 /** The RCD wizard, opened on one test run. */
 export type RcdSpec = { runId: string; siteName: string };
 
+/** One set of safe work paperwork, opened to be answered. */
+export type SafetySpec = {
+  docId: string;
+  clientName: string;
+  siteName: string;
+  siteLocation: string | null;
+  contacts: { name: string; phone: string | null }[];
+};
+
 /** Adding one piece of work to a job. */
 export type JobItemSpec = { jobId: string; jobTitle: string };
 
@@ -164,6 +185,7 @@ export function useClientsTree(enabled: boolean) {
   const [motorIssue, setMotorIssue] = usePersisted<MotorIssueSpec | null>("motor", null);
   const [jobItem, setJobItem] = usePersisted<JobItemSpec | null>("jobitem", null);
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
+  const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -751,37 +773,120 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startRcdTest, setRcdDate, setRcd],
   );
 
+  const setSafetyDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/safety-docs/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   /**
-   * Safe work method statements. Nothing is wired up behind this yet — the
-   * walk is here so the shape can be looked at and argued with before the
-   * paperwork side is built.
+   * Starting paperwork creates the empty record and opens it straight away.
+   * Nothing is asked for up front: the questions belong in the dialog, where
+   * the quote can answer most of them.
+   */
+  const startSafetyDoc = useCallback(
+    async (site: SiteRecord, clientName: string) => {
+      const response = await fetch("/api/safety-docs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId: site.id }),
+      });
+      if (!response.ok) {
+        setError("That paperwork could not be started.");
+        return;
+      }
+      const doc = (await response.json()) as { id: string };
+      await refresh();
+      setSafety({
+        docId: doc.id,
+        clientName,
+        siteName: site.name,
+        siteLocation: site.location,
+        contacts: site.contacts.map((contact) => ({
+          name: contact.name,
+          phone: contact.phone ?? null,
+        })),
+      });
+    },
+    [refresh, setSafety],
+  );
+
+  /**
+   * SWMS / JSA walks client → site → document set.
+   *
+   * One row is one job's paperwork: the quote it was read from, the statements
+   * chosen, and the answers every document asks for. The documents themselves
+   * are filled on the way out, so the row is always downloadable and always
+   * carries whatever was answered last.
    */
   const swmsNodes = useMemo<TreeNode[]>(
     () =>
       clients
-        .map<TreeNode>((client) => ({
-          id: `swms:client:${client.id}`,
-          label: client.name,
-          detail: countLabel(client.sites.length, "site", "sites"),
-          children: client.sites.map<TreeNode>((site) => ({
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
             id: `swms:site:${site.id}`,
             label: site.name,
-            detail: site.location?.trim() || "Nothing filed yet",
-            children: [1, 2, 3].map<TreeNode>((n) => ({
-              id: `swms:site:${site.id}:test:${n}`,
-              label: `Test option ${n}`,
-              detail: "Not built yet",
-              variant: "info",
-              onActivate: () =>
-                setInfo({
-                  title: `Test option ${n}`,
-                  body: "Nothing sits behind this yet.\n\nThis is where the SWMS and JSA paperwork will go: the job's own file uploaded, the statements that apply to it picked out, the JSA filled in from them, and the finished paperwork downloaded.",
-                }),
-            })),
-          })),
-        }))
+            detail:
+              site.location?.trim() ||
+              countLabel(site.safetyDocs.length, "document set", "document sets"),
+            children: [
+              ...site.safetyDocs.map<TreeNode>((doc) => {
+                const title = doc.projectName?.trim() || isoLabel(doc.date);
+                return {
+                  id: `safety:${doc.id}`,
+                  label: title,
+                  detail: describeSafetyDoc(doc),
+                  variant: "info",
+                  editDate: {
+                    value: isoDate(doc.date),
+                    onSave: (value) => void setSafetyDate(doc.id, value),
+                  },
+                  onActivate: () =>
+                    setSafety({
+                      docId: doc.id,
+                      clientName: client.name,
+                      siteName: site.name,
+                      siteLocation: site.location,
+                      contacts: site.contacts.map((contact) => ({
+                        name: contact.name,
+                        phone: contact.phone ?? null,
+                      })),
+                    }),
+                  onDownload: doc.codes.length
+                    ? () => download(`/api/safety-docs/${doc.id}/download`)
+                    : undefined,
+                  onRemove: () => void remove(`/api/safety-docs/${doc.id}`, title),
+                };
+              }),
+              {
+                id: `add:safety:${site.id}`,
+                label: "Add new",
+                detail: "Document",
+                variant: "add",
+                onActivate: () => void startSafetyDoc(site, client.name),
+              },
+            ],
+          }));
+
+          return {
+            id: `swms:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, setInfo],
+    [clients, remove, startSafetyDoc, setSafetyDate, setSafety],
   );
 
   return {
@@ -818,6 +923,11 @@ export function useClientsTree(enabled: boolean) {
     rcd,
     closeRcd: () => {
       setRcd(null);
+      void refresh();
+    },
+    safety,
+    closeSafety: () => {
+      setSafety(null);
       void refresh();
     },
     submit,
@@ -900,6 +1010,21 @@ function isoLabel(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+/** "SWMS014 + JSA001", or what is still missing before it can be issued. */
+function describeSafetyDoc(doc: {
+  codes: string[];
+  projectName: string | null;
+  sourceFileId: string | null;
+}): string {
+  if (doc.codes.length === 0) {
+    return doc.sourceFileId ? "Quote read — nothing chosen yet" : "Not started";
+  }
+  const listed = doc.codes.slice(0, 3).join(" + ");
+  const rest = doc.codes.length - 3;
+  const documents = rest > 0 ? `${listed} +${rest}` : listed;
+  return doc.projectName?.trim() ? documents : `${documents}  ·  Not named yet`;
 }
 
 /** A job is named by hand, or else by the day the work was done. */

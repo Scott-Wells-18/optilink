@@ -82,6 +82,9 @@ model UploadedFile {
   issuePhotos       IssuePhoto[]
   jobPhotos         JobPhoto[]
   rcdSources        RcdTestRun[]     @relation("RcdSource")
+  safetyTemplates   SafetyTemplate[] @relation("SafetyTemplateFile")
+  signatures        Signature[]      @relation("SignatureFile")
+  safetyDocSources  SafetyDoc[]      @relation("SafetyDocSource")
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +130,7 @@ model Site {
   contacts    Contact[]
   jobs        Job[]
   rcdRuns     RcdTestRun[]
+  safetyDocs  SafetyDoc[]
 
   @@index([clientId])
 }
@@ -642,4 +646,86 @@ model Photo {
   file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// Safe work paperwork
+// ---------------------------------------------------------------------------
+
+/**
+ * One of the company's blank SWMS, JSA or WHS templates, held as bytes.
+ *
+ * They live here rather than in the repository because they carry signatures,
+ * and because a template that is revised should be replaced without a deploy.
+ * The catalogue in src/lib/safety/catalogue.ts says what each one covers; this
+ * holds the file itself.
+ */
+model SafetyTemplate {
+  /** "SWMS014", "JSA001" — the code printed on the document. */
+  code String @id
+
+  kind     String
+  title    String
+  /** "pdf" or "docx". */
+  format   String
+  fileName String
+
+  fileId String
+  file   UploadedFile @relation("SafetyTemplateFile", fields: [fileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * A signature, kept once and stamped onto whatever needs it.
+ *
+ * Held as an uploaded file rather than in the repository: a signature is the
+ * thing that makes a document binding, and it has no business sitting in
+ * source control.
+ */
+model Signature {
+  /** "scott", "kye". */
+  key      String @id
+  name     String
+  position String
+
+  fileId String
+  file   UploadedFile @relation("SignatureFile", fields: [fileId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * One set of paperwork, issued for one job at one site.
+ *
+ * It holds what the operator answered rather than the finished files: the
+ * documents are filled on the way out, so a corrected answer or a revised
+ * template is picked up without anything having to be regenerated and stored.
+ */
+model SafetyDoc {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  date DateTime @default(now()) @db.Date
+
+  /** Template codes chosen, e.g. ["SWMS014", "JSA001"]. */
+  codes String[]
+
+  /** The job details every document asks for. */
+  projectName    String?
+  projectManager String?
+  contactNumber  String?
+
+  /** The quote the job description was read from, where one was given. */
+  sourceFileId String?
+  sourceFile   UploadedFile? @relation("SafetyDocSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
+  /** What was read out of it, so a suggestion can be explained afterwards. */
+  jobDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
 }

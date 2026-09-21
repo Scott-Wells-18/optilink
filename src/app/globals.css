@@ -1461,6 +1461,14 @@ body {
   margin-bottom: 10px;
 }
 
+/* A new question after a list of answers wants air, or the two read as one. */
+.issue-picks + .board-section-head,
+.dialog-field + .board-section-head,
+.rcd-facts + .board-section-head,
+.issue-empty + .board-section-head {
+  margin-top: 26px;
+}
+
 .board-section-title {
   font-size: 12px;
   font-weight: 700;

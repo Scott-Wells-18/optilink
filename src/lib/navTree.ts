@@ -1,9 +1,8 @@
 /**
  * The navigation tree behind the hub.
  *
- * Clients is filled from the database at runtime (see useClientsTree). The
- * other sections are still placeholders — three options, each with two, each
- * with one — waiting on the real steps.
+ * Every section is filled from the database at runtime (see useClientsTree):
+ * the same clients → sites walk, read a different way by each one.
  */
 
 export type TreeNode = {
@@ -51,8 +50,8 @@ export const SECTIONS: TreeNode[] = [
   },
   {
     id: "swms",
-    label: "SWMS",
-    detail: "Safe work method statements",
+    label: "SWMS / JSA",
+    detail: "Safe work paperwork",
     children: [],
   },
   {

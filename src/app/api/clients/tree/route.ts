@@ -64,6 +64,19 @@ export async function GET() {
               _count: { select: { results: true } },
             },
           },
+          safetyDocs: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              date: true,
+              codes: true,
+              projectName: true,
+              projectManager: true,
+              contactNumber: true,
+              jobDescription: true,
+              sourceFileId: true,
+            },
+          },
           inspections: {
             orderBy: { createdAt: "asc" },
             select: {

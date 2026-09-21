@@ -16,6 +16,7 @@ import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
+import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -48,7 +49,7 @@ export function Gateway({
 
   useSpringScroll(scrollerRef);
 
-  // Clients and Thermal come from the database; RCD and B&A are placeholders.
+  // Every section is the same clients → sites walk, read a different way.
   const sections = useMemo(
     () =>
       SECTIONS.map((section) => {
@@ -174,6 +175,17 @@ export function Gateway({
 
       {open && clients.rcd ? (
         <RcdWizard runId={clients.rcd.runId} onClose={clients.closeRcd} />
+      ) : null}
+
+      {open && clients.safety ? (
+        <SafetyDocDialog
+          docId={clients.safety.docId}
+          clientName={clients.safety.clientName}
+          siteName={clients.safety.siteName}
+          siteLocation={clients.safety.siteLocation}
+          contacts={clients.safety.contacts}
+          onClose={clients.closeSafety}
+        />
       ) : null}
 
       {/* Which editor opens is the board's own business: a grid board knows
