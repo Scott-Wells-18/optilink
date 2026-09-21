@@ -48,6 +48,7 @@ import {
   longDate,
   safe,
   shortDate,
+  timeOfDay,
 } from "@/lib/report/theme";
 import { reportSignature } from "@/lib/signatures";
 
@@ -84,6 +85,24 @@ export type RcdResultRow = {
   reasons: string[];
 };
 
+/**
+ * One row exactly as the instrument recorded it.
+ *
+ * Every reading in its own column and in the instrument's own notation — no
+ * rounding, no worse-of-the-two, no verdict. This is the transcript, not the
+ * assessment.
+ */
+export type RecordedRow = {
+  name: string;
+  device: string;
+  readings: string[];
+  touch: string;
+  limit: string;
+  time: string;
+  /** Nothing was measured on this one; it is shown, greyed, and not counted. */
+  blank: boolean;
+};
+
 export type RcdReport = PageMeta & {
   boardName: string;
   testDate: Date;
@@ -100,6 +119,8 @@ export type RcdReport = PageMeta & {
     walk: string;
   };
   checklist: { question: string; answer: string }[];
+  /** The instrument's own rows, transcribed. */
+  recorded: RecordedRow[];
   original: Buffer | null;
   /** How many pages the instrument's own report runs to. */
   originalPages: number;
@@ -129,6 +150,7 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
     company?: string | null;
     siteName?: string | null;
     boardName?: string | null;
+    rows?: StoredRow[];
   };
   const identity = resolveIdentity(parsed, {
     siteName: run.site.name,
@@ -179,11 +201,75 @@ export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
       question: item.question,
       answer: safe(answerFor(checklist[item.key])),
     })),
+    recorded: (parsed.rows ?? []).map(transcribe),
     original,
     originalPages: original ? await countPages(original) : 0,
     logo: await brandBytes("logo.jpg"),
     signature: await reportSignature(),
   };
+}
+
+/** A row of the stored parse. Dates are strings once it has been through JSON. */
+type StoredRow = {
+  name?: string;
+  ratingMa?: number | null;
+  waveform?: string | null;
+  selective?: boolean;
+  halfAt0?: Reading;
+  halfAt180?: Reading;
+  ratedAt0?: Reading;
+  ratedAt180?: Reading;
+  fiveAt0?: Reading;
+  fiveAt180?: Reading;
+  touchVolts?: number | null;
+  limitVolts?: number | null;
+  takenAt?: string | null;
+};
+
+/**
+ * One stored row, put back into the instrument's own words.
+ *
+ * Its notation is kept — "---" for a reading it never took, "> 2000" for a
+ * device that correctly refused to trip — because the point of this table is
+ * to be the same record, not a better one.
+ */
+function transcribe(row: StoredRow): RecordedRow {
+  const readings = [
+    row.halfAt0,
+    row.halfAt180,
+    row.ratedAt0,
+    row.ratedAt180,
+    row.fiveAt0,
+    row.fiveAt180,
+  ];
+  const device = [
+    row.ratingMa ? `${row.ratingMa} mA` : null,
+    row.waveform ?? null,
+    row.selective ? "S" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    name: safe(row.name ?? "—"),
+    device: safe(device || "—"),
+    readings: readings.map(asRecorded),
+    touch: volts(row.touchVolts),
+    limit: volts(row.limitVolts),
+    time: row.takenAt ? timeOfDay(new Date(row.takenAt)) : "—",
+    blank: readings.every((reading) => reading === null || reading === undefined),
+  };
+}
+
+/** "---", "> 2000" or the number itself, as the instrument writes it. */
+function asRecorded(reading: Reading | undefined): string {
+  if (reading === null || reading === undefined) return "---";
+  if (reading === "NO_TRIP") return "> 2000";
+  return String(reading);
+}
+
+function volts(value: number | null | undefined): string {
+  return value === null || value === undefined ? "---" : String(value);
 }
 
 /** The worse of the two phases — a device has to pass on both. */
@@ -327,6 +413,7 @@ function sections(doc: Doc, data: RcdReport, appended: number): Section[] {
     results(doc, data),
     corrections(doc, data),
   ];
+  if (data.recorded.length > 0) out.push(asRecordedSection(doc, data));
   if (appended > 0) out.push(originalDivider(doc, data, appended));
   return out;
 }
@@ -416,6 +503,16 @@ function contents(doc: Doc, data: RcdReport, laid: Layout) {
       tone: COLOURS.accent,
     },
   ];
+
+  if (data.recorded.length > 0) {
+    entries.push({
+      title: "As recorded by the instrument",
+      note: "Every reading it took, in its own notation, one column each.",
+      count: `${data.recorded.length} ${data.recorded.length === 1 ? "row" : "rows"}`,
+      page: String(laid.pageOf.recorded),
+      tone: COLOURS.accent,
+    });
+  }
 
   if (data.originalPages > 0) {
     entries.push({
@@ -801,6 +898,141 @@ function corrections(doc: Doc, data: RcdReport): Section {
 }
 
 /* --- the instrument's own report ------------------------------------------ */
+
+/* --- the instrument's record, set out so it can be read ------------------- */
+
+const RECORD_ROW = 15;
+const RECORD_HEAD = 26;
+const RECORD_COLUMNS = [40, 72, 46, 48, 42, 46, 42, 46, 32, 32];
+const RECORD_TITLES = [
+  "Name",
+  "Device",
+  "x1/2 0°",
+  "x1/2 180°",
+  "x1 0°",
+  "x1 180°",
+  "x5 0°",
+  "x5 180°",
+  "UF",
+  "UL",
+];
+
+/**
+ * Every reading the instrument recorded, in its own notation, one column each.
+ *
+ * The instrument's software prints this as a single wrapped cell in a
+ * fixed-height row, so on its own export the last line of every result is
+ * sliced in half by the row below it — the readings are in the file but they
+ * cannot be read off the page. Its pages still go in at the back untouched,
+ * because that is the record; this is the same record laid out so a reader can
+ * follow it, and every figure here comes from that file and nowhere else.
+ */
+function asRecordedSection(doc: Doc, data: RcdReport): Section {
+  const pieces: Piece[] = [];
+  const timeWidth = CONTENT - RECORD_COLUMNS.reduce((total, width) => total + width, 0);
+
+  const note = safe(
+    "Below is every row the instrument recorded, exactly as it recorded it: trip times in milliseconds at half, one and five times the rated residual current, each at 0° and 180°, then the touch voltage (UF) and the limit the instrument was set to (UL). “---” is a reading it did not take and “> 2000” is a device that held without tripping, which is what a healthy device does at half its rated current.",
+  );
+  const noteHeight = measureText(doc, note, { width: CONTENT, size: 10, lineGap: 2 }) + 14;
+  pieces.push({
+    height: noteHeight,
+    draw: (y) => {
+      doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
+      doc.text(note, MARGIN, y, { width: CONTENT, lineGap: 2 });
+    },
+  });
+
+  const head = (y: number) => recordHead(doc, y, timeWidth);
+  pieces.push({ height: RECORD_HEAD, tag: "head", draw: head });
+
+  data.recorded.forEach((row, stripe) => {
+    pieces.push({
+      height: RECORD_ROW,
+      tag: "row",
+      draw: (y) => {
+        doc
+          .rect(MARGIN, y, CONTENT, RECORD_ROW)
+          .fillAndStroke(stripe % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+
+        // A row that measured nothing is greyed rather than dropped: it is
+        // part of what the instrument recorded, and Corrections Applied says
+        // what became of it.
+        const ink = row.blank ? COLOURS.hair : COLOURS.ink;
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(ink);
+        doc.text(row.name, MARGIN + 6, y + 4.5, {
+          width: RECORD_COLUMNS[0] - 10,
+          ellipsis: true,
+          height: 9,
+        });
+
+        doc.font("Helvetica").fontSize(7.5).fillColor(row.blank ? COLOURS.hair : COLOURS.inkSoft);
+        let x = MARGIN + RECORD_COLUMNS[0];
+        doc.text(row.device, x + 4, y + 4.5, {
+          width: RECORD_COLUMNS[1] - 8,
+          ellipsis: true,
+          height: 9,
+        });
+        x += RECORD_COLUMNS[1];
+
+        doc.fillColor(ink);
+        const cells = [...row.readings, row.touch, row.limit];
+        cells.forEach((cell, at) => {
+          doc.text(cell, x, y + 4.5, {
+            width: RECORD_COLUMNS[at + 2],
+            align: "center",
+            ellipsis: true,
+            height: 9,
+          });
+          x += RECORD_COLUMNS[at + 2];
+        });
+        doc.fillColor(row.blank ? COLOURS.hair : COLOURS.inkSoft);
+        doc.text(row.time, x, y + 4.5, { width: timeWidth, align: "center", height: 9 });
+        doc.fillColor(COLOURS.ink);
+      },
+    });
+  });
+
+  return {
+    id: "recorded",
+    title: "As Recorded By The Instrument",
+    pieces,
+    repeat: (next) =>
+      next.tag === "row" ? { height: RECORD_HEAD, draw: head } : null,
+  };
+}
+
+/**
+ * Two lines deep, because "x1/2 180°" will not sit in 48 points beside
+ * its neighbours at a size anyone would want to read.
+ */
+function recordHead(doc: Doc, y: number, timeWidth: number) {
+  doc.rect(MARGIN, y, CONTENT, RECORD_HEAD).fill(COLOURS.bar);
+  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(7.5);
+
+  doc.text(RECORD_TITLES[0], MARGIN + 6, y + 9, { width: RECORD_COLUMNS[0] - 10 });
+  doc.text(RECORD_TITLES[1], MARGIN + RECORD_COLUMNS[0] + 4, y + 9, {
+    width: RECORD_COLUMNS[1] - 8,
+  });
+
+  let x = MARGIN + RECORD_COLUMNS[0] + RECORD_COLUMNS[1];
+  for (let at = 2; at < RECORD_TITLES.length; at += 1) {
+    const centred = { width: RECORD_COLUMNS[at], align: "center" as const };
+    if (at < 8) {
+      // The multiplier over the phase, so each column head fits its column.
+      const [multiplier, phase] = RECORD_TITLES[at].split(" ");
+      doc.text(multiplier, x, y + 5, centred);
+      doc.font("Helvetica").fontSize(6.5);
+      doc.text(phase, x, y + 14.5, centred);
+      doc.font("Helvetica-Bold").fontSize(7.5);
+    } else {
+      doc.text(RECORD_TITLES[at], x, y + 9, centred);
+    }
+    x += RECORD_COLUMNS[at];
+  }
+  doc.text("Time", x, y + 9, { width: timeWidth, align: "center" });
+  doc.fillColor(COLOURS.ink);
+}
 
 /**
  * A page of its own, so the instrument's report cannot be missed when the
