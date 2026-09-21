@@ -85,6 +85,7 @@ export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
         approvalDate: date,
         consultDateScott: date,
         consultDateKye: date,
+        scopeOfWorks: description,
       });
     }
 

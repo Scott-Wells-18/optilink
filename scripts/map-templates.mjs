@@ -52,6 +52,14 @@ const PAGE_TWO = [
 ];
 
 /**
+ * The scope box, which is a heading with an empty cell under it rather than a
+ * label with a cell beside it — so it is found the same way and measured the
+ * other way: from under the heading down to whatever is printed next, and
+ * across to the cell wall.
+ */
+const PAGE_TWO_BLOCKS = [{ key: "scopeOfWorks", words: ["SCOPE", "OF", "WORKS"] }];
+
+/**
  * The consultation table already has both names and both signatures printed
  * in it; only the dates beside them are blank.
  *
@@ -137,6 +145,24 @@ async function mapOne(worker, file) {
     const box = locate(wordsTwo, spec, two);
     if (box) fields[spec.key] = place(2, box, two, size, wordsTwo);
   }
+  // The scope box shares its row with the labelled block beside it, so the
+  // bottom of the lowest of those labels is a bottom it certainly reaches —
+  // and, unlike looking for the cell's own rule, it is a measurement rather
+  // than a guess at which shade of grey counts as a line.
+  const lowest = ["projectManager", "contactNumber", "projectAddress", "submissionDate"]
+    .map((key) => fields[key]?.y)
+    .filter((value) => typeof value === "number")
+    .reduce((low, value) => Math.min(low, value), Infinity);
+
+  if (Number.isFinite(lowest)) {
+    const floor = (size.height - lowest - 1) / SCALE;
+    for (const spec of PAGE_TWO_BLOCKS) {
+      const box = locate(wordsTwo, spec, two);
+      if (!box) continue;
+      const block = placeBelow(2, box, two, size, wordsTwo, floor);
+      if (block) fields[spec.key] = block;
+    }
+  }
 
   return { pages: pageCount(file), size, fields };
 }
@@ -208,6 +234,45 @@ function place(page, box, image, size, words) {
     y: round(size.height - box.y1 * SCALE - 1),
     width: round(Math.max(40, (right - left - 10) * SCALE)),
   };
+}
+
+/**
+ * The block under a heading, rather than the cell beside a label.
+ *
+ * A scope box is a heading with nothing under it, so the value starts below
+ * the heading and runs to whatever is printed next in that column — or to the
+ * foot of the table where the column is empty, which is the usual case since
+ * the box was left blank for the job. `height` comes back with it, because a
+ * paragraph has to know how far it can run before it is out of its box.
+ */
+function placeBelow(page, box, image, size, words, floor) {
+  const left = box.x0;
+  const right = nextOnRow(box, words) ?? tableRight(image);
+  // Some of these boxes carry a printed prompt — "Provide a description of the
+  // specific work being carried out:" — so the writing starts under whatever
+  // is already in the cell, not under the heading.
+  const printed = lastWordIn(words, box.y1, floor, left, right);
+  const top = (printed ?? box.y1) + 8;
+  if (floor - top < 24) return null;
+
+  return {
+    page,
+    x: round(left * SCALE),
+    y: round(size.height - top * SCALE - 1),
+    width: round(Math.max(60, (right - left - 8) * SCALE)),
+    height: round((floor - top - 4) * SCALE),
+  };
+}
+
+/** The bottom of the lowest thing already printed inside the box. */
+function lastWordIn(words, from, to, left, right) {
+  let lowest = null;
+  for (const word of words) {
+    if (word.y0 <= from + 2 || word.y1 >= to) continue;
+    if (word.x1 <= left + 2 || word.x0 >= right - 2) continue;
+    if (lowest === null || word.y1 > lowest) lowest = word.y1;
+  }
+  return lowest;
 }
 
 /**
