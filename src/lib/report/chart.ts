@@ -5,22 +5,38 @@ import type { Sample } from "@/lib/power/parse";
 export { SERIES };
 
 /**
- * A week of current readings, drawn.
+ * A week of current readings, drawn as overlapping filled areas.
  *
- * Four traces on one axis: the three phases and the neutral, overlaid so they
- * can be compared against each other, which is the only reason to put them on
- * the same chart. One scale for every page of a recording, so week two is
- * read against week one rather than against itself.
+ * Four traces on one axis: the three phases and the neutral, laid over each
+ * other so they can be compared, which is the only reason to put them on the
+ * same chart. One scale for every page of a recording, so week two is read
+ * against week one rather than against itself.
  *
  * The colours are the first four slots of the validated categorical palette,
  * assigned in that order and never cycled. Two of them sit under 3:1 against
  * white, so every trace is also labelled at its right-hand end and every peak
- * is written out in a table beneath the chart — identity is never colour alone.
+ * written out beneath the chart — identity is never colour alone.
  */
 
 type Doc = PDFKit.PDFDocument;
 
 const DAY = 86_400_000;
+const MINUTE = 60_000;
+
+/**
+ * How much of the surface a fill lets through.
+ *
+ * The look being matched is two areas at half opacity, where the overlap
+ * covers about three quarters of the surface. Four areas at a half would cover
+ * ninety-four per cent of it — a solid block, which is the opposite of the
+ * look. Four at three tenths lands back on that same three quarters, so the
+ * overlaps read the way they do on a two-series chart.
+ *
+ * The fills are drawn largest-first so a smaller one is never buried, and each
+ * line is stroked back over the top at full strength: the fills carry the
+ * shape, the lines carry the identity.
+ */
+const FILL_OPACITY = 0.3;
 
 export type ChartBox = { x: number; y: number; width: number; height: number };
 
@@ -37,9 +53,19 @@ export type ChartSpec = {
 
 export function drawChart(doc: Doc, box: ChartBox, spec: ChartSpec) {
   const { x, y, width, height } = box;
+  const window = windowFor(spec);
 
   grid(doc, box, spec);
-  for (const channel of spec.channels) trace(doc, box, spec, channel);
+
+  // Largest area at the back, so a smaller one is never buried under it.
+  const curves = spec.channels
+    .map((channel) => ({ channel, runs: resample(spec, channel, window) }))
+    .map((entry) => ({ ...entry, weight: weigh(entry.runs) }))
+    .sort((a, b) => b.weight - a.weight);
+
+  for (const { channel, runs } of curves) fill(doc, box, spec, channel, runs);
+  for (const { channel, runs } of curves) stroke(doc, box, spec, channel, runs);
+
   endLabels(doc, box, spec);
 
   // The axes last, so a trace that runs to zero does not sit on top of them.
@@ -119,61 +145,153 @@ export function scaleTop(maxReading: number): number {
   return steps[steps.length - 1];
 }
 
-/* --- the traces ----------------------------------------------------------- */
+/* --- from readings to a curve --------------------------------------------- */
 
-function trace(doc: Doc, box: ChartBox, spec: ChartSpec, channel: Channel) {
-  const points = decimate(box, spec, channel);
-  if (points.length === 0) return;
+type Point = { at: number; amps: number };
+/** A stretch of continuous readings. A gap in the logging starts a new one. */
+type Run = Point[];
 
-  doc.lineWidth(0.7).strokeColor(SERIES[channel]).lineJoin("round").lineCap("round");
-  doc.moveTo(points[0][0], points[0][1]);
-  for (const [px, py] of points.slice(1)) doc.lineTo(px, py);
-  doc.stroke();
+/** The windows a person would choose, in minutes. */
+const WINDOWS = [5, 10, 15, 20, 30, 60, 120, 180, 360];
+
+/**
+ * How wide a window to take the readings in.
+ *
+ * Aimed at roughly a point every four points of paper: closer than that and
+ * neighbouring readings sit on top of each other and the line is a band of
+ * noise; further apart and a real event starts getting skipped over. A week
+ * lands on the hour, which is also the unit a person thinks in.
+ *
+ * Never finer than the logger's own interval — there is nothing in between.
+ */
+function windowFor(spec: ChartSpec): number {
+  const minutes = (spec.to - spec.from) / MINUTE / 180;
+  return (WINDOWS.find((value) => value >= minutes) ?? WINDOWS[WINDOWS.length - 1]) * MINUTE;
+}
+
+/**
+ * The readings, one window at a time.
+ *
+ * The **highest** reading in each window, never the average. On a recording of
+ * maximum demand the average is the one number nobody asked for, and averaging
+ * is what removes the peak the whole exercise exists to find — the highest
+ * reading of the fortnight survives this untouched, and so does the moment it
+ * happened.
+ *
+ * A window the logger recorded nothing in ends the run, so a gap in the
+ * logging shows as a gap rather than a straight line drawn across it.
+ */
+function resample(spec: ChartSpec, channel: Channel, window: number): Run[] {
+  const runs: Run[] = [];
+  let run: Run = [];
+
+  for (let from = spec.from; from < spec.to; from += window) {
+    const to = from + window;
+    let highest: number | null = null;
+    for (const sample of spec.samples) {
+      if (sample.at < from || sample.at >= to) continue;
+      const amps = sample[channel];
+      if (amps === null) continue;
+      if (highest === null || amps > highest) highest = amps;
+    }
+
+    if (highest === null) {
+      if (run.length > 0) runs.push(run);
+      run = [];
+      continue;
+    }
+    run.push({ at: from + window / 2, amps: highest });
+  }
+
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
+
+/** Roughly how much of the plot a channel covers, for the drawing order. */
+function weigh(runs: Run[]): number {
+  return runs.reduce(
+    (total, run) => total + run.reduce((sum, point) => sum + point.amps, 0),
+    0,
+  );
+}
+
+/* --- drawing it ----------------------------------------------------------- */
+
+function place(box: ChartBox, spec: ChartSpec) {
+  const span = spec.to - spec.from;
+  return {
+    x: (at: number) => box.x + ((at - spec.from) / span) * box.width,
+    y: (amps: number) =>
+      box.y + box.height - (Math.min(amps, spec.maxAmps) / spec.maxAmps) * box.height,
+  };
+}
+
+function fill(doc: Doc, box: ChartBox, spec: ChartSpec, channel: Channel, runs: Run[]) {
+  const to = place(box, spec);
+  const baseline = box.y + box.height;
+
+  doc.save();
+  doc.fillOpacity(FILL_OPACITY);
+  for (const run of runs) {
+    if (run.length < 2) continue;
+    const points = run.map((point) => [to.x(point.at), to.y(point.amps)] as const);
+    doc.moveTo(points[0][0], baseline);
+    doc.lineTo(points[0][0], points[0][1]);
+    curve(doc, points);
+    doc.lineTo(points[points.length - 1][0], baseline);
+    doc.closePath();
+    doc.fillColor(SERIES[channel]).fill();
+  }
+  doc.restore();
+  doc.fillOpacity(1);
+}
+
+function stroke(doc: Doc, box: ChartBox, spec: ChartSpec, channel: Channel, runs: Run[]) {
+  const to = place(box, spec);
+
+  doc.lineWidth(1.1).strokeColor(SERIES[channel]).lineJoin("round").lineCap("round");
+  for (const run of runs) {
+    const points = run.map((point) => [to.x(point.at), to.y(point.amps)] as const);
+    if (points.length === 1) {
+      doc.circle(points[0][0], points[0][1], 0.9).fill(SERIES[channel]);
+      continue;
+    }
+    doc.moveTo(points[0][0], points[0][1]);
+    curve(doc, points);
+    doc.stroke();
+  }
   doc.lineWidth(1).strokeColor("#000000");
 }
 
 /**
- * The trace, at the resolution the page can actually show.
+ * A smooth line through the points, without inventing anything between them.
  *
- * A fortnight at five-minute intervals is four thousand readings across seven
- * hundred points of paper, so most of them land on top of each other. Each
- * column of the plot is reduced to its lowest and its highest reading, in the
- * order they occurred — which is what an oscilloscope does, and it is the one
- * reduction that cannot lose a peak. Averaging would, and a power analysis is
- * read for its peaks.
+ * Catmull-Rom, which passes through every point rather than near it, converted
+ * to the cubic curves a PDF draws. The control points are held inside each
+ * segment's own range, which is what stops a curve overshooting a peak and
+ * drawing a higher reading than was ever taken — or dipping below zero after a
+ * sharp fall, which on a current chart is nonsense.
  */
-function decimate(box: ChartBox, spec: ChartSpec, channel: Channel): [number, number][] {
-  const span = spec.to - spec.from;
-  const toX = (at: number) => box.x + ((at - spec.from) / span) * box.width;
-  const toY = (amps: number) =>
-    box.y + box.height - (Math.min(amps, spec.maxAmps) / spec.maxAmps) * box.height;
+function curve(doc: Doc, points: readonly (readonly [number, number])[]) {
+  for (let at = 0; at < points.length - 1; at += 1) {
+    const previous = points[at === 0 ? at : at - 1];
+    const start = points[at];
+    const end = points[at + 1];
+    const next = points[at + 2 < points.length ? at + 2 : at + 1];
 
-  const columns = new Map<number, { first: Sample; low: Sample; high: Sample; last: Sample }>();
-  for (const sample of spec.samples) {
-    const amps = sample[channel];
-    if (amps === null) continue;
-    const column = Math.round(toX(sample.at));
-    const held = columns.get(column);
-    if (!held) {
-      columns.set(column, { first: sample, low: sample, high: sample, last: sample });
-      continue;
-    }
-    held.last = sample;
-    if (amps < (held.low[channel] ?? Infinity)) held.low = sample;
-    if (amps > (held.high[channel] ?? -Infinity)) held.high = sample;
-  }
+    const lowY = Math.min(start[1], end[1]);
+    const highY = Math.max(start[1], end[1]);
+    const clamp = (value: number) => Math.max(lowY, Math.min(highY, value));
 
-  const out: [number, number][] = [];
-  for (const column of [...columns.keys()].sort((a, b) => a - b)) {
-    const { first, low, high, last } = columns.get(column)!;
-    // In the order they happened, so the line enters and leaves the column
-    // where the readings actually did.
-    const ordered = [first, low, high, last]
-      .filter((sample, index, all) => all.indexOf(sample) === index)
-      .sort((a, b) => a.at - b.at);
-    for (const sample of ordered) out.push([column, toY(sample[channel] ?? 0)]);
+    doc.bezierCurveTo(
+      start[0] + (end[0] - previous[0]) / 6,
+      clamp(start[1] + (end[1] - previous[1]) / 6),
+      end[0] - (next[0] - start[0]) / 6,
+      clamp(end[1] - (next[1] - start[1]) / 6),
+      end[0],
+      end[1],
+    );
   }
-  return out;
 }
 
 /**
@@ -224,18 +342,18 @@ export function markPeak(
   spec: ChartSpec,
   peak: { channel: Channel; amps: number; at: number },
 ) {
-  const span = spec.to - spec.from;
-  const x = box.x + ((peak.at - spec.from) / span) * box.width;
-  const y = box.y + box.height - (Math.min(peak.amps, spec.maxAmps) / spec.maxAmps) * box.height;
+  const to = place(box, spec);
+  const x = to.x(peak.at);
+  const y = to.y(peak.amps);
 
   // A dropped line to the axis, so the moment is readable off the dates.
-  doc.lineWidth(0.6).strokeColor(SERIES[peak.channel]).dash(2, { space: 2 });
+  doc.lineWidth(0.8).strokeColor(COLOURS.inkSoft).dash(2, { space: 2.5 });
   doc.moveTo(x, y).lineTo(x, box.y + box.height).stroke();
   doc.undash();
 
-  doc.lineWidth(1.6).strokeColor("#ffffff");
+  doc.lineWidth(2).strokeColor("#ffffff");
   doc.circle(x, y, 4.2).stroke();
-  doc.lineWidth(1.2).strokeColor(SERIES[peak.channel]);
+  doc.lineWidth(1.4).strokeColor(SERIES[peak.channel]);
   doc.circle(x, y, 4.2).stroke();
   doc.lineWidth(1).strokeColor("#000000");
 
@@ -265,12 +383,30 @@ export function round(amps: number): string {
   return Number.isInteger(amps) ? String(amps) : amps.toFixed(1);
 }
 
+/** How the chart was drawn, so the page can say it in a line. */
+export function describeWindow(spec: ChartSpec): string {
+  const minutes = windowFor(spec) / MINUTE;
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours}-hour`;
+  }
+  return `${minutes}-minute`;
+}
+
 /* --- the legend ----------------------------------------------------------- */
 
 export function legend(doc: Doc, x: number, y: number, channels: Channel[], names: string[]) {
   let at = x;
   channels.forEach((channel, index) => {
-    doc.rect(at, y + 1.5, 16, 2.4).fill(SERIES[channel]);
+    // A swatch at the fill's own strength with the line over it, so the key
+    // looks like the thing it is a key to.
+    doc.save();
+    doc.fillOpacity(FILL_OPACITY);
+    doc.rect(at, y - 2, 16, 8).fill(SERIES[channel]);
+    doc.restore();
+    doc.fillOpacity(1);
+    doc.rect(at, y - 2, 16, 1.4).fill(SERIES[channel]);
+
     doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.ink);
     doc.text(CHANNEL_LABELS[channel], at + 21, y - 1.5, { lineBreak: false });
     doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
@@ -279,11 +415,7 @@ export function legend(doc: Doc, x: number, y: number, channels: Channel[], name
       lineBreak: false,
     });
     at +=
-      21 +
-      doc.widthOfString(CHANNEL_LABELS[channel]) +
-      6 +
-      doc.widthOfString(note) +
-      22;
+      21 + doc.widthOfString(CHANNEL_LABELS[channel]) + 6 + doc.widthOfString(note) + 22;
   });
   doc.fillColor(COLOURS.ink);
 }

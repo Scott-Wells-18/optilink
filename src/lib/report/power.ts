@@ -9,6 +9,7 @@ import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
 import {
   SERIES,
+  describeWindow,
   drawChart,
   legend,
   markPeak,
@@ -100,7 +101,7 @@ const WHAT_IT_IS = [
   "A power analysis is a recording of how much current an installation actually draws, taken over a period long enough to include the way the site is really used. A logger is fitted at the switchboard with a current transformer clamped around each active conductor and around the neutral, and it is left in place while the site runs normally. It records the highest current seen on each conductor during every interval, so a short, sharp demand is captured rather than averaged away.",
   "What it answers is the question a nameplate cannot. The rating of a main switch, a submain or a supply is a limit, not a measurement, and the load on a board changes as equipment is added, shifts are changed or plant is replaced. Recording the installation over a fortnight shows the peak each phase reaches, how close that sits to the protection in front of it, whether the phases carry a similar share of the load, and how much current is returning down the neutral.",
   "Three things are read off the result. The first is headroom: the highest reading on any phase against the rating of the protective device, which is what decides whether there is capacity for more load. The second is balance: three phases carrying markedly different currents put the imbalance onto the neutral, waste capacity and overheat the lightly loaded conductors' counterparts. The third is the neutral itself, which on a balanced linear load carries very little, and on a site full of switch-mode supplies, LED drivers and variable speed drives can carry considerably more than expected.",
-  "The readings that follow are the logger's own, unaltered. Nothing has been averaged, smoothed or resampled, because the value of the recording is in its peaks and a peak is the first thing averaging removes.",
+  "Every figure quoted in this report is the logger's own. On the charts, each line is the highest reading taken in each window of the recording rather than every individual reading, which is what makes a fortnight legible on a page; because it is the highest and never the average, no peak is lost or reduced. The highest reading of each week is marked on its chart at the moment it occurred, and the tables give it exactly as the logger recorded it.",
 ];
 
 const NOTE =
@@ -380,11 +381,20 @@ function weekPage(
 
   drawChart(doc, PLOT, spec);
 
-  // The week's own highest reading, marked where it happened.
+  // The week's own highest reading, marked where it happened — off the raw
+  // readings, so the figure and the moment are the logger's own.
   const peak = highestIn(week.samples, channels);
   if (peak) markPeak(doc, PLOT, spec, peak);
 
   let y = PLOT.y + PLOT.height + 26;
+  doc.font("Helvetica").fontSize(7).fillColor(COLOURS.inkSoft);
+  doc.text(
+    `Each line is the highest reading in every ${describeWindow(spec)} window. Peaks are the logger's own, untouched.`,
+    PLOT.x + PLOT.width - 300,
+    y - 1,
+    { width: 300, align: "right", lineBreak: false },
+  );
+  doc.fillColor(COLOURS.ink);
   legend(
     doc,
     PLOT.x,
