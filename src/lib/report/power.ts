@@ -257,7 +257,6 @@ async function readInstrument(row: InstrumentRow): Promise<Instrument | null> {
   let certificate: Certificate | null = null;
   let certificateUnreadable = false;
   let calibration: Calibration = {
-    name: null,
     serialNo: null,
     modelNo: null,
     calibratedOn: null,
@@ -270,11 +269,13 @@ async function readInstrument(row: InstrumentRow): Promise<Instrument | null> {
     if (bytes) calibration = await readCalibration(bytes);
   }
 
-  // What was typed in wins over what was read off the certificate: the person
-  // holding the meter knows which one it is, and a serial number lifted out of
-  // a text layer by pattern match is a guess beside that.
+  // The name is whatever the instrument is called under Equipment, full stop.
+  // That is the name the person picked it by, and a certificate's own wording
+  // for the same meter is somebody else's cataloguing. The serial and model
+  // numbers do fall back to the certificate, but only where they were left
+  // blank: there they are facts about one object rather than a choice of name.
   return {
-    name: safe(row.name || calibration.name || "Test instrument"),
+    name: safe(row.name),
     serialNo: pick(row.serialNo, calibration.serialNo),
     modelNo: pick(row.modelNo, calibration.modelNo),
     photo,

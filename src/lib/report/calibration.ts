@@ -16,7 +16,6 @@ import { extractText, getDocumentProxy } from "unpdf";
  */
 
 export type Calibration = {
-  name: string | null;
   serialNo: string | null;
   modelNo: string | null;
   /** The day it was calibrated. */
@@ -26,7 +25,6 @@ export type Calibration = {
 };
 
 const EMPTY: Calibration = {
-  name: null,
   serialNo: null,
   modelNo: null,
   calibratedOn: null,
@@ -56,7 +54,6 @@ const CALIBRATED = [
 
 const SERIAL = [/serial\s*(?:number|no\.?|#)?/i, /\bs\s*\/\s*n\b/i, /\bsn\b/i];
 const MODEL = [/model\s*(?:number|no\.?|#)?/i, /\btype\b/i, /\bpart\s*(?:no\.?|number)\b/i];
-const NAME = [/instrument/i, /description/i, /equipment/i, /\bdevice\b/i];
 
 export async function readCalibration(pdf: Buffer): Promise<Calibration> {
   let text: string;
@@ -69,7 +66,6 @@ export async function readCalibration(pdf: Buffer): Promise<Calibration> {
   if (!text?.trim()) return { ...EMPTY };
 
   return {
-    name: after(text, NAME, 60),
     serialNo: after(text, SERIAL, 32),
     modelNo: after(text, MODEL, 32),
     calibratedOn: date(text, CALIBRATED),

@@ -301,32 +301,29 @@ export function PowerDialog({
               </p>
             </div>
             {instruments.length > 0 ? (
-              <div className="issue-picks">
-                {instruments.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`issue-pick ${run?.instrumentId === item.id ? "is-on" : ""}`}
-                    onClick={() =>
-                      void patch({
-                        instrumentId: run?.instrumentId === item.id ? null : item.id,
-                      })
-                    }
-                  >
-                    <span className="issue-pick-mark is-one" aria-hidden />
-                    <span className="issue-pick-body">
-                      <span className="issue-pick-label">{item.name}</span>
-                      {item.serialNo || item.modelNo ? (
-                        <span className="issue-pick-note">
-                          {[item.modelNo, item.serialNo ? `S/N ${item.serialNo}` : null]
-                            .filter(Boolean)
-                            .join("  ·  ")}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <label className="dialog-field">
+                <span className="dialog-label">Equipment used</span>
+                <select
+                  className="dialog-select"
+                  value={run?.instrumentId ?? ""}
+                  onChange={(event) =>
+                    void patch({ instrumentId: event.target.value || null })
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  {instruments.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {[
+                        item.name,
+                        item.modelNo,
+                        item.serialNo ? `S/N ${item.serialNo}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join("  \u00b7  ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
 
             <div className="board-section-head">

@@ -1194,6 +1194,34 @@ body {
     box-shadow 280ms var(--ease-soft);
 }
 
+/* A dropdown that matches the text inputs beside it. The native arrow is
+   replaced with our own so the control looks the same on every platform. */
+.dialog-select {
+  width: 100%;
+  padding: 11px 38px 11px 14px;
+  font-family: var(--font-app);
+  font-size: 14px;
+  color: var(--ink);
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230a1d2e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  background-size: 15px 15px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  transition:
+    border-color 260ms var(--ease-soft),
+    box-shadow 280ms var(--ease-soft);
+}
+
+.dialog-select:focus {
+  border-color: rgba(27, 155, 216, 0.5);
+  box-shadow: 0 0 0 3px rgba(27, 155, 216, 0.12);
+}
+
 .dialog-input::placeholder {
   color: var(--ink-4);
 }
