@@ -7,6 +7,7 @@ import { readUpload } from "@/lib/storage";
 import { reportSignature } from "@/lib/signatures";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
+import { readCalibration, type Calibration } from "@/lib/report/calibration";
 import {
   fitted,
   readCertificate,
@@ -224,6 +225,8 @@ export type Instrument = {
   certificate: Certificate | null;
   /** True where a certificate was filed but could not be opened. */
   certificateUnreadable: boolean;
+  /** What the certificate itself says, where it could be read. */
+  calibration: Calibration;
 };
 
 type InstrumentRow = {
@@ -253,20 +256,38 @@ async function readInstrument(row: InstrumentRow): Promise<Instrument | null> {
 
   let certificate: Certificate | null = null;
   let certificateUnreadable = false;
+  let calibration: Calibration = {
+    name: null,
+    serialNo: null,
+    modelNo: null,
+    calibratedOn: null,
+    expiresOn: null,
+  };
   if (row.certFile) {
     const bytes = await readUpload(row.certFile.storedName).catch(() => null);
     certificate = bytes ? await readCertificate(bytes) : null;
     certificateUnreadable = certificate === null;
+    if (bytes) calibration = await readCalibration(bytes);
   }
 
+  // What was typed in wins over what was read off the certificate: the person
+  // holding the meter knows which one it is, and a serial number lifted out of
+  // a text layer by pattern match is a guess beside that.
   return {
-    name: safe(row.name),
-    serialNo: row.serialNo ? safe(row.serialNo) : null,
-    modelNo: row.modelNo ? safe(row.modelNo) : null,
+    name: safe(row.name || calibration.name || "Test instrument"),
+    serialNo: pick(row.serialNo, calibration.serialNo),
+    modelNo: pick(row.modelNo, calibration.modelNo),
     photo,
     certificate,
     certificateUnreadable,
+    calibration,
   };
+}
+
+/** The typed answer where there is one, else the certificate's. */
+function pick(typed: string | null, read: string | null): string | null {
+  const value = typed?.trim() || read?.trim();
+  return value ? safe(value) : null;
 }
 
 /* --- the fixed wording ---------------------------------------------------- */
@@ -511,7 +532,17 @@ const BODY = { top: 104, height: 436 };
  * pages across, each one of those points is worth about one and a half points
  * of certificate height.
  */
-const BLOCK = { photo: 96, gap: 14, details: 140, gutter: 22 };
+const BLOCK = { photo: 96, gap: 14, details: 140, alone: 200, gutter: 22 };
+
+/**
+ * How wide the instrument block is, which is what the certificate gets the
+ * rest of. Without a photograph the details take the column on their own and
+ * are given a little more of it, rather than sitting in a narrow strip beside
+ * the space where a photograph would have been.
+ */
+function blockWidth(instrument: Instrument): number {
+  return instrument.photo ? BLOCK.photo + BLOCK.gap + BLOCK.details : BLOCK.alone;
+}
 
 /** How many certificate pages go on a page, with and without the block. */
 const FIRST_PAGE = 2;
@@ -540,7 +571,7 @@ function equipmentPages(doc: Doc, data: PowerReport): Slot[] {
   heading(doc, data, "Equipment Used");
   instrumentBlock(doc, instrument);
 
-  const left = MARGIN + BLOCK.photo + BLOCK.gap + BLOCK.details + BLOCK.gutter;
+  const left = MARGIN + blockWidth(instrument) + BLOCK.gutter;
   layCertificates(doc, sizes.slice(0, FIRST_PAGE), 0, {
     x: left,
     y: BODY.top,
@@ -578,8 +609,9 @@ function equipmentPageCount(data: PowerReport): number {
  * take is space the certificate does.
  */
 function instrumentBlock(doc: Doc, instrument: Instrument) {
+  const column = blockWidth(instrument);
   let x = MARGIN;
-  let width = BLOCK.photo + BLOCK.gap + BLOCK.details;
+  let width = column;
 
   if (instrument.photo) {
     try {
@@ -614,12 +646,7 @@ function instrumentBlock(doc: Doc, instrument: Instrument) {
 
   const below = Math.max(y, BODY.top + 100) + 8;
   doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  doc.text(
-    safe(note),
-    MARGIN,
-    below,
-    { width: BLOCK.photo + BLOCK.gap + BLOCK.details, lineGap: 1.8 },
-  );
+  doc.text(safe(note), MARGIN, below, { width: column, lineGap: 1.8 });
   doc.fillColor(COLOURS.ink);
 }
 
@@ -759,27 +786,51 @@ function cover(doc: Doc, data: PowerReport) {
   doc.text(scope, x + 18, at + 28, { width: width - 36, lineGap: 1.5 });
   at += scopeHeight + 22;
 
+  const instrument = data.instrument;
   const facts: [string, string][] = [
     ["Brief", BRIEF_LABELS[data.brief]],
-    ["Recording started", shortDate(new Date(summary.from))],
-    ["Recording period", `${when(summary.from)} to ${when(summary.to)}`],
+    ["Recording Started", shortDate(new Date(summary.from))],
+    ["Recording Period", `${when(summary.from)} to ${when(summary.to)}`],
     ["Readings", `${summary.count.toLocaleString("en-AU")} per channel`],
     [
-      "Highest current",
+      "Highest Current",
       highest
         ? `${round(highest.amps)} A on ${CHANNEL_LABELS[highest.channel]}, ${when(highest.at)}`
         : "\u2014",
     ],
-    ["Report date", shortDate(data.reportDate)],
+    ["Report Date", shortDate(data.reportDate)],
+    // What took the readings, and whether its calibration still stands. The
+    // dates are read off the certificate itself rather than typed anywhere,
+    // so they cannot drift out of step with the document behind them.
+    ...(instrument
+      ? ([
+          ["Equipment Name", instrument.name],
+          ["Model No", instrument.modelNo ?? "\u2014"],
+          ["Serial No", instrument.serialNo ?? "\u2014"],
+          ["Calibration Date \u2013 Expiry Date", calibrationSpan(instrument)],
+        ] as [string, string][])
+      : []),
   ];
 
+  // The label column is measured rather than assumed: "Calibration Date \u2013
+  // Expiry Date" runs to two lines where the rest run to one, and a fixed row
+  // height would clip it.
+  const labelWidth = 124;
   for (const [name, value] of facts) {
+    doc.font("Helvetica").fontSize(9);
+    const rows = doc.heightOfString(name, { width: labelWidth });
+    const height = Math.max(24, rows + 13);
+
     doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
-    doc.fillColor(COLOURS.inkSoft).font("Helvetica").fontSize(9);
-    doc.text(name, x, at + 7, { width: 118, height: 11, lineBreak: false });
+    doc.fillColor(COLOURS.inkSoft);
+    doc.text(name, x, at + 7, { width: labelWidth });
     doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9.5);
-    doc.text(value, x + 124, at + 6.5, { width: width - 124, height: 12, ellipsis: true });
-    at += 24;
+    doc.text(value, x + labelWidth + 8, at + 6.5, {
+      width: width - labelWidth - 8,
+      height: 12,
+      ellipsis: true,
+    });
+    at += height;
   }
   doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
 
@@ -841,6 +892,24 @@ function recordedBy(doc: Doc, data: PowerReport) {
  */
 function midSentence(text: string): string {
   return /^The\s/.test(text) ? `the${text.slice(3)}` : text;
+}
+
+/**
+ * "12/03/2026 \u2013 12/03/2027", from whatever the certificate said.
+ *
+ * Either date alone still goes on: a certificate that gives only the day it
+ * was issued is worth saying so, and one that gives only the day it lapses is
+ * worth saying loudly. Neither, and the row says the certificate did not give
+ * them rather than leaving a reader to assume it was never calibrated.
+ */
+function calibrationSpan(instrument: Instrument): string {
+  const { calibratedOn, expiresOn } = instrument.calibration;
+  if (calibratedOn && expiresOn) {
+    return `${shortDate(calibratedOn)} \u2013 ${shortDate(expiresOn)}`;
+  }
+  if (calibratedOn) return `Calibrated ${shortDate(calibratedOn)}`;
+  if (expiresOn) return `Expires ${shortDate(expiresOn)}`;
+  return instrument.certificate ? "Not stated on the certificate" : "\u2014";
 }
 
 /** A small letterspaced heading, the one marker of hierarchy on the cover. */
