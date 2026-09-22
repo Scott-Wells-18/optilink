@@ -71,6 +71,15 @@ const CONTENT = PAGE.width - MARGIN * 2;
 /** The plot, inside the page. */
 const PLOT: ChartBox = { x: MARGIN + 40, y: 104, width: CONTENT - 40 - 58, height: 340 };
 
+/**
+ * The page the charts start on.
+ *
+ * Cover, about the recording, the brief and the supply, the limitations. The
+ * contents cites page numbers before any of them are drawn, so the four are
+ * counted here rather than guessed in two places.
+ */
+const FIRST_CHART = 5;
+
 export type PowerReport = PageMeta & {
   location: string | null;
   /** The board the logger was fitted to, named. */
@@ -191,16 +200,156 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
   };
 }
 
-/* --- what a power analysis is --------------------------------------------- */
+/* --- the fixed wording ---------------------------------------------------- */
 
-const WHAT_IT_IS = [
-  "A logger was fitted at the switchboard with a current transformer clamped around each active conductor and around the neutral, and left in place while the site ran normally. It records the highest current on each conductor in every interval, so a short, sharp demand is captured rather than averaged away.",
-  "A rating is a limit, not a measurement. The recording shows the peak each phase actually reached, how close that sits to the protection in front of the board, whether the phases carry a similar share of the load, and how much current is returning down the neutral.",
-  "Every figure here is the logger's own. Each line on the charts is the highest reading in its window, never the average, so no peak is lost to make a fortnight fit on a page.",
+/**
+ * What the report says about itself.
+ *
+ * Kept here rather than inline so the wording can be read as a whole, which is
+ * the only way to keep four distinct things distinct: what the logger recorded,
+ * the arithmetic difference between that and the protective device, the
+ * maximum demand of the installation, and how much load may actually be added.
+ * Those are four different quantities and the report never treats them as one.
+ */
+
+/** A heading, a paragraph and its bullets. A block with no bullets is prose. */
+type Block = { text: string; bullets?: string[] };
+
+const WHAT_IT_IS: Block[] = [
+  {
+    text: "A power logger was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.",
+  },
+  {
+    text: "Current transformers were fitted to each monitored conductor and readings were recorded at regular intervals. This provides a record of the electrical loading that occurred while the logger was installed.",
+  },
+  {
+    text: "The recorded data shows the actual current measured during the monitoring period, including:",
+    bullets: [
+      "the highest current recorded on each phase;",
+      "the loading relationship between phases;",
+      "the current recorded on the neutral; and",
+      "the difference between the highest recorded phase current and the rating of the upstream protective device.",
+    ],
+  },
+  {
+    text: "These results provide an indication of the electrical loading present during the monitoring period. They do not, by themselves, confirm the maximum demand of the installation or the amount of additional load that may be connected.",
+  },
+  {
+    text: "All current values shown in this report are derived from the recorded logger data. Where chart data is grouped into display intervals, the highest recorded value within each interval is shown rather than an average value. This allows short-duration peaks recorded within the interval to remain visible in the report.",
+  },
+];
+
+/** What the headroom figure is, and what it is not. */
+const HEADROOM_MEANS: Block[] = [
+  {
+    text: "The recorded current headroom is the arithmetic difference between the rating of the protective device and the highest phase current measured during the monitoring period.",
+  },
+  {
+    text: "This figure represents observed headroom under the conditions present while the recording was undertaken. It must not be interpreted as confirmation that an equivalent amount of additional continuous or connected load can be installed.",
+  },
+  {
+    text: "Determining the suitability of the installation for additional load requires consideration of maximum demand, the characteristics of the proposed load, diversity, duty cycle, supply capacity, conductor capacity, protective-device requirements and other relevant installation conditions.",
+  },
+];
+
+const LIMITATIONS: Block[] = [
+  {
+    text: "The results in this report represent the electrical loading measured during the stated monitoring period and under the operating conditions present at that time.",
+  },
+  {
+    text: "The recording does not necessarily represent the highest demand that may occur under all operating conditions. Factors that may affect electrical demand include:",
+    bullets: [
+      "changes in equipment use or operating hours;",
+      "equipment that did not operate during the monitoring period;",
+      "intermittent or cyclic loads;",
+      "changes in occupancy or operational activity;",
+      "future equipment or alterations;",
+      "ambient and environmental conditions; and",
+      "seasonal variations throughout the year.",
+    ],
+  },
+  {
+    text: "The time and season of the year have not been normalised or adjusted for in this report. Accordingly, electrical demand at other times of the year may be higher or lower than the demand recorded during this monitoring period.",
+  },
+  {
+    text: "The recorded results should therefore be considered a snapshot of the installation's electrical demand under the conditions that existed while the logger was installed.",
+  },
+];
+
+const MAXIMUM_DEMAND: Block[] = [
+  {
+    text: "AS/NZS 3000 provides recognised methods for determining maximum demand. Depending on the installation and circumstances, maximum demand may be determined by:",
+    bullets: [
+      "Calculation \u2014 determination using the applicable load information, demand factors and calculation methods.",
+      "Assessment \u2014 determination based on the nature of the installation, operating characteristics, duty cycles and other relevant information.",
+      "Measurement \u2014 determination from measured electrical demand where the measurement method and operating conditions are appropriate.",
+      "Limitation \u2014 determination by an applicable current-limiting means, such as the rating or setting of a protective device, where permitted.",
+    ],
+  },
+  {
+    text: "This report provides measured electrical current data for the stated monitoring period. The recorded data may be used as part of an assessment of the installation; however, this report should not be interpreted as a complete maximum-demand calculation or as automatic approval for the connection of additional load.",
+  },
+];
+
+const HOW_TO_READ: [string, string][] = [
+  [
+    "Consistent current scale",
+    "A consistent current scale is used throughout the applicable charts to allow the relative loading of each monitored conductor and recording period to be compared easily.",
+  ],
+  [
+    "Peak values",
+    "Where readings are grouped for chart presentation, the highest recorded current within each display interval is shown rather than the average current. This retains recorded short-duration peaks when presenting a longer monitoring period.",
+  ],
+  [
+    "Highlighted readings",
+    "Highlighted or ringed points identify recorded logger values and show the current and time associated with the selected peak.",
+  ],
+  [
+    "Monitoring period",
+    "The charts represent the electrical demand measured during the stated monitoring period only. Operating conditions, electrical demand and seasonal loading outside this period may differ. The recorded results are not, by themselves, a complete design calculation of maximum demand.",
+  ],
 ];
 
 const NOTE =
   "This report is issued to the addressee named above and relates only to the installation and the recording period listed on it. It records the current drawn while the logger was fitted, under the conditions and the pattern of use present at the time. It is not a statement of what the installation will draw under different use, nor a substitute for a design calculation of maximum demand.";
+
+/* --- laying out a run of those blocks ------------------------------------- */
+
+/**
+ * A stack of paragraphs and bullet lists, measured as it goes.
+ *
+ * Returns where it finished, so whatever follows can start below it rather
+ * than at a guessed offset. The bullets are drawn as a hanging indent so a
+ * wrapped line lines up under the text rather than under the mark.
+ */
+function blocks(
+  doc: Doc,
+  x: number,
+  y: number,
+  width: number,
+  items: Block[],
+  size = 9,
+): number {
+  for (const item of items) {
+    const text = safe(item.text);
+    doc.font("Helvetica").fontSize(size).fillColor(COLOURS.ink);
+    doc.text(text, x, y, { width, lineGap: 2.2, align: "justify" });
+    y += doc.heightOfString(text, { width, lineGap: 2.2 }) + (item.bullets ? 7 : 10);
+
+    for (const bullet of item.bullets ?? []) {
+      const body = safe(bullet);
+      doc.font("Helvetica").fontSize(size).fillColor(COLOURS.inkSoft);
+      doc.text("\u2022", x + 4, y, { lineBreak: false });
+      doc.fillColor(COLOURS.ink);
+      doc.text(body, x + 16, y, { width: width - 16, lineGap: 2.2 });
+      y += doc.heightOfString(body, { width: width - 16, lineGap: 2.2 }) + 4;
+    }
+    if (item.bullets) y += 8;
+  }
+  return y;
+}
+
+/* --- the document --------------------------------------------------------- */
 
 /* --- the document --------------------------------------------------------- */
 
@@ -228,6 +377,7 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
   cover(doc, data);
   explain(doc, data, channels, pages.length);
   briefPage(doc, data, channels);
+  limitsPage(doc, data);
 
   pages.forEach((week, index) => {
     doc.addPage();
@@ -379,15 +529,9 @@ function explain(doc: Doc, data: PowerReport, channels: Channel[], weekCount: nu
   doc.addPage();
   heading(doc, data, "About this recording");
 
-  /* --- left: what it is, in three short paragraphs ----------------------- */
+  /* --- left: what was recorded, and what it does and does not show ------- */
   const column = 380;
-  let y = 104;
-  for (const paragraph of WHAT_IT_IS) {
-    const text = safe(paragraph);
-    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
-    doc.text(text, MARGIN, y, { width: column, lineGap: 2.4, align: "justify" });
-    y += doc.heightOfString(text, { width: column, lineGap: 2.4 }) + 12;
-  }
+  const y = blocks(doc, MARGIN, 104, column, WHAT_IT_IS, 9);
 
   /* --- right: what this one found ---------------------------------------- */
   const x = MARGIN + column + 44;
@@ -470,7 +614,11 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
   doc.text(BRIEF_LABELS[data.brief], MARGIN, y, { width: column });
   y += 20;
 
-  const text = safe(
+  y = blocks(
+    doc,
+    MARGIN,
+    y,
+    column,
     objective({
       brief: data.brief,
       board: data.boardName,
@@ -478,41 +626,16 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
       client: data.clientName,
       site: data.siteName,
       contact: data.contactName,
-    }),
+    }).map((text) => ({ text })),
+    9.5,
   );
-  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text(text, MARGIN, y, { width: column, lineGap: 2.4, align: "justify" });
-  y += doc.heightOfString(text, { width: column, lineGap: 2.4 }) + 20;
 
   const spare = headroom(data, channels);
   if (spare) {
-    const note = safe(
-      `The arithmetic difference between the rating of the protective device and the highest current recorded on any phase (${round(spare.peak)} A). It is not a maximum demand calculation and makes no allowance for diversity, ambient conditions or the capacity of the supply behind the board.`,
-    );
-
-    // Measured rather than assumed: the note runs to three lines on a narrow
-    // board name and four on a long one, and a fixed box clips it.
-    doc.font("Helvetica").fontSize(8);
-    const height =
-      58 + doc.heightOfString(note, { width: column - 36, lineGap: 1 }) + 14;
-
-    doc.rect(MARGIN, y, column, height).fill(COLOURS.soft);
-    doc.rect(MARGIN, y, 3, height).fill(COLOURS.accent);
-    label(doc, "Capacity remaining", MARGIN + 18, y + 13);
-
-    doc.font("Helvetica-Bold").fontSize(23).fillColor(COLOURS.ink);
-    doc.text(`${round(spare.spare)} A`, MARGIN + 18, y + 28, { lineBreak: false });
-    const width = doc.widthOfString(`${round(spare.spare)} A`);
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-    doc.text(
-      `of the ${spare.rating} A in front of the board, ${spare.used}% used`,
-      MARGIN + 26 + width,
-      y + 38,
-      { width: column - 44 - width, lineBreak: false },
-    );
-    doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-    doc.text(note, MARGIN + 18, y + 58, { width: column - 36, lineGap: 1 });
-    y += height;
+    y = headroomPanel(doc, MARGIN, y + 6, column, spare);
+    // What the figure above is not, directly under the figure, because a
+    // reader who stops at the number is the reader this wording is for.
+    y = blocks(doc, MARGIN, y + 16, column, HEADROOM_MEANS, 8.5);
   }
 
   /* --- right: what feeds it ---------------------------------------------- */
@@ -549,7 +672,91 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
   }
   doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
 
-  howToRead(doc, Math.max(y, at) + 34);
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * The headroom figure, and what it does not mean.
+ *
+ * Four labelled lines rather than a sentence. "88 A of the 160 A, 45% used"
+ * reads as though the other 55% is there for the taking, which is the one
+ * thing this figure does not say: it is the difference between one measured
+ * current and one device rating, under the conditions that happened to be
+ * present. The wording below it says so at length, because a client reading
+ * only the number is exactly the reader this panel has to protect.
+ */
+function headroomPanel(
+  doc: Doc,
+  x: number,
+  y: number,
+  width: number,
+  spare: { rating: number; peak: number; spare: number; used: number },
+): number {
+  const lines: [string, string][] = [
+    ["Highest recorded phase current", `${round(spare.peak)} A`],
+    ["Protective-device rating", `${round(spare.rating)} A`],
+    ["Recorded current headroom", `${round(spare.spare)} A`],
+    ["Highest recorded current as a proportion of protective-device rating", `${spare.used}%`],
+  ];
+
+  doc.font("Helvetica").fontSize(8.5);
+  const inner = width - 36;
+  const rows = lines.reduce(
+    (total, [name]) =>
+      total + Math.max(15, doc.heightOfString(name, { width: inner - 70 }) + 5),
+    0,
+  );
+  const height = 30 + rows + 12;
+
+  doc.rect(x, y, width, height).fill(COLOURS.soft);
+  doc.rect(x, y, 3, height).fill(COLOURS.accent);
+  label(doc, "Recorded current headroom", x + 18, y + 13);
+
+  let at = y + 30;
+  lines.forEach(([name, value], index) => {
+    const rowHeight = Math.max(15, doc.heightOfString(name, { width: inner - 70 }) + 5);
+    // The headroom itself is the line people quote, so it is the one that
+    // carries weight; the other three are the working behind it.
+    const strong = index === 2;
+    doc.font(strong ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+    doc.fillColor(strong ? COLOURS.ink : COLOURS.inkSoft);
+    doc.text(safe(name), x + 18, at, { width: inner - 70 });
+    doc.font("Helvetica-Bold").fontSize(strong ? 12 : 10).fillColor(COLOURS.ink);
+    doc.text(value, x + 18 + inner - 66, at - (strong ? 2.5 : 1), {
+      width: 66,
+      align: "right",
+      lineBreak: false,
+    });
+    at += rowHeight;
+  });
+
+  doc.fillColor(COLOURS.ink);
+  return y + height;
+}
+
+/**
+ * The page that keeps the numbers honest.
+ *
+ * What the recording cannot say, and how maximum demand is actually
+ * determined. It is a page of its own because it is a page of reading, and
+ * squeezing it under the supply table would either shrink it below a size a
+ * client would read or push the charts off their own scale.
+ */
+function limitsPage(doc: Doc, data: PowerReport) {
+  doc.addPage();
+  heading(doc, data, "Limitations and maximum demand");
+
+  const gap = 44;
+  const column = (CONTENT - gap) / 2;
+
+  label(doc, "Recording conditions and limitations", MARGIN, 104);
+  const left = blocks(doc, MARGIN, 124, column, LIMITATIONS, 9);
+
+  const x = MARGIN + column + gap;
+  label(doc, "Determination of maximum demand", x, 104);
+  const right = blocks(doc, x, 124, column, MAXIMUM_DEMAND, 9);
+
+  howToRead(doc, Math.max(left, right) + 18);
   doc.fillColor(COLOURS.ink);
 }
 
@@ -561,32 +768,13 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
  * other three.
  */
 function howToRead(doc: Doc, y: number) {
-  const notes: [string, string][] = [
-    [
-      "One scale throughout",
-      "Every chart uses the same current scale, so any page can be read against any other. A lightly loaded conductor looks lightly loaded.",
-    ],
-    [
-      "Peaks, not averages",
-      "Each line is the highest reading taken in its window. Nothing is averaged, so no peak is reduced or lost.",
-    ],
-    [
-      "Marks are real readings",
-      "Every ringed point is a reading the logger took, shown at the minute it was taken.",
-    ],
-    [
-      "The period it covers",
-      "The recording reflects how the site was used while the logger was fitted. It is not a design calculation of maximum demand.",
-    ],
-  ];
-
   label(doc, "How to read the charts", MARGIN, y);
   y += 19;
 
   const gap = 22;
-  const width = (CONTENT - gap * (notes.length - 1)) / notes.length;
+  const width = (CONTENT - gap * (HOW_TO_READ.length - 1)) / HOW_TO_READ.length;
 
-  notes.forEach(([title, body], index) => {
+  HOW_TO_READ.forEach(([title, body], index) => {
     const x = MARGIN + index * (width + gap);
     doc.rect(x, y, width, 2.4).fill(COLOURS.accent);
     doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
@@ -601,94 +789,47 @@ function howToRead(doc: Doc, y: number) {
 /**
  * What is in the rest of the report, and on which page.
  *
- * Eighteen pages of charts needs a way in, but listing them one to a line is
- * eighteen lines that say almost the same thing. The per-conductor pages are
- * the same page four times over, so they go in a small grid instead: a row per
- * conductor in its own colour, a column per week, and the page number where
- * the two meet. What is left reads as the short list it actually is.
- *
  * The numbers are worked out rather than measured, because the order of the
- * pages is fixed: the two covers, a chart per week with everything on it, then
- * each conductor on its own a week at a time.
+ * pages is fixed: the covers, the notes, a chart per week with everything on
+ * it, then each conductor on its own a week at a time.
  */
 function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
-  const single = weekCount === 1;
-  const week = (number: number) => (single ? "The recording" : `Week ${number}`);
+  const week = (number: number) =>
+    weekCount > 1 ? `Week ${number} of ${weekCount}` : "The recording";
 
-  /* --- the pages that are one of a kind ---------------------------------- */
-  const column = 300;
-  label(doc, "What is in this report", MARGIN, y);
-  let at = y + 19;
-
-  const opening: [string, number][] = [
+  const entries: [string, number][] = [
     ["About this recording", 2],
     ["The brief and the supply", 3],
+    ["Limitations and maximum demand", 4],
     ...Array.from({ length: weekCount }, (_, index): [string, number] => [
-      single ? "All conductors together" : `All conductors, week ${index + 1}`,
-      4 + index,
+      `All conductors \u2014 ${week(index + 1)}`,
+      FIRST_CHART + index,
     ]),
+    ...channels.flatMap((channel, place) =>
+      Array.from({ length: weekCount }, (_, index): [string, number] => [
+        `${CHANNEL_LABELS[channel]}, ${conductor(channel)} \u2014 ${week(index + 1)}`,
+        FIRST_CHART + weekCount + place * weekCount + index,
+      ]),
+    ),
   ];
 
-  for (const [title, page] of opening) {
-    doc.rect(MARGIN, at + 13, column, 0.5).fill(COLOURS.hair);
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(safe(title), MARGIN, at + 2, { width: column - 30, height: 12, ellipsis: true });
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.inkSoft);
-    doc.text(String(page), MARGIN + column - 28, at + 2, { width: 28, align: "right" });
-    at += 16;
-  }
+  label(doc, "What is in this report", MARGIN, y);
+  y += 17;
 
-  /* --- the grid: a conductor a row, a week a column ---------------------- */
-  const x = MARGIN + column + 54;
-  const cell = 52;
-  const name = 132;
-  let row = y + 19;
+  const columns = 3;
+  const width = (CONTENT - 40 * (columns - 1)) / columns;
+  const rows = Math.ceil(entries.length / columns);
 
-  doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
-  doc.text("EACH CONDUCTOR ON ITS OWN", x, row - 19, {
-    characterSpacing: 1.6,
-    lineBreak: false,
+  entries.forEach(([title, page], index) => {
+    const x = MARGIN + Math.floor(index / rows) * (width + 40);
+    const at = y + (index % rows) * 15;
+
+    doc.rect(x, at + 12.5, width, 0.5).fill(COLOURS.hair);
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.ink);
+    doc.text(safe(title), x, at + 2, { width: width - 26, height: 11, ellipsis: true });
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(String(page), x + width - 24, at + 2, { width: 24, align: "right" });
   });
-
-  if (!single) {
-    doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
-    for (let index = 0; index < weekCount; index += 1) {
-      doc.text(week(index + 1).toUpperCase(), x + name + index * cell, row + 3, {
-        width: cell - 8,
-        align: "right",
-        characterSpacing: 0.8,
-        lineBreak: false,
-      });
-    }
-    row += 16;
-  }
-
-  channels.forEach((channel, place) => {
-    doc.rect(x, row + 17, name + weekCount * cell - 8, 0.5).fill(COLOURS.hair);
-    doc.rect(x, row + 6, 12, 2.6).fill(SERIES[channel]);
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(CHANNEL_LABELS[channel], x + 18, row + 2.5, { lineBreak: false });
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(
-      conductor(channel),
-      x + 18 + doc.widthOfString(CHANNEL_LABELS[channel]) + 6,
-      row + 3.5,
-      { lineBreak: false },
-    );
-
-    for (let index = 0; index < weekCount; index += 1) {
-      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-      doc.text(
-        String(3 + weekCount + place * weekCount + index + 1),
-        x + name + index * cell,
-        row + 2.5,
-        { width: cell - 8, align: "right", lineBreak: false },
-      );
-    }
-    row += 21;
-  });
-
-  doc.fillColor(COLOURS.ink);
 }
 
 /**

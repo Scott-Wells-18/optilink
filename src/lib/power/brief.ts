@@ -41,13 +41,17 @@ export type BriefContext = {
 };
 
 /**
- * The objective, as a paragraph.
+ * The objective, in paragraphs.
  *
- * Written as a statement of purpose rather than as a filled-in form: the
- * reader is a client, and "the objective is to read the current for" is not
- * how a report to a client reads.
+ * The board, the area, the site, the client and whoever asked are dropped into
+ * a fixed template; nothing about the installation is written into the wording
+ * itself. What the wording is careful about is the difference between four
+ * things a client will otherwise read as one: the current the logger recorded,
+ * the arithmetic difference between that and the protective device, the
+ * maximum demand of the installation, and how much load may actually be added.
+ * Only the first of those is measured here, and the paragraphs say so.
  */
-export function objective(context: BriefContext): string {
+export function objective(context: BriefContext): string[] {
   const { board, area, client, site, contact } = context;
   // Named down to the room where the area is known, because "the main
   // switchboard at Kogarah Depot" is not somewhere anyone can be sent.
@@ -55,21 +59,30 @@ export function objective(context: BriefContext): string {
   const asked = contact ? ` The recording was requested by ${contact}.` : "";
 
   if (context.brief === "HEADROOM") {
-    return (
-      `This recording was carried out to establish the spare current capacity available at ` +
-      `${at}, so that ${client} can assess what further load the board is able to take. ` +
-      `The highest current reached on each phase is read against the rating of the ` +
-      `protective device feeding the board, and the difference between the two is the ` +
-      `capacity remaining for future installations.${asked}`
-    );
+    return [
+      `The purpose of this recording is to measure the electrical current drawn at ${at} ` +
+        `during the monitoring period, and to provide ${client} with information to assist in ` +
+        `assessing the potential for additional electrical load.${asked}`,
+      `The highest recorded phase current is compared with the rating of the protective ` +
+        `device supplying the monitored board. The difference provides an indication of ` +
+        `recorded current headroom under the operating conditions present during the ` +
+        `monitoring period.`,
+      `This comparison does not, by itself, determine the maximum demand of the installation ` +
+        `or confirm the amount of additional load that may be connected.`,
+    ];
   }
 
-  return (
-    `This recording was carried out to establish the current drawn by ${at} under normal ` +
-    `operating conditions, as a record of the installation for ${client}. It sets out what ` +
-    `each phase and the neutral carried across the recording period, how the load was ` +
-    `shared between the phases, and when the highest demand occurred.${asked}`
-  );
+  return [
+    `The purpose of this recording is to measure the electrical current drawn at ${at} while ` +
+      `the installation operated under normal conditions, as a record of the installation for ` +
+      `${client}.${asked}`,
+    `It sets out the current carried by each phase and by the neutral across the monitoring ` +
+      `period, how the load was shared between the phases, and when the highest demand was ` +
+      `recorded.`,
+    `The recorded data describes the electrical loading present during the monitoring period. ` +
+      `It does not, by itself, determine the maximum demand of the installation or confirm ` +
+      `the amount of additional load that may be connected.`,
+  ];
 }
 
 /**
