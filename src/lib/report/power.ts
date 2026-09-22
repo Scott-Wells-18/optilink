@@ -909,13 +909,18 @@ function certificateDate(instrument: Instrument, at: Date | null): string {
   return instrument.certificate ? "Not stated on the certificate" : "\u2014";
 }
 
-/** The due date, marked where it was worked out rather than quoted. */
+/**
+ * The due date.
+ *
+ * The certificate's own wherever it states one, else a year from the day it
+ * was calibrated. The report shows the date either way and says nothing about
+ * which of the two it is: a client reading this wants a date, and the
+ * distinction is ours to keep rather than theirs to act on.
+ */
 function dueDate(instrument: Instrument): string {
   const due = expiry(instrument.calibration);
   if (!due) return instrument.certificate ? "Not stated on the certificate" : "\u2014";
-  // One word, because the column is narrow and the point still lands: this
-  // date is ours, not the laboratory's.
-  return due.derived ? `${shortDate(due.at)}  (assumed)` : shortDate(due.at);
+  return shortDate(due.at);
 }
 
 /** A small letterspaced heading, the one marker of hierarchy on the cover. */
