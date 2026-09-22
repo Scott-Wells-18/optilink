@@ -20,8 +20,10 @@ const ALLOWED_TYPES = new Set([
   "image/avif",
   // Test instruments export their own reports; those are kept as they came.
   "application/pdf",
-  // Quotes come out of the accounting software as CSV.
+  // Quotes come out of the accounting software as CSV, and a power logger's
+  // recording arrives as either a CSV or the spreadsheet someone saved it into.
   "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
 /**
@@ -41,10 +43,22 @@ const CSV_TYPES = new Set([
   "",
 ]);
 
+/** The same story for a spreadsheet, which arrives under several names. */
+const SHEET_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/octet-stream",
+  "application/zip",
+  "",
+]);
+
 function declaredType(file: File): string {
   const type = (file.type || "").toLowerCase();
   const name = (file.name || "").toLowerCase();
   if (name.endsWith(".csv") && CSV_TYPES.has(type)) return "text/csv";
+  if (name.endsWith(".xlsx") && SHEET_TYPES.has(type)) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
   return type;
 }
 
@@ -56,7 +70,7 @@ export async function saveUpload(file: File) {
   const mimeType = declaredType(file);
   if (!ALLOWED_TYPES.has(mimeType)) {
     throw new UploadError(
-      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image, a PDF, or a CSV.",
+      "That file type is not supported. Please upload a JPEG, PNG, WebP or AVIF image, a PDF, a CSV or a spreadsheet.",
     );
   }
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -125,6 +139,8 @@ function extensionFor(mimeType: string): string {
       return ".pdf";
     case "text/csv":
       return ".csv";
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      return ".xlsx";
     default:
       return ".jpg";
   }

@@ -85,6 +85,7 @@ model UploadedFile {
   safetyTemplates   SafetyTemplate[] @relation("SafetyTemplateFile")
   signatures        Signature[]      @relation("SignatureFile")
   safetyDocSources  SafetyDoc[]      @relation("SafetyDocSource")
+  powerSources      PowerAnalysis[]  @relation("PowerAnalysisSource")
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +132,7 @@ model Site {
   jobs        Job[]
   rcdRuns     RcdTestRun[]
   safetyDocs  SafetyDoc[]
+  powerRuns   PowerAnalysis[]
 
   @@index([clientId])
 }
@@ -757,4 +759,37 @@ model CustomRecommendation {
 
   @@unique([cause, text])
   @@index([cause])
+}
+
+
+/**
+ * One power analysis: a logger left on a board and the recording it wrote.
+ *
+ * The file is kept and re-read when the report is drawn rather than the
+ * readings being copied into the database — a fortnight at five-minute
+ * intervals is four thousand rows per channel, and the file is the record.
+ * Only what the tree needs to show a row is summarised here.
+ */
+model PowerAnalysis {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The day the recording started, taken from its first timestamp. */
+  date DateTime @default(now()) @db.Date
+  name String?
+  /** Where the logger was fitted — "Main switchboard". */
+  location String?
+
+  /** The logger's own export, kept as it came. */
+  sourceFileId String?
+  sourceFile   UploadedFile? @relation("PowerAnalysisSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
+
+  /** Start, end, interval and the peak on each channel. */
+  summary Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
 }

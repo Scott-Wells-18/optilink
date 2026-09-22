@@ -18,6 +18,7 @@ import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
 import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
+import { PowerDialog } from "@/components/PowerDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -59,6 +60,7 @@ export function Gateway({
         if (section.id === "ba") return { ...section, children: clients.baNodes };
         if (section.id === "rcd") return { ...section, children: clients.rcdNodes };
         if (section.id === "swms") return { ...section, children: clients.swmsNodes };
+        if (section.id === "power") return { ...section, children: clients.powerNodes };
         return section;
       }),
     [
@@ -67,6 +69,7 @@ export function Gateway({
       clients.baNodes,
       clients.rcdNodes,
       clients.swmsNodes,
+      clients.powerNodes,
     ],
   );
 
@@ -180,6 +183,14 @@ export function Gateway({
 
       {open && clients.rcdLimits ? (
         <RcdLimitsDialog onClose={clients.closeRcdLimits} />
+      ) : null}
+
+      {open && clients.power ? (
+        <PowerDialog
+          runId={clients.power.runId}
+          siteName={clients.power.siteName}
+          onClose={clients.closePower}
+        />
       ) : null}
 
       {open && clients.safety ? (

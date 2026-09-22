@@ -64,6 +64,17 @@ export async function GET() {
               _count: { select: { results: true } },
             },
           },
+          powerRuns: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              name: true,
+              date: true,
+              location: true,
+              sourceFileId: true,
+              summary: true,
+            },
+          },
           safetyDocs: {
             orderBy: { createdAt: "asc" },
             select: {

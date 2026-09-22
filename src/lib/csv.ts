@@ -14,8 +14,15 @@
 const DELIMITERS = [",", ";", "\t", "|"] as const;
 
 export function parseCsv(text: string, delimiter?: string): string[][] {
-  const body = strip(text);
-  const sep = delimiter ?? sniff(body);
+  let body = strip(text);
+
+  // Excel writes "sep=|" on the first line when the separator is not a comma,
+  // and it is a statement of fact rather than a guess, so it wins over
+  // sniffing — and the line itself is a directive, not data.
+  const declared = /^sep=(.)\r?\n/i.exec(body);
+  if (declared) body = body.slice(declared[0].length);
+
+  const sep = delimiter ?? declared?.[1] ?? sniff(body);
 
   const rows: string[][] = [];
   let row: string[] = [];

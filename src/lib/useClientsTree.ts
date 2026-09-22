@@ -78,6 +78,20 @@ type RcdRunRecord = {
   _count: { results: number };
 };
 
+type PowerRunRecord = {
+  id: string;
+  name: string | null;
+  date: string;
+  location: string | null;
+  sourceFileId: string | null;
+  summary: {
+    from: number;
+    to: number;
+    count: number;
+    highest: { channel: string; amps: number } | null;
+  } | null;
+};
+
 type SafetyDocRecord = {
   id: string;
   date: string;
@@ -99,6 +113,7 @@ type SiteRecord = {
   jobs: JobRecord[];
   rcdRuns: RcdRunRecord[];
   safetyDocs: SafetyDocRecord[];
+  powerRuns: PowerRunRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -146,6 +161,9 @@ export type ViewerSpec = {
 /** The RCD wizard, opened on one test run. */
 export type RcdSpec = { runId: string; siteName: string };
 
+/** One power analysis, opened to load its recording. */
+export type PowerSpec = { runId: string; siteName: string };
+
 /** One set of safe work paperwork, opened to be answered. */
 export type SafetySpec = {
   docId: string;
@@ -187,6 +205,7 @@ export function useClientsTree(enabled: boolean) {
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
+  const [power, setPower] = usePersisted<PowerSpec | null>("power", null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -900,12 +919,103 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startSafetyDoc, setSafetyDate, setSafety],
   );
 
+  const setPowerDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/power/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Starting one needs no form; the recording carries its own dates. */
+  const startPowerRun = useCallback(
+    async (siteId: string, siteName: string) => {
+      const response = await fetch("/api/power", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId }),
+      });
+      if (!response.ok) {
+        setError("That analysis could not be started.");
+        return;
+      }
+      const run = (await response.json()) as { id: string };
+      await refresh();
+      setPower({ runId: run.id, siteName });
+    },
+    [refresh, setPower],
+  );
+
+  /**
+   * Power Analysis walks client → site → analysis. One analysis is one
+   * logger's recording: the file goes in, and a report comes out with a week
+   * of it on each page.
+   */
+  const powerNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `power:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() ||
+              countLabel(site.powerRuns.length, "analysis", "analyses"),
+            children: [
+              ...site.powerRuns.map<TreeNode>((run) => {
+                const title = run.name?.trim() || isoLabel(run.date);
+                return {
+                  id: `power:${run.id}`,
+                  label: title,
+                  detail: describePowerRun(run),
+                  variant: "info",
+                  editDate: {
+                    value: isoDate(run.date),
+                    onSave: (value) => void setPowerDate(run.id, value),
+                  },
+                  onActivate: () => setPower({ runId: run.id, siteName: site.name }),
+                  onDownload: run.summary
+                    ? () => download(`/api/power/${run.id}/report`)
+                    : undefined,
+                  onRemove: () => void remove(`/api/power/${run.id}`, title),
+                };
+              }),
+              {
+                id: `add:power:${site.id}`,
+                label: "Add new",
+                detail: "Analysis",
+                variant: "add",
+                onActivate: () => void startPowerRun(site.id, site.name),
+              },
+            ],
+          }));
+
+          return {
+            id: `power:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, remove, startPowerRun, setPowerDate, setPower],
+  );
+
   return {
     nodes,
     thermalNodes,
     baNodes,
     rcdNodes,
     swmsNodes,
+    powerNodes,
     dialog,
     closeDialog: () => setDialog(null),
     info,
@@ -943,6 +1053,11 @@ export function useClientsTree(enabled: boolean) {
     },
     rcdLimits,
     closeRcdLimits: () => setRcdLimits(false),
+    power,
+    closePower: () => {
+      setPower(null);
+      void refresh();
+    },
     submit,
     error,
   };
@@ -1038,6 +1153,20 @@ function describeSafetyDoc(doc: {
   const rest = doc.codes.length - 3;
   const documents = rest > 0 ? `${listed} +${rest}` : listed;
   return doc.projectName?.trim() ? documents : `${documents}  ·  Not named yet`;
+}
+
+/** "8 days · peak 72 A on L3", or what is still missing. */
+function describePowerRun(run: PowerRunRecord): string {
+  if (!run.summary) {
+    return run.sourceFileId ? "Recording not readable" : "No recording loaded yet";
+  }
+  const days = Math.max(1, Math.round((run.summary.to - run.summary.from) / 86_400_000));
+  const span = `${days} ${days === 1 ? "day" : "days"}`;
+  const highest = run.summary.highest;
+  const peak = highest
+    ? `peak ${highest.amps} A on ${highest.channel.toUpperCase()}`
+    : "no readings";
+  return run.location?.trim() ? `${run.location.trim()}  ·  ${span}  ·  ${peak}` : `${span}  ·  ${peak}`;
 }
 
 /** A job is named by hand, or else by the day the work was done. */
