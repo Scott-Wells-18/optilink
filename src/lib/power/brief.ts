@@ -32,6 +32,8 @@ export type BriefContext = {
   brief: Brief;
   /** The board the logger was fitted to. */
   board: string;
+  /** The part of the site that board stands in. */
+  area: string | null;
   client: string;
   site: string;
   /** Who asked for the work, where anyone did. */
@@ -46,8 +48,10 @@ export type BriefContext = {
  * how a report to a client reads.
  */
 export function objective(context: BriefContext): string {
-  const { board, client, site, contact } = context;
-  const at = `${board} at ${site}`;
+  const { board, area, client, site, contact } = context;
+  // Named down to the room where the area is known, because "the main
+  // switchboard at Kogarah Depot" is not somewhere anyone can be sent.
+  const at = `${board}${area ? ` in the ${lower(area)}` : ""}, ${site}`;
   const asked = contact ? ` The recording was requested by ${contact}.` : "";
 
   if (context.brief === "HEADROOM") {
@@ -66,4 +70,19 @@ export function objective(context: BriefContext): string {
     `each phase and the neutral carried across the recording period, how the load was ` +
     `shared between the phases, and when the highest demand occurred.${asked}`
   );
+}
+
+/**
+ * An area as it reads mid-sentence.
+ *
+ * It is typed as a label — "Workshop, north wall" — and dropped into a
+ * sentence it becomes "in the Workshop, north wall". Only the first letter is
+ * touched, and only where the rest of the word is lower case, so "Level 2
+ * plant room" softens and "MSB room" is left alone.
+ */
+function lower(area: string): string {
+  const [first, ...rest] = area;
+  const word = area.split(/\s|,/)[0] ?? "";
+  if (word.length > 1 && word.slice(1) !== word.slice(1).toLowerCase()) return area;
+  return first.toLowerCase() + rest.join("");
 }

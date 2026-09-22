@@ -40,13 +40,6 @@ type Run = {
   };
 };
 
-const WHERE = [
-  "Main switchboard",
-  "Distribution board",
-  "Submain",
-  "Incoming supply",
-];
-
 export function PowerDialog({
   runId,
   siteName,
@@ -58,8 +51,6 @@ export function PowerDialog({
 }) {
   const key = `power:${runId}`;
   const [run, setRun] = useState<Run | null>(null);
-  const [where, setWhere] = usePersisted<string>(`${key}:where`, "");
-  const [typing, setTyping] = usePersisted<boolean>(`${key}:typing`, false);
   const [namingContact, setNamingContact] = usePersisted<boolean>(`${key}:naming`, false);
   const [supply, setSupply] = useState<Supply>(EMPTY_SUPPLY);
   const [busy, setBusy] = useState(false);
@@ -70,10 +61,9 @@ export function PowerDialog({
     if (!response.ok) return;
     const data = (await response.json()) as Run;
     setRun(data);
-    setWhere((current) => current || data.location || "");
     const board = data.site.equipment.find((item) => item.id === data.equipmentId);
     setSupply(normaliseSupply(board?.supply));
-  }, [runId, setWhere]);
+  }, [runId]);
 
   useEffect(() => {
     void load();
@@ -90,8 +80,6 @@ export function PowerDialog({
   }, [onClose]);
 
   function close() {
-    clearSession(`${key}:where`);
-    clearSession(`${key}:typing`);
     clearSession(`${key}:naming`);
     onClose();
   }
@@ -106,7 +94,7 @@ export function PowerDialog({
       const response = await fetch(`/api/power/${runId}/import`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileId: stored.id, location: where || undefined }),
+        body: JSON.stringify({ fileId: stored.id }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -132,12 +120,6 @@ export function PowerDialog({
     }).catch(() => {});
   }
 
-  async function saveWhere(value: string) {
-    setWhere(value);
-    setTyping(false);
-    await patch({ location: value });
-  }
-
   /**
    * Picking the board also picks up whatever is already recorded against it,
    * so the supply panel below fills in rather than having to be typed again.
@@ -145,11 +127,47 @@ export function PowerDialog({
   async function chooseBoard(board: BoardRecord) {
     const next = run?.equipmentId === board.id ? null : board;
     setSupply(normaliseSupply(next?.supply));
-    await patch({
-      equipmentId: next?.id ?? null,
-      ...(next ? { location: next.name } : {}),
-    });
-    if (next) setWhere(next.name);
+    await patch({ equipmentId: next?.id ?? null, location: next?.name ?? null });
+  }
+
+  /**
+   * The report, or the reason there is not one yet.
+   *
+   * Fetched rather than linked, because a board with half its details filled
+   * in has no report to give and the server says which half. A plain link
+   * would download that answer as a file nobody opens.
+   */
+  async function download() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/power/${runId}/report`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error ?? "That report could not be built.");
+      }
+      const blob = await response.blob();
+      const name = /filename="([^"]+)"/.exec(
+        response.headers.get("content-disposition") ?? "",
+      )?.[1];
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name ?? "Power Analysis.pdf";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setError(
+        downloadError instanceof Error
+          ? downloadError.message
+          : "That report could not be built.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   /** The supply belongs to the board, not to this recording. */
@@ -293,52 +311,11 @@ export function PowerDialog({
                 onChange={(next) => void saveSupply(next)}
               />
             ) : (
-              <>
-                <div className="board-section-head">
-                  <h3 className="board-section-title">Where was the logger fitted?</h3>
-                </div>
-                <div className="issue-picks">
-                  {WHERE.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`issue-pick ${where === option ? "is-on" : ""}`}
-                      onClick={() => void saveWhere(option)}
-                    >
-                      <span className="issue-pick-mark is-one" aria-hidden />
-                      <span className="issue-pick-body">
-                        <span className="issue-pick-label">{option}</span>
-                      </span>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className={`issue-pick ${typing ? "is-on" : ""}`}
-                    onClick={() => {
-                      setTyping(true);
-                      setWhere("");
-                    }}
-                  >
-                    <span className="issue-pick-mark is-one" aria-hidden />
-                    <span className="issue-pick-body">
-                      <span className="issue-pick-label">Somewhere else</span>
-                    </span>
-                  </button>
-                </div>
-                {typing ? (
-                  <label className="dialog-field">
-                    <span className="dialog-label">Where</span>
-                    <input
-                      className="dialog-input"
-                      autoFocus
-                      placeholder="e.g. DB-Workshop, submain to the crib room"
-                      value={where}
-                      onChange={(event) => setWhere(event.target.value)}
-                      onBlur={(event) => void saveWhere(event.target.value)}
-                    />
-                  </label>
-                ) : null}
-              </>
+              <p className="issue-empty">
+                {boards.length > 0
+                  ? "Pick the board above. A report is read against the board's own supply, so it cannot be issued without one."
+                  : "Draw this site's switchboard under Clients first. A power analysis is read against the board's supply, so it needs a board to read against."}
+              </p>
             )}
 
             <div className="board-section-head">
@@ -364,8 +341,6 @@ export function PowerDialog({
                 }}
               />
             </label>
-
-            {error ? <p className="dialog-error">{error}</p> : null}
 
             {summary ? (
               <>
@@ -434,6 +409,7 @@ export function PowerDialog({
         </div>
 
         <footer className="board-foot">
+          {error ? <p className="dialog-error">{error}</p> : null}
           <div className="dialog-actions">
             <button type="button" className="dialog-cancel" onClick={close}>
               Close
@@ -441,18 +417,10 @@ export function PowerDialog({
             <button
               type="button"
               className="dialog-confirm"
-              disabled={!summary}
-              onClick={() => {
-                const link = document.createElement("a");
-                link.href = `/api/power/${runId}/report`;
-                link.rel = "noopener";
-                link.download = "";
-                document.body.append(link);
-                link.click();
-                link.remove();
-              }}
+              disabled={!summary || busy}
+              onClick={() => void download()}
             >
-              Download the report
+              {busy ? "Working…" : "Download the report"}
             </button>
           </div>
         </footer>

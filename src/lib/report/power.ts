@@ -32,7 +32,8 @@ import {
 import {
   describeFeed,
   describeLength,
-  isBlank,
+  inWords,
+  missingFrom,
   normaliseSupply,
   type Supply,
 } from "@/lib/supply";
@@ -78,7 +79,7 @@ export type PowerReport = PageMeta & {
   supply: Supply;
   /** What the feed comes from, already resolved to a name. */
   feed: string | null;
-  brief: Brief | null;
+  brief: Brief;
   contactName: string | null;
   reportDate: Date;
   recording: Recording;
@@ -87,7 +88,21 @@ export type PowerReport = PageMeta & {
 
 /* --- gathering ------------------------------------------------------------ */
 
-export async function loadPowerReport(id: string): Promise<PowerReport | null> {
+/**
+ * Either the report, or the reason there is not one yet.
+ *
+ * A power analysis is read against the board it was taken on, so a report is
+ * only issued once that board is known and its details are complete. Saying
+ * which pieces are short is the whole point: "that could not be built" sends
+ * someone hunting, and a report that prints "not recorded" against the
+ * protective device cannot answer the question it was commissioned for.
+ */
+export type PowerLoad =
+  | { ok: true; report: PowerReport }
+  | { ok: false; missing: true; reason: string }
+  | { ok: false; missing: false; reason: string };
+
+export async function loadPowerReport(id: string): Promise<PowerLoad> {
   const run = await prisma.powerAnalysis.findUnique({
     where: { id },
     include: {
@@ -104,47 +119,84 @@ export async function loadPowerReport(id: string): Promise<PowerReport | null> {
       },
     },
   });
-  if (!run?.sourceFile) return null;
+  if (!run) return { ok: false, missing: false, reason: "That analysis could not be found." };
+  if (!run.sourceFile) {
+    return {
+      ok: false,
+      missing: true,
+      reason: "No recording has been loaded for this analysis yet.",
+    };
+  }
+
+  if (!run.equipment) {
+    return {
+      ok: false,
+      missing: true,
+      reason:
+        "Say which switchboard the logger was fitted to. The current it recorded is read against that board's supply.",
+    };
+  }
+
+  const supply = normaliseSupply(run.equipment.supply);
+  const short = missingFrom(supply);
+  if (short.length > 0) {
+    return {
+      ok: false,
+      missing: true,
+      reason: `${run.equipment.name} is missing ${inWords(short)}. Fill those in and the report will issue.`,
+    };
+  }
+
+  if (!isBrief(run.brief)) {
+    return {
+      ok: false,
+      missing: true,
+      reason: "Choose what the recording was for: current headroom, or current draw.",
+    };
+  }
 
   let bytes: Buffer;
   try {
     bytes = await readUpload(run.sourceFile.storedName);
   } catch {
-    return null;
+    return { ok: false, missing: false, reason: "That recording could not be read back." };
   }
 
   const recording = readRecording(bytes, run.sourceFile.originalName);
   const summary = summarise(recording);
-  if (!summary) return null;
+  if (!summary) {
+    return { ok: false, missing: false, reason: "No readings could be read out of that file." };
+  }
 
-  const supply = normaliseSupply(run.equipment?.supply);
   const feed = describeFeed(supply, run.site.equipment);
 
   return {
-    clientName: safe(run.site.client.name),
-    siteName: safe(run.site.name),
-    siteLocation: run.site.location ? safe(run.site.location) : null,
-    location: run.location ? safe(run.location) : null,
-    boardName: safe(run.equipment?.name ?? run.location ?? "the main switchboard"),
-    supply,
-    feed: feed ? safe(feed) : null,
-    brief: isBrief(run.brief) ? run.brief : null,
-    contactName: run.contactName ? safe(run.contactName) : null,
-    reportDate: new Date(),
-    recording,
-    summary,
-    logo: await brandBytes("logo.jpg"),
-    signature: await reportSignature(),
+    ok: true,
+    report: {
+      clientName: safe(run.site.client.name),
+      siteName: safe(run.site.name),
+      siteLocation: run.site.location ? safe(run.site.location) : null,
+      location: run.location ? safe(run.location) : null,
+      boardName: safe(run.equipment.name),
+      supply,
+      feed: feed ? safe(feed) : null,
+      brief: run.brief,
+      contactName: run.contactName ? safe(run.contactName) : null,
+      reportDate: new Date(),
+      recording,
+      summary,
+      logo: await brandBytes("logo.jpg"),
+      signature: await reportSignature(),
+    },
   };
 }
 
 /* --- what a power analysis is --------------------------------------------- */
 
 const WHAT_IT_IS = [
-  "A power analysis is a recording of how much current an installation actually draws, taken over a period long enough to include the way the site is really used. A logger is fitted at the switchboard with a current transformer clamped around each active conductor and around the neutral, and it is left in place while the site runs normally. It records the highest current seen on each conductor during every interval, so a short, sharp demand is captured rather than averaged away.",
-  "What it answers is the question a nameplate cannot. The rating of a main switch, a submain or a supply is a limit, not a measurement, and the load on a board changes as equipment is added, shifts are changed or plant is replaced. Recording the installation over a fortnight shows the peak each phase reaches, how close that sits to the protection in front of it, whether the phases carry a similar share of the load, and how much current is returning down the neutral.",
-  "Three things are read off the result. The first is headroom: the highest reading on any phase against the rating of the protective device, which is what decides whether there is capacity for more load. The second is balance: three phases carrying markedly different currents put the imbalance onto the neutral, waste capacity and overheat the lightly loaded conductors' counterparts. The third is the neutral itself, which on a balanced linear load carries very little, and on a site full of switch-mode supplies, LED drivers and variable speed drives can carry considerably more than expected.",
-  "Every figure quoted in this report is the logger's own. On the charts, each line is the highest reading taken in each window of the recording rather than every individual reading, which is what makes a fortnight legible on a page; because it is the highest and never the average, no peak is lost or reduced. The highest reading of each week is marked on its chart at the moment it occurred, and the tables give it exactly as the logger recorded it.",
+  "A logger was fitted at the switchboard with a current transformer clamped around each active conductor and around the neutral, and left in place while the site ran normally. It records the highest current on each conductor in every interval, so a short, sharp demand is captured rather than averaged away.",
+  "A rating is a limit, not a measurement. The recording shows the peak each phase actually reached, how close that sits to the protection in front of the board, whether the phases carry a similar share of the load, and how much current is returning down the neutral.",
+  "Every figure here is the logger's own. Each line on the charts is the highest reading in its window, never the average, so no peak is lost to make a fortnight fit on a page.",
 ];
 
 const NOTE =
@@ -174,8 +226,8 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
   );
 
   cover(doc, data);
-  explain(doc, data);
-  briefPage(doc, data, channels, pages.length);
+  explain(doc, data, channels, pages.length);
+  briefPage(doc, data, channels);
 
   pages.forEach((week, index) => {
     doc.addPage();
@@ -258,7 +310,7 @@ function cover(doc: Doc, data: PowerReport) {
   let at = 132;
 
   const scope = safe(
-    `${data.boardName}${data.feed ? `, fed from ${data.feed}` : ""} — three phases and neutral, logged every ${
+    `${data.boardName}${data.supply.area ? `, ${data.supply.area}` : ""}${data.feed ? `, fed from ${data.feed}` : ""} — three phases and neutral, logged every ${
       summary.intervalMinutes || 5
     } minutes over ${days} ${days === 1 ? "day" : "days"}`,
   );
@@ -272,7 +324,7 @@ function cover(doc: Doc, data: PowerReport) {
   at += scopeHeight + 22;
 
   const facts: [string, string][] = [
-    ["Brief", data.brief ? BRIEF_LABELS[data.brief] : "Current recording"],
+    ["Brief", BRIEF_LABELS[data.brief]],
     ["Recording started", shortDate(new Date(summary.from))],
     ["Recording period", `${when(summary.from)} to ${when(summary.to)}`],
     ["Readings", `${summary.count.toLocaleString("en-AU")} per channel`],
@@ -323,81 +375,78 @@ function label(doc: Doc, text: string, x: number, y: number) {
 }
 
 /** What a power analysis is, and what this one found. */
-function explain(doc: Doc, data: PowerReport) {
+function explain(doc: Doc, data: PowerReport, channels: Channel[], weekCount: number) {
   doc.addPage();
   heading(doc, data, "About this recording");
 
+  /* --- left: what it is, in three short paragraphs ----------------------- */
+  const column = 380;
   let y = 104;
-  const column = CONTENT / 2 - 18;
+  for (const paragraph of WHAT_IT_IS) {
+    const text = safe(paragraph);
+    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+    doc.text(text, MARGIN, y, { width: column, lineGap: 2.4, align: "justify" });
+    y += doc.heightOfString(text, { width: column, lineGap: 2.4 }) + 12;
+  }
 
-  // Two columns, because a full-width line of text on a landscape page is too
-  // long to track back to the start of the next one.
-  const top = y;
-  const halves = [WHAT_IT_IS.slice(0, 2), WHAT_IT_IS.slice(2)];
-  halves.forEach((paragraphs, index) => {
-    let at = top;
-    const x = MARGIN + index * (column + 36);
-    for (const paragraph of paragraphs) {
-      const text = safe(paragraph);
-      doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
-      doc.text(text, x, at, { width: column, lineGap: 2.2, align: "justify" });
-      at += doc.heightOfString(text, { width: column, lineGap: 2.2 }) + 11;
-    }
-    y = Math.max(y, at);
-  });
+  /* --- right: what this one found ---------------------------------------- */
+  const x = MARGIN + column + 44;
+  const width = CONTENT - column - 44;
+  let at = 104;
 
-  /* --- what this one found ---------------------------------------------- */
-  y += 12;
-  doc.rect(MARGIN, y, CONTENT, 20).fill(COLOURS.bar);
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.onBar);
-  doc.text("HIGHEST CURRENT RECORDED", MARGIN + 10, y + 6, { characterSpacing: 1 });
-  y += 24;
+  label(doc, "Highest current recorded", x, at);
+  at += 18;
 
-  const channels = channelsIn(data.recording);
-  const widths = [90, 110, 190, CONTENT - 390];
-  doc.font("Helvetica-Bold").fontSize(7.5).fillColor(COLOURS.inkSoft);
-  ["Conductor", "Highest", "When", "As the logger labelled it"].forEach((title, index) => {
-    doc.text(title.toUpperCase(), MARGIN + offset(widths, index) + 8, y, {
-      width: widths[index] - 12,
+  const widths = [96, 74, width - 170];
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+  ["Conductor", "Highest", "When"].forEach((title, index) => {
+    doc.text(title.toUpperCase(), x + offset(widths, index), at, {
+      width: widths[index] - 10,
       characterSpacing: 1,
     });
   });
-  y += 13;
+  at += 13;
 
-  channels.forEach((channel, index) => {
+  for (const channel of channels) {
     const peak = data.summary.peaks[channel];
-    doc.rect(MARGIN, y, CONTENT, 20).fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-    doc.rect(MARGIN + 8, y + 7, 14, 2.4).fill(SERIES[channel]);
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(CHANNEL_LABELS[channel], MARGIN + 28, y + 6, { lineBreak: false });
-    doc.font("Helvetica").fontSize(9);
-    doc.text(peak ? `${round(peak.amps)} A` : "—", MARGIN + offset(widths, 1) + 8, y + 6, {
-      width: widths[1] - 12,
+    doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+    doc.rect(x, at + 12, 14, 2.6).fill(SERIES[channel]);
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
+    doc.text(CHANNEL_LABELS[channel], x + 20, at + 8, { lineBreak: false });
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(conductor(channel), x + 20 + doc.widthOfString(CHANNEL_LABELS[channel]) + 6, at + 9, {
+      lineBreak: false,
     });
-    doc.fillColor(COLOURS.inkSoft);
-    doc.text(peak ? when(peak.at) : "—", MARGIN + offset(widths, 2) + 8, y + 6, {
-      width: widths[2] - 12,
-    });
-    doc.text(
-      safe(data.recording.headings[channel] ?? "—"),
-      MARGIN + offset(widths, 3) + 8,
-      y + 6,
-      { width: widths[3] - 12, ellipsis: true, height: 11 },
-    );
-    doc.fillColor(COLOURS.ink);
-    y += 20;
-  });
 
-  if (data.summary.skipped > 0) {
-    y += 10;
-    doc.font("Helvetica-Oblique").fontSize(8).fillColor(COLOURS.inkSoft);
-    doc.text(
-      `${data.summary.skipped} rows in the file carried no readable timestamp and were left out.`,
-      MARGIN,
-      y,
-      { width: CONTENT },
-    );
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(COLOURS.ink);
+    doc.text(peak ? `${round(peak.amps)} A` : "\u2014", x + offset(widths, 1), at + 6.5, {
+      width: widths[1] - 10,
+    });
+    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
+    doc.text(peak ? when(peak.at) : "\u2014", x + offset(widths, 2), at + 8, {
+      width: widths[2],
+    });
+    doc.fillColor(COLOURS.ink);
+    at += 30;
   }
+  doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+
+  at += 12;
+  doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+  const how = safe(
+    `${data.summary.count.toLocaleString("en-AU")} readings on each conductor, every ${
+      data.summary.intervalMinutes || 5
+    } minutes, from ${when(data.summary.from)} to ${when(data.summary.to)}.${
+      data.summary.skipped > 0
+        ? ` ${data.summary.skipped} rows carried no readable timestamp and were left out.`
+        : ""
+    }`,
+  );
+  doc.text(how, x, at, { width, lineGap: 1.6 });
+
+  contents(doc, Math.max(y, at + doc.heightOfString(how, { width, lineGap: 1.6 })) + 26,
+    channels, weekCount);
+  doc.fillColor(COLOURS.ink);
 }
 
 function offset(widths: number[], index: number): number {
@@ -406,10 +455,7 @@ function offset(widths: number[], index: number): number {
 
 /* --- why it was recorded, and what feeds the board ------------------------ */
 
-const NO_SUPPLY =
-  "The supply arrangement for this board has not been recorded. Where the size of the protective device in front of the board is not known, the currents in this report can be read as a record of the load but not as a measure of the capacity remaining.";
-
-function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: number) {
+function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
   doc.addPage();
   heading(doc, data, "The brief and the supply");
 
@@ -420,22 +466,19 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: 
   label(doc, "Objective", MARGIN, y);
   y += 16;
 
-  if (data.brief) {
-    doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.bar);
-    doc.text(BRIEF_LABELS[data.brief], MARGIN, y, { width: column });
-    y += 20;
-  }
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.bar);
+  doc.text(BRIEF_LABELS[data.brief], MARGIN, y, { width: column });
+  y += 20;
 
   const text = safe(
-    data.brief
-      ? objective({
-          brief: data.brief,
-          board: data.boardName,
-          client: data.clientName,
-          site: data.siteName,
-          contact: data.contactName,
-        })
-      : `This recording was carried out at ${data.boardName}, ${data.siteName}, for ${data.clientName}. It sets out the current carried by each phase and by the neutral across the recording period.`,
+    objective({
+      brief: data.brief,
+      board: data.boardName,
+      area: data.supply.area,
+      client: data.clientName,
+      site: data.siteName,
+      contact: data.contactName,
+    }),
   );
   doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
   doc.text(text, MARGIN, y, { width: column, lineGap: 2.4, align: "justify" });
@@ -443,7 +486,16 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: 
 
   const spare = headroom(data, channels);
   if (spare) {
-    const height = 74;
+    const note = safe(
+      `The arithmetic difference between the rating of the protective device and the highest current recorded on any phase (${round(spare.peak)} A). It is not a maximum demand calculation and makes no allowance for diversity, ambient conditions or the capacity of the supply behind the board.`,
+    );
+
+    // Measured rather than assumed: the note runs to three lines on a narrow
+    // board name and four on a long one, and a fixed box clips it.
+    doc.font("Helvetica").fontSize(8);
+    const height =
+      58 + doc.heightOfString(note, { width: column - 36, lineGap: 1 }) + 14;
+
     doc.rect(MARGIN, y, column, height).fill(COLOURS.soft);
     doc.rect(MARGIN, y, 3, height).fill(COLOURS.accent);
     label(doc, "Capacity remaining", MARGIN + 18, y + 13);
@@ -459,14 +511,7 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: 
       { width: column - 44 - width, lineBreak: false },
     );
     doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-    doc.text(
-      safe(
-        `The arithmetic difference between the rating of the protective device and the highest current recorded on any phase (${round(spare.peak)} A). It is not a maximum demand calculation and makes no allowance for diversity, ambient conditions or the capacity of the supply behind the board.`,
-      ),
-      MARGIN + 18,
-      y + 54,
-      { width: column - 36, lineGap: 1 },
-    );
+    doc.text(note, MARGIN + 18, y + 58, { width: column - 36, lineGap: 1 });
     y += height;
   }
 
@@ -480,12 +525,12 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: 
 
   const rows: [string, string | null][] = [
     ["Board recorded", data.boardName],
+    ["Area", data.supply.area],
     ["Fed from", data.feed],
     ["Length of run", describeLength(data.supply)],
     ["Protective device", data.supply.protectiveDevice],
     ["Mains, active", data.supply.activeCable],
     ["Mains, neutral", data.supply.neutralCable],
-    ["Logger fitted at", data.location],
     ["Requested by", data.contactName],
   ];
 
@@ -504,61 +549,146 @@ function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: 
   }
   doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
 
-  if (isBlank(data.supply)) {
-    at += 14;
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(safe(NO_SUPPLY), x, at, { width, lineGap: 1.6 });
-    at += doc.heightOfString(safe(NO_SUPPLY), { width, lineGap: 1.6 });
-  }
+  howToRead(doc, Math.max(y, at) + 34);
+  doc.fillColor(COLOURS.ink);
+}
 
-  contents(doc, Math.max(y, at) + 30, channels, weekCount);
+/**
+ * What a reader needs to know before the first chart.
+ *
+ * Four short notes rather than a paragraph, because they are four separate
+ * facts and a reader looking for one of them should not have to read the
+ * other three.
+ */
+function howToRead(doc: Doc, y: number) {
+  const notes: [string, string][] = [
+    [
+      "One scale throughout",
+      "Every chart uses the same current scale, so any page can be read against any other. A lightly loaded conductor looks lightly loaded.",
+    ],
+    [
+      "Peaks, not averages",
+      "Each line is the highest reading taken in its window. Nothing is averaged, so no peak is reduced or lost.",
+    ],
+    [
+      "Marks are real readings",
+      "Every ringed point is a reading the logger took, shown at the minute it was taken.",
+    ],
+    [
+      "The period it covers",
+      "The recording reflects how the site was used while the logger was fitted. It is not a design calculation of maximum demand.",
+    ],
+  ];
+
+  label(doc, "How to read the charts", MARGIN, y);
+  y += 19;
+
+  const gap = 22;
+  const width = (CONTENT - gap * (notes.length - 1)) / notes.length;
+
+  notes.forEach(([title, body], index) => {
+    const x = MARGIN + index * (width + gap);
+    doc.rect(x, y, width, 2.4).fill(COLOURS.accent);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
+    doc.text(title, x, y + 11, { width, lineBreak: false });
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(body), x, y + 26, { width, lineGap: 1.8 });
+  });
+
   doc.fillColor(COLOURS.ink);
 }
 
 /**
  * What is in the rest of the report, and on which page.
  *
- * Eighteen pages of charts needs a way in. The numbers are worked out rather
- * than measured, because the order of the pages is fixed: the covers, a chart
- * per week with everything on it, then each conductor on its own a week at a
- * time.
+ * Eighteen pages of charts needs a way in, but listing them one to a line is
+ * eighteen lines that say almost the same thing. The per-conductor pages are
+ * the same page four times over, so they go in a small grid instead: a row per
+ * conductor in its own colour, a column per week, and the page number where
+ * the two meet. What is left reads as the short list it actually is.
+ *
+ * The numbers are worked out rather than measured, because the order of the
+ * pages is fixed: the two covers, a chart per week with everything on it, then
+ * each conductor on its own a week at a time.
  */
 function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
-  const week = (number: number) =>
-    weekCount > 1 ? `Week ${number} of ${weekCount}` : "The recording";
+  const single = weekCount === 1;
+  const week = (number: number) => (single ? "The recording" : `Week ${number}`);
 
-  const entries: [string, number][] = [
+  /* --- the pages that are one of a kind ---------------------------------- */
+  const column = 300;
+  label(doc, "What is in this report", MARGIN, y);
+  let at = y + 19;
+
+  const opening: [string, number][] = [
     ["About this recording", 2],
     ["The brief and the supply", 3],
     ...Array.from({ length: weekCount }, (_, index): [string, number] => [
-      `All conductors — ${week(index + 1)}`,
+      single ? "All conductors together" : `All conductors, week ${index + 1}`,
       4 + index,
     ]),
-    ...channels.flatMap((channel, place) =>
-      Array.from({ length: weekCount }, (_, index): [string, number] => [
-        `${CHANNEL_LABELS[channel]}, ${conductor(channel)} — ${week(index + 1)}`,
-        3 + weekCount + place * weekCount + index + 1,
-      ]),
-    ),
   ];
 
-  label(doc, "What is in this report", MARGIN, y);
-  y += 17;
+  for (const [title, page] of opening) {
+    doc.rect(MARGIN, at + 13, column, 0.5).fill(COLOURS.hair);
+    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
+    doc.text(safe(title), MARGIN, at + 2, { width: column - 30, height: 12, ellipsis: true });
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.inkSoft);
+    doc.text(String(page), MARGIN + column - 28, at + 2, { width: 28, align: "right" });
+    at += 16;
+  }
 
-  const columns = 3;
-  const width = (CONTENT - 40 * (columns - 1)) / columns;
-  const rows = Math.ceil(entries.length / columns);
+  /* --- the grid: a conductor a row, a week a column ---------------------- */
+  const x = MARGIN + column + 54;
+  const cell = 52;
+  const name = 132;
+  let row = y + 19;
 
-  entries.forEach(([title, page], index) => {
-    const x = MARGIN + Math.floor(index / rows) * (width + 40);
-    const at = y + (index % rows) * 15;
-
-    doc.rect(x, at + 12.5, width, 0.5).fill(COLOURS.hair);
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.ink);
-    doc.text(safe(title), x, at + 2, { width: width - 26, height: 11, ellipsis: true });
-    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(String(page), x + width - 24, at + 2, { width: 24, align: "right" });
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+  doc.text("EACH CONDUCTOR ON ITS OWN", x, row - 19, {
+    characterSpacing: 1.6,
+    lineBreak: false,
   });
+
+  if (!single) {
+    doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+    for (let index = 0; index < weekCount; index += 1) {
+      doc.text(week(index + 1).toUpperCase(), x + name + index * cell, row + 3, {
+        width: cell - 8,
+        align: "right",
+        characterSpacing: 0.8,
+        lineBreak: false,
+      });
+    }
+    row += 16;
+  }
+
+  channels.forEach((channel, place) => {
+    doc.rect(x, row + 17, name + weekCount * cell - 8, 0.5).fill(COLOURS.hair);
+    doc.rect(x, row + 6, 12, 2.6).fill(SERIES[channel]);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
+    doc.text(CHANNEL_LABELS[channel], x + 18, row + 2.5, { lineBreak: false });
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(
+      conductor(channel),
+      x + 18 + doc.widthOfString(CHANNEL_LABELS[channel]) + 6,
+      row + 3.5,
+      { lineBreak: false },
+    );
+
+    for (let index = 0; index < weekCount; index += 1) {
+      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
+      doc.text(
+        String(3 + weekCount + place * weekCount + index + 1),
+        x + name + index * cell,
+        row + 2.5,
+        { width: cell - 8, align: "right", lineBreak: false },
+      );
+    }
+    row += 21;
+  });
+
+  doc.fillColor(COLOURS.ink);
 }
 
 /**
@@ -829,7 +959,7 @@ function heading(doc: Doc, data: PowerReport, title: string, note?: string) {
   doc.text(safe(title), MARGIN + 136, 28, { width: CONTENT - 136 });
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   doc.text(
-    safe([note, data.location, data.siteName, data.clientName].filter(Boolean).join("  ·  ")),
+    safe([note, data.boardName, data.siteName, data.clientName].filter(Boolean).join("  ·  ")),
     MARGIN + 136,
     46,
     { width: CONTENT - 136, height: 11, ellipsis: true },

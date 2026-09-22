@@ -1,12 +1,12 @@
 "use client";
 
-import { STREET, type Supply } from "@/lib/supply";
+import { STREET, inWords, missingFrom, type Supply } from "@/lib/supply";
 
 /**
- * What feeds a switchboard, asked once where the board is drawn.
+ * A switchboard's own details, asked once where the board is drawn.
  *
  * The same panel on the grid editor, on the freehand editor and on a power
- * analysis, because it is the same five facts in all three places and a person
+ * analysis, because it is the same six facts in all three places and a person
  * filling it in at the board should not have to learn it twice. Whichever of
  * the three saves it, it is written onto the board itself, so the next report
  * off that board already knows.
@@ -28,6 +28,7 @@ export function SupplyFields({
 }) {
   const known = supply.fedFrom === STREET || siblings.some((b) => b.id === supply.fedFrom);
   const elsewhere = !known && (supply.fedFrom !== null || supply.fedFromNote !== null);
+  const missing = missingFrom(supply);
 
   function set<K extends keyof Supply>(key: K, value: Supply[K]) {
     onChange({ ...supply, [key]: value });
@@ -39,6 +40,23 @@ export function SupplyFields({
 
   return (
     <section className="supply">
+      <div className="board-section-head">
+        <h3 className="board-section-title">Whereabouts is the board?</h3>
+        <p className="board-section-note">
+          The part of the site someone would be sent to. A depot has several boards,
+          and &ldquo;the main switchboard&rdquo; is not a place.
+        </p>
+      </div>
+      <label className="dialog-field">
+        <span className="dialog-label">Area</span>
+        <input
+          className="dialog-input"
+          placeholder="e.g. Workshop, north wall · Level 2 plant room"
+          value={supply.area ?? ""}
+          onChange={(event) => set("area", event.target.value || null)}
+        />
+      </label>
+
       <div className="board-section-head">
         <h3 className="board-section-title">Where is it fed from?</h3>
         <p className="board-section-note">
@@ -103,8 +121,8 @@ export function SupplyFields({
       <div className="board-section-head">
         <h3 className="board-section-title">The feed itself</h3>
         <p className="board-section-note">
-          Leave anything you do not know blank. The report says what was recorded and
-          what was not, rather than guessing.
+          All four are needed before a power analysis can be issued off this board:
+          the current it recorded is read against them.
         </p>
       </div>
 
@@ -155,6 +173,13 @@ export function SupplyFields({
           />
         </label>
       </div>
+
+      {missing.length > 0 ? (
+        <p className="board-warning">
+          A power analysis cannot be issued off this board until it knows{" "}
+          {inWords(missing)}.
+        </p>
+      ) : null}
     </section>
   );
 }
