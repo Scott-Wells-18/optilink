@@ -54,8 +54,10 @@ export type BriefContext = {
 export function objective(context: BriefContext): string[] {
   const { board, area, client, site, contact } = context;
   // Named down to the room where the area is known, because "the main
-  // switchboard at Kogarah Depot" is not somewhere anyone can be sent.
-  const at = `${board}${area ? ` in the ${lower(area)}` : ""}, ${site}`;
+  // switchboard at Kogarah Depot" is not somewhere anyone can be sent. The
+  // area is printed exactly as it was typed: it is the name of a place on
+  // that site, and "Workshop Area" is not "workshop Area".
+  const at = `${board}${area ? ` in the ${area}` : ""}, ${site}`;
   const asked = contact ? ` The recording was requested by ${contact}.` : "";
 
   if (context.brief === "HEADROOM") {
@@ -83,19 +85,4 @@ export function objective(context: BriefContext): string[] {
       `It does not, by itself, determine the maximum demand of the installation or confirm ` +
       `the amount of additional load that may be connected.`,
   ];
-}
-
-/**
- * An area as it reads mid-sentence.
- *
- * It is typed as a label — "Workshop, north wall" — and dropped into a
- * sentence it becomes "in the Workshop, north wall". Only the first letter is
- * touched, and only where the rest of the word is lower case, so "Level 2
- * plant room" softens and "MSB room" is left alone.
- */
-function lower(area: string): string {
-  const [first, ...rest] = area;
-  const word = area.split(/\s|,/)[0] ?? "";
-  if (word.length > 1 && word.slice(1) !== word.slice(1).toLowerCase()) return area;
-  return first.toLowerCase() + rest.join("");
 }

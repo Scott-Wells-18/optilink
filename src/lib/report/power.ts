@@ -232,7 +232,7 @@ function whatItIs(intervalMinutes: number): Block[] {
 
   return [
   {
-    text: "A power logger was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.",
+    text: "A Power Analyser was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.",
   },
   {
     text: `Current transformers were fitted to each monitored conductor and readings were recorded ${every}. This provides a record of the electrical loading that occurred while the logger was installed.`,
@@ -325,9 +325,6 @@ const HOW_TO_READ: [string, string][] = [
     "The charts represent the electrical demand measured during the stated monitoring period only. Operating conditions, electrical demand and seasonal loading outside this period may differ. The recorded results are not, by themselves, a complete design calculation of maximum demand.",
   ],
 ];
-
-const NOTE =
-  "This report is issued to the addressee named above and relates only to the installation and the recording period listed on it. It records the current drawn while the logger was fitted, under the conditions and the pattern of use present at the time. It is not a statement of what the installation will draw under different use, nor a substitute for a design calculation of maximum demand.";
 
 /* --- laying out a run of those blocks ------------------------------------- */
 
@@ -517,11 +514,6 @@ function cover(doc: Doc, data: PowerReport) {
 
   /* --- the foot ---------------------------------------------------------- */
   const footY = PAGE.height - MARGIN - 32;
-  // Held to the right-hand column so it sits under the facts rather than
-  // across the signature, which has the left-hand column to itself.
-  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  const noteHeight = doc.heightOfString(NOTE, { width, lineGap: 1.4 });
-  doc.text(NOTE, x, footY - noteHeight - 16, { width, lineGap: 1.4 });
 
   doc.rect(MARGIN, footY, CONTENT, 32).fill(COLOURS.bar);
   doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
