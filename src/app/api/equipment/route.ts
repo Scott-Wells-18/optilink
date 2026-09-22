@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import { normaliseBoard } from "@/lib/board";
+import { normaliseSupply } from "@/lib/supply";
 
 export async function POST(request: Request) {
   try {
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
       description?: string;
       circuitLoading?: string;
       board?: unknown;
+      supply?: unknown;
     };
     if (!body.siteId) return badRequest("Which site is this at?");
     if (!body.name?.trim()) return badRequest("A name is required.");
@@ -29,6 +31,7 @@ export async function POST(request: Request) {
         circuitLoading:
           kind === "MOTOR" ? body.circuitLoading?.trim().slice(0, 80) || null : null,
         board: isBoard ? normaliseBoard(body.board) : undefined,
+        supply: isBoard && body.supply ? normaliseSupply(body.supply) : undefined,
       },
     });
     return NextResponse.json(equipment);

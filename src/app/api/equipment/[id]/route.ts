@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { readJson, serverError } from "@/lib/api";
 import { normaliseBoard } from "@/lib/board";
+import { normaliseSupply } from "@/lib/supply";
 
 export async function PATCH(
   request: Request,
@@ -13,6 +14,7 @@ export async function PATCH(
       name?: string;
       description?: string;
       board?: unknown;
+      supply?: unknown;
     };
 
     const data: Record<string, unknown> = {};
@@ -24,6 +26,9 @@ export async function PATCH(
     }
     if ("board" in body) {
       data.board = normaliseBoard(body.board);
+    }
+    if ("supply" in body) {
+      data.supply = normaliseSupply(body.supply);
     }
     if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
 

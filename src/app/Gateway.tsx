@@ -211,6 +211,8 @@ export function Gateway({
           <FreeBoardEditor
             initialName={clients.boardEditor.name}
             initialBoard={clients.boardEditor.board}
+            initialSupply={clients.boardEditor.supply}
+            siblings={clients.boardEditor.siblings}
             stateKey={`free:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
             onCancel={clients.closeBoardEditor}
             onSave={clients.saveBoard}
@@ -220,6 +222,8 @@ export function Gateway({
             title={clients.boardEditor.title}
             initialName={clients.boardEditor.name}
             initialBoard={clients.boardEditor.board}
+            initialSupply={clients.boardEditor.supply}
+            siblings={clients.boardEditor.siblings}
             stateKey={`board:${clients.boardEditor.equipmentId ?? `new:${clients.boardEditor.siteId}`}`}
             onCancel={clients.closeBoardEditor}
             onSave={clients.saveBoard}

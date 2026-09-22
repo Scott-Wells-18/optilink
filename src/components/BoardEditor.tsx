@@ -20,6 +20,8 @@ import {
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
+import { SupplyFields } from "@/components/SupplyFields";
+import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -34,6 +36,8 @@ export function BoardEditor({
   title,
   initialName,
   initialBoard,
+  initialSupply,
+  siblings,
   stateKey,
   onCancel,
   onSave,
@@ -41,12 +45,20 @@ export function BoardEditor({
   title: string;
   initialName: string;
   initialBoard?: Board;
+  /** What feeds this board, where it has been recorded before. */
+  initialSupply?: Supply;
+  /** The other switchboards at this site, to be fed from. */
+  siblings: { id: string; name: string }[];
   /** Where an unsaved drawing is kept, so a reload does not lose it. */
   stateKey: string;
   onCancel: () => void;
-  onSave: (name: string, board: Board) => Promise<void>;
+  onSave: (name: string, board: Board, supply: Supply) => Promise<void>;
 }) {
   const [name, setName] = usePersisted(`${stateKey}:name`, initialName);
+  const [supply, setSupply] = usePersisted<Supply>(
+    `${stateKey}:supply`,
+    initialSupply ?? EMPTY_SUPPLY,
+  );
   const [board, setBoard] = usePersisted<Board>(
     `${stateKey}:board`,
     initialBoard ?? createBoard(),
@@ -78,6 +90,7 @@ export function BoardEditor({
     clearSession(`${stateKey}:name`);
     clearSession(`${stateKey}:board`);
     clearSession(`${stateKey}:tab`);
+    clearSession(`${stateKey}:supply`);
   }
 
   function cancel() {
@@ -168,7 +181,7 @@ export function BoardEditor({
     setBusy(true);
     setError(null);
     try {
-      await onSave(name.trim(), board);
+      await onSave(name.trim(), board, supply);
       forget();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "That could not be saved.");
@@ -369,6 +382,10 @@ export function BoardEditor({
                 + Add row
               </button>
             </div>
+          </section>
+
+          <section className="board-supply">
+            <SupplyFields supply={supply} siblings={siblings} onChange={setSupply} />
           </section>
         </div>
         </div>

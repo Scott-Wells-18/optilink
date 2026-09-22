@@ -17,6 +17,8 @@ import {
   type FreeItem,
 } from "@/lib/board";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
+import { SupplyFields } from "@/components/SupplyFields";
+import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -42,17 +44,27 @@ type Drag =
 export function FreeBoardEditor({
   initialName,
   initialBoard,
+  initialSupply,
+  siblings,
   stateKey,
   onCancel,
   onSave,
 }: {
   initialName: string;
   initialBoard?: Board;
+  /** What feeds this board, where it has been recorded before. */
+  initialSupply?: Supply;
+  /** The other switchboards at this site, to be fed from. */
+  siblings: { id: string; name: string }[];
   stateKey: string;
   onCancel: () => void;
-  onSave: (name: string, board: Board) => Promise<void>;
+  onSave: (name: string, board: Board, supply: Supply) => Promise<void>;
 }) {
   const [name, setName] = usePersisted(`${stateKey}:name`, initialName);
+  const [supply, setSupply] = usePersisted<Supply>(
+    `${stateKey}:supply`,
+    initialSupply ?? EMPTY_SUPPLY,
+  );
   const [board, setBoard] = usePersisted<Board>(
     `${stateKey}:free`,
     initialBoard ?? createFreeBoard(),
@@ -99,6 +111,7 @@ export function FreeBoardEditor({
     clearSession(`${stateKey}:name`);
     clearSession(`${stateKey}:free`);
     clearSession(`${stateKey}:seq`);
+    clearSession(`${stateKey}:supply`);
   }
 
   function cancel() {
@@ -289,7 +302,7 @@ export function FreeBoardEditor({
     setBusy(true);
     setError(null);
     try {
-      await onSave(name.trim(), board);
+      await onSave(name.trim(), board, supply);
       forget();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "That could not be saved.");
@@ -497,6 +510,12 @@ export function FreeBoardEditor({
                   ))}
                 </div>
               </div>
+            )}
+
+            {sequencing ? null : (
+              <section className="board-supply">
+                <SupplyFields supply={supply} siblings={siblings} onChange={setSupply} />
+              </section>
             )}
           </div>
         </div>

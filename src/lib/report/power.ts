@@ -9,15 +9,33 @@ import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
 import {
   SERIES,
+  SOLO_FILL_OPACITY,
+  dailyPeaks,
+  dayName,
   describeWindow,
   drawChart,
   legend,
+  markDays,
   markPeak,
   round,
   scaleTop,
   when,
   type ChartBox,
+  type DayPeak,
 } from "@/lib/report/chart";
+import {
+  BRIEF_LABELS,
+  isBrief,
+  objective,
+  type Brief,
+} from "@/lib/power/brief";
+import {
+  describeFeed,
+  describeLength,
+  isBlank,
+  normaliseSupply,
+  type Supply,
+} from "@/lib/supply";
 import {
   CHANNEL_LABELS,
   channelsIn,
@@ -54,6 +72,14 @@ const PLOT: ChartBox = { x: MARGIN + 40, y: 104, width: CONTENT - 40 - 58, heigh
 
 export type PowerReport = PageMeta & {
   location: string | null;
+  /** The board the logger was fitted to, named. */
+  boardName: string;
+  /** What feeds that board, where it has been recorded against it. */
+  supply: Supply;
+  /** What the feed comes from, already resolved to a name. */
+  feed: string | null;
+  brief: Brief | null;
+  contactName: string | null;
   reportDate: Date;
   recording: Recording;
   summary: Summary;
@@ -66,7 +92,16 @@ export async function loadPowerReport(id: string): Promise<PowerReport | null> {
     where: { id },
     include: {
       sourceFile: true,
-      site: { include: { client: { select: { name: true } } } },
+      equipment: { select: { id: true, name: true, supply: true } },
+      site: {
+        include: {
+          client: { select: { name: true } },
+          equipment: {
+            where: { kind: "SWITCHBOARD" },
+            select: { id: true, name: true },
+          },
+        },
+      },
     },
   });
   if (!run?.sourceFile) return null;
@@ -82,11 +117,19 @@ export async function loadPowerReport(id: string): Promise<PowerReport | null> {
   const summary = summarise(recording);
   if (!summary) return null;
 
+  const supply = normaliseSupply(run.equipment?.supply);
+  const feed = describeFeed(supply, run.site.equipment);
+
   return {
     clientName: safe(run.site.client.name),
     siteName: safe(run.site.name),
     siteLocation: run.site.location ? safe(run.site.location) : null,
     location: run.location ? safe(run.location) : null,
+    boardName: safe(run.equipment?.name ?? run.location ?? "the main switchboard"),
+    supply,
+    feed: feed ? safe(feed) : null,
+    brief: isBrief(run.brief) ? run.brief : null,
+    contactName: run.contactName ? safe(run.contactName) : null,
     reportDate: new Date(),
     recording,
     summary,
@@ -121,21 +164,34 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
-  cover(doc, data);
-  explain(doc, data);
-
   const channels = channelsIn(data.recording);
   const pages = weeks(data.recording.samples);
   // One scale across every page, so the second week is read against the first
-  // rather than against itself.
+  // rather than against itself — and so the four single-conductor pages are
+  // read against each other and against the combined one.
   const top = scaleTop(
     Math.max(...Object.values(data.summary.peaks).map((peak) => peak.amps), 1),
   );
+
+  cover(doc, data);
+  explain(doc, data);
+  briefPage(doc, data, channels, pages.length);
 
   pages.forEach((week, index) => {
     doc.addPage();
     weekPage(doc, data, week, index + 1, pages.length, channels, top);
   });
+
+  // Then each conductor on its own, a week to a page, with the highest
+  // reading of every day marked. Grouped by conductor rather than by week, so
+  // one phase can be followed from the first day to the last without a page of
+  // some other phase in between.
+  for (const channel of channels) {
+    pages.forEach((week, index) => {
+      doc.addPage();
+      channelPage(doc, data, week, index + 1, pages.length, channel, top);
+    });
+  }
 
   stampPages(doc, data);
   doc.end();
@@ -202,7 +258,7 @@ function cover(doc: Doc, data: PowerReport) {
   let at = 132;
 
   const scope = safe(
-    `${data.location ?? "Main switchboard"} — three phases and neutral, logged every ${
+    `${data.boardName}${data.feed ? `, fed from ${data.feed}` : ""} — three phases and neutral, logged every ${
       summary.intervalMinutes || 5
     } minutes over ${days} ${days === 1 ? "day" : "days"}`,
   );
@@ -216,6 +272,7 @@ function cover(doc: Doc, data: PowerReport) {
   at += scopeHeight + 22;
 
   const facts: [string, string][] = [
+    ["Brief", data.brief ? BRIEF_LABELS[data.brief] : "Current recording"],
     ["Recording started", shortDate(new Date(summary.from))],
     ["Recording period", `${when(summary.from)} to ${when(summary.to)}`],
     ["Readings", `${summary.count.toLocaleString("en-AU")} per channel`],
@@ -347,6 +404,196 @@ function offset(widths: number[], index: number): number {
   return widths.slice(0, index).reduce((total, width) => total + width, 0);
 }
 
+/* --- why it was recorded, and what feeds the board ------------------------ */
+
+const NO_SUPPLY =
+  "The supply arrangement for this board has not been recorded. Where the size of the protective device in front of the board is not known, the currents in this report can be read as a record of the load but not as a measure of the capacity remaining.";
+
+function briefPage(doc: Doc, data: PowerReport, channels: Channel[], weekCount: number) {
+  doc.addPage();
+  heading(doc, data, "The brief and the supply");
+
+  const column = 430;
+  let y = 104;
+
+  /* --- left: what was asked for ------------------------------------------ */
+  label(doc, "Objective", MARGIN, y);
+  y += 16;
+
+  if (data.brief) {
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.bar);
+    doc.text(BRIEF_LABELS[data.brief], MARGIN, y, { width: column });
+    y += 20;
+  }
+
+  const text = safe(
+    data.brief
+      ? objective({
+          brief: data.brief,
+          board: data.boardName,
+          client: data.clientName,
+          site: data.siteName,
+          contact: data.contactName,
+        })
+      : `This recording was carried out at ${data.boardName}, ${data.siteName}, for ${data.clientName}. It sets out the current carried by each phase and by the neutral across the recording period.`,
+  );
+  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+  doc.text(text, MARGIN, y, { width: column, lineGap: 2.4, align: "justify" });
+  y += doc.heightOfString(text, { width: column, lineGap: 2.4 }) + 20;
+
+  const spare = headroom(data, channels);
+  if (spare) {
+    const height = 74;
+    doc.rect(MARGIN, y, column, height).fill(COLOURS.soft);
+    doc.rect(MARGIN, y, 3, height).fill(COLOURS.accent);
+    label(doc, "Capacity remaining", MARGIN + 18, y + 13);
+
+    doc.font("Helvetica-Bold").fontSize(23).fillColor(COLOURS.ink);
+    doc.text(`${round(spare.spare)} A`, MARGIN + 18, y + 28, { lineBreak: false });
+    const width = doc.widthOfString(`${round(spare.spare)} A`);
+    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
+    doc.text(
+      `of the ${spare.rating} A in front of the board, ${spare.used}% used`,
+      MARGIN + 26 + width,
+      y + 38,
+      { width: column - 44 - width, lineBreak: false },
+    );
+    doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+    doc.text(
+      safe(
+        `The arithmetic difference between the rating of the protective device and the highest current recorded on any phase (${round(spare.peak)} A). It is not a maximum demand calculation and makes no allowance for diversity, ambient conditions or the capacity of the supply behind the board.`,
+      ),
+      MARGIN + 18,
+      y + 54,
+      { width: column - 36, lineGap: 1 },
+    );
+    y += height;
+  }
+
+  /* --- right: what feeds it ---------------------------------------------- */
+  const x = MARGIN + column + 40;
+  const width = CONTENT - column - 40;
+  let at = 104;
+
+  label(doc, "Supply to the board", x, at);
+  at += 18;
+
+  const rows: [string, string | null][] = [
+    ["Board recorded", data.boardName],
+    ["Fed from", data.feed],
+    ["Length of run", describeLength(data.supply)],
+    ["Protective device", data.supply.protectiveDevice],
+    ["Mains, active", data.supply.activeCable],
+    ["Mains, neutral", data.supply.neutralCable],
+    ["Logger fitted at", data.location],
+    ["Requested by", data.contactName],
+  ];
+
+  for (const [name, value] of rows) {
+    doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+    doc.fillColor(COLOURS.inkSoft).font("Helvetica").fontSize(9);
+    doc.text(name, x, at + 8, { width: 112, height: 11, lineBreak: false });
+    doc.fillColor(value ? COLOURS.ink : COLOURS.inkSoft);
+    doc.font(value ? "Helvetica-Bold" : "Helvetica-Oblique").fontSize(9.5);
+    doc.text(safe(value ?? "not recorded"), x + 118, at + 7.5, {
+      width: width - 118,
+      height: 24,
+      ellipsis: true,
+    });
+    at += 26;
+  }
+  doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+
+  if (isBlank(data.supply)) {
+    at += 14;
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(NO_SUPPLY), x, at, { width, lineGap: 1.6 });
+    at += doc.heightOfString(safe(NO_SUPPLY), { width, lineGap: 1.6 });
+  }
+
+  contents(doc, Math.max(y, at) + 30, channels, weekCount);
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * What is in the rest of the report, and on which page.
+ *
+ * Eighteen pages of charts needs a way in. The numbers are worked out rather
+ * than measured, because the order of the pages is fixed: the covers, a chart
+ * per week with everything on it, then each conductor on its own a week at a
+ * time.
+ */
+function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
+  const week = (number: number) =>
+    weekCount > 1 ? `Week ${number} of ${weekCount}` : "The recording";
+
+  const entries: [string, number][] = [
+    ["About this recording", 2],
+    ["The brief and the supply", 3],
+    ...Array.from({ length: weekCount }, (_, index): [string, number] => [
+      `All conductors — ${week(index + 1)}`,
+      4 + index,
+    ]),
+    ...channels.flatMap((channel, place) =>
+      Array.from({ length: weekCount }, (_, index): [string, number] => [
+        `${CHANNEL_LABELS[channel]}, ${conductor(channel)} — ${week(index + 1)}`,
+        3 + weekCount + place * weekCount + index + 1,
+      ]),
+    ),
+  ];
+
+  label(doc, "What is in this report", MARGIN, y);
+  y += 17;
+
+  const columns = 3;
+  const width = (CONTENT - 40 * (columns - 1)) / columns;
+  const rows = Math.ceil(entries.length / columns);
+
+  entries.forEach(([title, page], index) => {
+    const x = MARGIN + Math.floor(index / rows) * (width + 40);
+    const at = y + (index % rows) * 15;
+
+    doc.rect(x, at + 12.5, width, 0.5).fill(COLOURS.hair);
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.ink);
+    doc.text(safe(title), x, at + 2, { width: width - 26, height: 11, ellipsis: true });
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(String(page), x + width - 24, at + 2, { width: 24, align: "right" });
+  });
+}
+
+/**
+ * What is left, where the board's protection has been recorded.
+ *
+ * The rating is read out of whatever was written against the board — "100 A
+ * HRC fuse", "63A MCB" — because that is how it is written down on site. No
+ * figure, no panel: an invented rating is worse than a blank one.
+ */
+function headroom(
+  data: PowerReport,
+  channels: Channel[],
+): { rating: number; peak: number; spare: number; used: number } | null {
+  if (data.brief !== "HEADROOM") return null;
+
+  const match = /(\d+(?:\.\d+)?)\s*a\b/i.exec(data.supply.protectiveDevice ?? "");
+  if (!match) return null;
+  const rating = Number(match[1]);
+  if (!Number.isFinite(rating) || rating <= 0) return null;
+
+  const phases = channels.filter((channel) => channel !== "n");
+  const peak = Math.max(
+    ...phases.map((channel) => data.summary.peaks[channel]?.amps ?? 0),
+    0,
+  );
+  if (peak <= 0) return null;
+
+  return {
+    rating,
+    peak,
+    spare: Math.round((rating - peak) * 10) / 10,
+    used: Math.round((peak / rating) * 100),
+  };
+}
+
 /* --- a week to a page ----------------------------------------------------- */
 
 function weekPage(
@@ -423,6 +670,139 @@ function weekPage(
     x += 17 + doc.widthOfString(CHANNEL_LABELS[channel]) + 7 + doc.widthOfString(text) + 26;
   }
   doc.fillColor(COLOURS.ink);
+}
+
+/* --- one conductor, a week to a page -------------------------------------- */
+
+/**
+ * A single phase or the neutral, on its own.
+ *
+ * The overlapping chart answers how the conductors compare; this one answers
+ * what one of them did, which is a different question and needs the page to
+ * itself. Every day's highest reading is marked where it happened, so the
+ * shape of a working week is readable at a glance — the days the site ran
+ * hard, the days it did not, and the one day that carried the most.
+ *
+ * The scale is the same as every other page in the report, so a light phase
+ * looks light rather than being stretched to fill the plot.
+ */
+function channelPage(
+  doc: Doc,
+  data: PowerReport,
+  week: { from: number; to: number; samples: typeof data.recording.samples; partial: boolean },
+  number: number,
+  total: number,
+  channel: Channel,
+  top: number,
+) {
+  const days = Math.max(1, Math.round((week.to - week.from) / 86_400_000));
+  const span = `${when(week.from).slice(0, 5)} to ${when(week.to - 1).slice(0, 5)}`;
+  heading(
+    doc,
+    data,
+    `${CHANNEL_LABELS[channel]} — ${conductor(channel)}`,
+    total > 1 ? `Week ${number} of ${total}  ·  ${span}` : span,
+  );
+
+  // A rule in the conductor's own colour under the title, so a reader flicking
+  // through knows which one they are on before reading the heading.
+  doc.rect(MARGIN, 71, 54, 2.4).fill(SERIES[channel]);
+
+  const spec = {
+    from: week.from,
+    to: week.to,
+    maxAmps: top,
+    samples: week.samples,
+    channels: [channel],
+    labelEveryDays: days >= 6 ? 3 : days >= 3 ? 2 : 1,
+    fillOpacity: SOLO_FILL_OPACITY,
+  };
+
+  drawChart(doc, PLOT, spec);
+
+  const peaks = dailyPeaks(week.samples, channel, week.from, week.to);
+  markDays(doc, PLOT, spec, channel, peaks);
+
+  let y = PLOT.y + PLOT.height + 26;
+  doc.font("Helvetica").fontSize(7).fillColor(COLOURS.inkSoft);
+  doc.text(
+    `The line is the highest reading in every ${describeWindow(spec)} window. Each day's own highest reading is ringed at the moment it was taken.`,
+    PLOT.x + PLOT.width - 360,
+    y - 1,
+    { width: 360, align: "right", lineBreak: false },
+  );
+
+  doc.rect(PLOT.x, y - 2, 16, 8).fill(SERIES[channel]);
+  doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.ink);
+  doc.text(CHANNEL_LABELS[channel], PLOT.x + 21, y - 1.5, { lineBreak: false });
+  doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe(data.recording.headings[channel] ?? conductor(channel)),
+    PLOT.x + 21 + doc.widthOfString(CHANNEL_LABELS[channel]) + 7,
+    y - 1,
+    { lineBreak: false },
+  );
+
+  /* --- the days, written out --------------------------------------------- */
+  y += 20;
+  dayStrip(doc, y, peaks, channel);
+}
+
+/**
+ * Each day's peak as a row of tiles across the foot of the page.
+ *
+ * The chart carries the shape; this carries the figures, so the numbers can be
+ * read off without measuring anything against a gridline. The day that
+ * carried the week's highest is filled, and a day the logger missed keeps its
+ * tile and says so rather than disappearing and shortening the week.
+ */
+function dayStrip(doc: Doc, y: number, peaks: DayPeak[], channel: Channel) {
+  if (peaks.length === 0) {
+    doc.font("Helvetica-Oblique").fontSize(9).fillColor(COLOURS.inkSoft);
+    doc.text("No readings were taken on this conductor during this period.", MARGIN, y, {
+      width: CONTENT,
+    });
+    doc.fillColor(COLOURS.ink);
+    return;
+  }
+
+  const gap = 8;
+  const width = (CONTENT - gap * (peaks.length - 1)) / peaks.length;
+  const height = 50;
+  const best = peaks.reduce((held, peak) => (peak.amps > held.amps ? peak : held), peaks[0]);
+
+  peaks.forEach((peak, index) => {
+    const x = MARGIN + index * (width + gap);
+    const top = peak === best;
+
+    doc
+      .roundedRect(x, y, width, height, 4)
+      .fillAndStroke(top ? COLOURS.soft : "#ffffff", top ? SERIES[channel] : COLOURS.hair);
+    doc.rect(x + 1, y + 1, 3, height - 2).fill(SERIES[channel]);
+
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(dayName(peak.day).toUpperCase(), x + 12, y + 9, {
+      width: width - 20,
+      characterSpacing: 0.9,
+      lineBreak: false,
+    });
+
+    doc.font("Helvetica-Bold").fontSize(14).fillColor(COLOURS.ink);
+    doc.text(`${round(peak.amps)} A`, x + 12, y + 22, { width: width - 20, lineBreak: false });
+
+    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(`at ${when(peak.at).slice(6)}`, x + 12, y + 38, {
+      width: width - 20,
+      lineBreak: false,
+    });
+  });
+
+  doc.fillColor(COLOURS.ink);
+}
+
+/** "phase 1" / "the neutral", for a page that is about one of them. */
+function conductor(channel: Channel): string {
+  return channel === "n" ? "the neutral" : `phase ${channel.slice(1)}`;
 }
 
 function highestIn(

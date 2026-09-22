@@ -12,6 +12,7 @@ import {
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 import { usePersisted } from "@/lib/session";
 import type { Contact, ContactInput } from "@/lib/contacts";
+import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 
 /**
  * Clients → sites → contacts, loaded from the database and turned into tree
@@ -35,6 +36,7 @@ type EquipmentRecord = {
   description: string | null;
   circuitLoading: string | null;
   board: unknown;
+  supply: unknown;
 };
 
 type IssueRecord = {
@@ -188,6 +190,10 @@ export type BoardSpec = {
   title: string;
   name: string;
   board: Board;
+  /** What feeds it, where that has been recorded against the board before. */
+  supply: Supply;
+  /** The other boards at this site, which this one may be fed from. */
+  siblings: { id: string; name: string }[];
   /** Absent when the board has not been created yet. */
   equipmentId?: string;
   siteId: string;
@@ -255,6 +261,28 @@ export function useClientsTree(enabled: boolean) {
     [refresh],
   );
 
+  /**
+   * The switchboards at each site, by site id.
+   *
+   * A board's feed points at another board rather than at a typed name, so the
+   * editor has to be handed the list it may choose from — and the same list
+   * turns an id back into a name wherever a feed is shown.
+   */
+  const boardsBySite = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const client of clients) {
+      for (const site of client.sites) {
+        map.set(
+          site.id,
+          site.equipment
+            .filter((item) => item.kind === "SWITCHBOARD")
+            .map((item) => ({ id: item.id, name: item.name })),
+        );
+      }
+    }
+    return map;
+  }, [clients]);
+
   const equipmentNode = useCallback(
     (item: EquipmentRecord, site: { id: string; name: string }): TreeNode => {
       const isBoard = item.kind === "SWITCHBOARD";
@@ -269,6 +297,11 @@ export function useClientsTree(enabled: boolean) {
                 title: "Switchboard",
                 name: item.name,
                 board: normaliseBoard(item.board),
+                supply: normaliseSupply(item.supply),
+                // Never itself: a board cannot be its own supply.
+                siblings: (boardsBySite.get(site.id) ?? []).filter(
+                  (board) => board.id !== item.id,
+                ),
                 equipmentId: item.id,
                 siteId: site.id,
               })
@@ -276,7 +309,7 @@ export function useClientsTree(enabled: boolean) {
         onRemove: () => void remove(`/api/equipment/${item.id}`, item.name),
       };
     },
-    [remove],
+    [remove, boardsBySite],
   );
 
   /** Picked from the chooser: appliances go to a form, boards to the editor. */
@@ -292,6 +325,8 @@ export function useClientsTree(enabled: boolean) {
             kind === "SWITCHBOARD_FREE" ? "New custom switchboard" : "New switchboard",
           name: "",
           board: kind === "SWITCHBOARD_FREE" ? createFreeBoard() : createBoard(),
+          supply: EMPTY_SUPPLY,
+          siblings: boardsBySite.get(site.siteId) ?? [],
           siteId: site.siteId,
         });
         return;
@@ -334,7 +369,7 @@ export function useClientsTree(enabled: boolean) {
   );
 
   const saveBoard = useCallback(
-    async (name: string, board: Board) => {
+    async (name: string, board: Board, supply: Supply) => {
       if (!boardEditor) return;
       const existing = Boolean(boardEditor.equipmentId);
       const response = await fetch(
@@ -344,8 +379,8 @@ export function useClientsTree(enabled: boolean) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(
             existing
-              ? { name, board }
-              : { siteId: boardEditor.siteId, kind: "SWITCHBOARD", name, board },
+              ? { name, board, supply }
+              : { siteId: boardEditor.siteId, kind: "SWITCHBOARD", name, board, supply },
           ),
         },
       );

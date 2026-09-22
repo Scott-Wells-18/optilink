@@ -28,6 +28,7 @@ export async function GET() {
               description: true,
               circuitLoading: true,
               board: true,
+              supply: true,
             },
           },
           contacts: {

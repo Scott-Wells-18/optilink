@@ -2,24 +2,42 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CHANNEL_LABELS, SERIES, type Channel, type Summary } from "@/lib/power/channels";
+import { BRIEFS, BRIEF_LABELS, BRIEF_NOTES, type Brief } from "@/lib/power/brief";
+import { SupplyFields } from "@/components/SupplyFields";
+import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
  * Loading a logger's recording onto an analysis.
  *
- * One upload and one question. Everything else the report needs — when the
- * recording started, how long it ran, how often it sampled and what each
- * channel peaked at — is in the file, so it is read out rather than asked for,
- * and shown straight back so a file that read wrongly is obvious before
- * anything is sent to a client.
+ * The recording itself answers most of it — when it started, how long it ran,
+ * how often it sampled and what each channel peaked at are all in the file, so
+ * they are read out rather than asked for, and shown straight back so a file
+ * that read wrongly is obvious before anything is sent to a client.
+ *
+ * What the file cannot say is why the logger went on, which board it went on,
+ * and what feeds that board. Those three are what turn a set of currents into
+ * an answer, so they are asked here — and the supply is written back onto the
+ * board itself, where the next recording will already know it.
  */
+
+type BoardRecord = { id: string; name: string; supply: unknown };
 
 type Run = {
   id: string;
   location: string | null;
+  equipmentId: string | null;
+  brief: string | null;
+  contactName: string | null;
   sourceFile: { id: string; originalName: string } | null;
   summary: Summary | null;
+  site: {
+    name: string;
+    location: string | null;
+    equipment: BoardRecord[];
+    contacts: { name: string }[];
+  };
 };
 
 const WHERE = [
@@ -42,6 +60,8 @@ export function PowerDialog({
   const [run, setRun] = useState<Run | null>(null);
   const [where, setWhere] = usePersisted<string>(`${key}:where`, "");
   const [typing, setTyping] = usePersisted<boolean>(`${key}:typing`, false);
+  const [namingContact, setNamingContact] = usePersisted<boolean>(`${key}:naming`, false);
+  const [supply, setSupply] = useState<Supply>(EMPTY_SUPPLY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +71,8 @@ export function PowerDialog({
     const data = (await response.json()) as Run;
     setRun(data);
     setWhere((current) => current || data.location || "");
+    const board = data.site.equipment.find((item) => item.id === data.equipmentId);
+    setSupply(normaliseSupply(board?.supply));
   }, [runId, setWhere]);
 
   useEffect(() => {
@@ -70,6 +92,7 @@ export function PowerDialog({
   function close() {
     clearSession(`${key}:where`);
     clearSession(`${key}:typing`);
+    clearSession(`${key}:naming`);
     onClose();
   }
 
@@ -99,18 +122,54 @@ export function PowerDialog({
     }
   }
 
-  async function saveWhere(value: string) {
-    setWhere(value);
-    setTyping(false);
+  /** Anything that lives on the analysis itself. */
+  async function patch(body: Record<string, unknown>) {
+    setRun((current) => (current ? ({ ...current, ...body } as Run) : current));
     await fetch(`/api/power/${runId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ location: value }),
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
+  async function saveWhere(value: string) {
+    setWhere(value);
+    setTyping(false);
+    await patch({ location: value });
+  }
+
+  /**
+   * Picking the board also picks up whatever is already recorded against it,
+   * so the supply panel below fills in rather than having to be typed again.
+   */
+  async function chooseBoard(board: BoardRecord) {
+    const next = run?.equipmentId === board.id ? null : board;
+    setSupply(normaliseSupply(next?.supply));
+    await patch({
+      equipmentId: next?.id ?? null,
+      ...(next ? { location: next.name } : {}),
+    });
+    if (next) setWhere(next.name);
+  }
+
+  /** The supply belongs to the board, not to this recording. */
+  async function saveSupply(next: Supply) {
+    setSupply(next);
+    if (!run?.equipmentId) return;
+    await fetch(`/api/equipment/${run.equipmentId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ supply: next }),
     }).catch(() => {});
   }
 
   const summary = run?.summary ?? null;
   const days = summary ? Math.max(1, Math.round((summary.to - summary.from) / 86_400_000)) : 0;
+  const boards = run?.site.equipment ?? [];
+  const contacts = run?.site.contacts ?? [];
+  const brief = (run?.brief ?? null) as Brief | null;
+  const channelCount = summary ? Object.keys(summary.peaks).length : 0;
+  const weekCount = Math.max(1, Math.ceil(days / 7));
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Power analysis">
@@ -127,49 +186,160 @@ export function PowerDialog({
         <div className="board-scroll">
           <div className="board-body">
             <div className="board-section-head">
-              <h3 className="board-section-title">Where was the logger fitted?</h3>
+              <h3 className="board-section-title">What was it recorded for?</h3>
+              <p className="board-section-note">
+                This is the objective printed at the front of the report.
+              </p>
             </div>
             <div className="issue-picks">
-              {WHERE.map((option) => (
+              {BRIEFS.map((option) => (
                 <button
                   key={option}
                   type="button"
-                  className={`issue-pick ${where === option ? "is-on" : ""}`}
-                  onClick={() => void saveWhere(option)}
+                  className={`issue-pick ${brief === option ? "is-on" : ""}`}
+                  onClick={() => void patch({ brief: brief === option ? null : option })}
                 >
                   <span className="issue-pick-mark is-one" aria-hidden />
                   <span className="issue-pick-body">
-                    <span className="issue-pick-label">{option}</span>
+                    <span className="issue-pick-label">{BRIEF_LABELS[option]}</span>
+                    <span className="issue-pick-note">{BRIEF_NOTES[option]}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="board-section-head">
+              <h3 className="board-section-title">Who asked for it?</h3>
+            </div>
+            <div className="issue-picks">
+              {contacts.map((contact) => (
+                <button
+                  key={contact.name}
+                  type="button"
+                  className={`issue-pick ${
+                    run?.contactName === contact.name ? "is-on" : ""
+                  }`}
+                  onClick={() => {
+                    setNamingContact(false);
+                    void patch({
+                      contactName:
+                        run?.contactName === contact.name ? null : contact.name,
+                    });
+                  }}
+                >
+                  <span className="issue-pick-mark is-one" aria-hidden />
+                  <span className="issue-pick-body">
+                    <span className="issue-pick-label">{contact.name}</span>
                   </span>
                 </button>
               ))}
               <button
                 type="button"
-                className={`issue-pick ${typing ? "is-on" : ""}`}
+                className={`issue-pick ${namingContact ? "is-on" : ""}`}
                 onClick={() => {
-                  setTyping(true);
-                  setWhere("");
+                  setNamingContact(true);
+                  void patch({ contactName: null });
                 }}
               >
                 <span className="issue-pick-mark is-one" aria-hidden />
                 <span className="issue-pick-body">
-                  <span className="issue-pick-label">Somewhere else</span>
+                  <span className="issue-pick-label">Someone else</span>
                 </span>
               </button>
             </div>
-            {typing ? (
+            {namingContact ? (
               <label className="dialog-field">
-                <span className="dialog-label">Where</span>
+                <span className="dialog-label">Their name</span>
                 <input
                   className="dialog-input"
                   autoFocus
-                  placeholder="e.g. DB-Workshop, submain to the crib room"
-                  value={where}
-                  onChange={(event) => setWhere(event.target.value)}
-                  onBlur={(event) => void saveWhere(event.target.value)}
+                  placeholder="e.g. Dave Mitchell, site manager"
+                  defaultValue={run?.contactName ?? ""}
+                  onBlur={(event) => void patch({ contactName: event.target.value || null })}
                 />
               </label>
             ) : null}
+
+            <div className="board-section-head">
+              <h3 className="board-section-title">Which board was it on?</h3>
+              <p className="board-section-note">
+                {boards.length > 0
+                  ? "Picking the board brings its supply details with it, and writes anything you change back onto the board."
+                  : "No switchboards have been drawn at this site yet. Say where the logger went instead."}
+              </p>
+            </div>
+            {boards.length > 0 ? (
+              <div className="issue-picks">
+                {boards.map((board) => (
+                  <button
+                    key={board.id}
+                    type="button"
+                    className={`issue-pick ${run?.equipmentId === board.id ? "is-on" : ""}`}
+                    onClick={() => void chooseBoard(board)}
+                  >
+                    <span className="issue-pick-mark is-one" aria-hidden />
+                    <span className="issue-pick-body">
+                      <span className="issue-pick-label">{board.name}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {run?.equipmentId ? (
+              <SupplyFields
+                supply={supply}
+                siblings={boards.filter((board) => board.id !== run.equipmentId)}
+                onChange={(next) => void saveSupply(next)}
+              />
+            ) : (
+              <>
+                <div className="board-section-head">
+                  <h3 className="board-section-title">Where was the logger fitted?</h3>
+                </div>
+                <div className="issue-picks">
+                  {WHERE.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`issue-pick ${where === option ? "is-on" : ""}`}
+                      onClick={() => void saveWhere(option)}
+                    >
+                      <span className="issue-pick-mark is-one" aria-hidden />
+                      <span className="issue-pick-body">
+                        <span className="issue-pick-label">{option}</span>
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={`issue-pick ${typing ? "is-on" : ""}`}
+                    onClick={() => {
+                      setTyping(true);
+                      setWhere("");
+                    }}
+                  >
+                    <span className="issue-pick-mark is-one" aria-hidden />
+                    <span className="issue-pick-body">
+                      <span className="issue-pick-label">Somewhere else</span>
+                    </span>
+                  </button>
+                </div>
+                {typing ? (
+                  <label className="dialog-field">
+                    <span className="dialog-label">Where</span>
+                    <input
+                      className="dialog-input"
+                      autoFocus
+                      placeholder="e.g. DB-Workshop, submain to the crib room"
+                      value={where}
+                      onChange={(event) => setWhere(event.target.value)}
+                      onBlur={(event) => void saveWhere(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+              </>
+            )}
 
             <div className="board-section-head">
               <h3 className="board-section-title">The logger&rsquo;s recording</h3>
@@ -220,7 +390,9 @@ export function PowerDialog({
                   </div>
                   <div>
                     <dt>Pages</dt>
-                    <dd>{Math.max(1, Math.ceil(days / 7))}</dd>
+                    {/* Cover, the explainer, the brief, a combined chart per
+                        week, then each conductor a week to a page. */}
+                    <dd>{3 + weekCount + weekCount * channelCount}</dd>
                   </div>
                 </dl>
 

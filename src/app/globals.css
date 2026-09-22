@@ -1489,6 +1489,38 @@ body {
   border-bottom: 1px solid var(--hair);
 }
 
+/* What feeds the board — asked under the drawing, since it is about the
+   supply rather than about the layout. */
+.board-supply {
+  padding-top: 20px;
+  margin-top: 22px;
+  border-top: 1px solid var(--hair);
+}
+
+/* Asked mid-dialog on a power analysis, so it needs the same air around it as
+   any other new question. Inside a board editor the panel already has its own
+   rule and padding, and two sets of spacing read as a gap. */
+.supply,
+.supply + .board-section-head {
+  margin-top: 26px;
+}
+
+.board-supply .supply {
+  margin-top: 0;
+}
+
+.supply-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+@media (max-width: 620px) {
+  .supply-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .board-extra-row {
   display: flex;
   flex-wrap: wrap;

@@ -38,6 +38,14 @@ const MINUTE = 60_000;
  */
 const FILL_OPACITY = 0.3;
 
+/**
+ * The same look with nothing to overlap.
+ *
+ * On a chart carrying one conductor there is no second layer to compound with,
+ * so the half that the overlapping chart could not afford is exactly right.
+ */
+export const SOLO_FILL_OPACITY = 0.5;
+
 export type ChartBox = { x: number; y: number; width: number; height: number };
 
 export type ChartSpec = {
@@ -49,6 +57,12 @@ export type ChartSpec = {
   channels: Channel[];
   /** Labelled every this many days; every day gets a rule regardless. */
   labelEveryDays: number;
+  /**
+   * How solid the fills are. Four traces over each other need a third each to
+   * land on the look of two at a half; one trace on its own is that look
+   * already, so a single-conductor chart passes the half straight through.
+   */
+  fillOpacity?: number;
 };
 
 export function drawChart(doc: Doc, box: ChartBox, spec: ChartSpec) {
@@ -231,7 +245,7 @@ function fill(doc: Doc, box: ChartBox, spec: ChartSpec, channel: Channel, runs: 
   const baseline = box.y + box.height;
 
   doc.save();
-  doc.fillOpacity(FILL_OPACITY);
+  doc.fillOpacity(spec.fillOpacity ?? FILL_OPACITY);
   for (const run of runs) {
     if (run.length < 2) continue;
     const points = run.map((point) => [to.x(point.at), to.y(point.amps)] as const);
@@ -303,6 +317,8 @@ function curve(doc: Doc, points: readonly (readonly [number, number])[]) {
  * this chart exists to show.
  */
 function endLabels(doc: Doc, box: ChartBox, spec: ChartSpec) {
+  // One trace needs no label at its end: the page it is on is named after it.
+  if (spec.channels.length < 2) return;
   const span = spec.to - spec.from;
   const placed: { channel: Channel; y: number }[] = [];
 
@@ -368,6 +384,119 @@ export function markPeak(
 
   doc.roundedRect(boxX, boxY, width, 15, 4).fillAndStroke("#ffffff", SERIES[peak.channel]);
   doc.fillColor(COLOURS.ink).text(text, boxX + 7, boxY + 4, { lineBreak: false });
+}
+
+/* --- every day's own peak, called out ------------------------------------- */
+
+export type DayPeak = {
+  /** Midnight at the start of the day. */
+  day: number;
+  amps: number;
+  at: number;
+};
+
+/**
+ * The highest reading on each calendar day of a chart's span.
+ *
+ * Taken off the raw readings rather than off the drawn curve, so the figure
+ * and the moment are the logger's own. A day the logger recorded nothing on is
+ * left out entirely rather than reported as zero.
+ */
+export function dailyPeaks(
+  samples: Sample[],
+  channel: Channel,
+  from: number,
+  to: number,
+): DayPeak[] {
+  const best = new Map<number, DayPeak>();
+
+  for (const sample of samples) {
+    if (sample.at < from || sample.at >= to) continue;
+    const amps = sample[channel];
+    if (amps === null) continue;
+    const day = Math.floor(sample.at / DAY) * DAY;
+    const held = best.get(day);
+    if (!held || amps > held.amps) best.set(day, { day, amps, at: sample.at });
+  }
+
+  return [...best.values()].sort((a, b) => a.day - b.day);
+}
+
+/**
+ * Each day's highest reading, marked where it happened.
+ *
+ * A week holds seven of these and they have to read as a set rather than as
+ * seven callout boxes fighting each other, so the mark is small and the figure
+ * sits directly above it: a dropped line to the axis, a ringed dot on the
+ * reading, and the current over the top. The day that carried the week's own
+ * highest is drawn heavier and keeps its time, because that is the one number
+ * the page exists to deliver.
+ *
+ * Labels that would collide with the top of the plot are dropped underneath
+ * their dot instead, which is always clear — a peak near the ceiling has
+ * nothing but its own curve below it.
+ */
+export function markDays(
+  doc: Doc,
+  box: ChartBox,
+  spec: ChartSpec,
+  channel: Channel,
+  peaks: DayPeak[],
+) {
+  if (peaks.length === 0) return;
+  const to = place(box, spec);
+  const colour = SERIES[channel];
+  const highest = peaks.reduce((best, peak) => (peak.amps > best.amps ? peak : best), peaks[0]);
+
+  for (const peak of peaks) {
+    const x = to.x(peak.at);
+    const y = to.y(peak.amps);
+    const best = peak === highest;
+
+    doc.lineWidth(best ? 0.8 : 0.5).strokeColor(best ? COLOURS.inkSoft : COLOURS.hair);
+    doc.dash(2, { space: 2.5 });
+    doc.moveTo(x, y).lineTo(x, box.y + box.height).stroke();
+    doc.undash();
+
+    doc.lineWidth(2).strokeColor("#ffffff");
+    doc.circle(x, y, best ? 4 : 2.8).stroke();
+    doc.lineWidth(best ? 1.5 : 1.1).strokeColor(colour);
+    doc.circle(x, y, best ? 4 : 2.8).stroke();
+    if (best) doc.circle(x, y, 1.5).fill(colour);
+
+    const text = `${round(peak.amps)} A`;
+    doc.font("Helvetica-Bold").fontSize(best ? 8 : 7);
+    const width = doc.widthOfString(text);
+    const above = y - 14 > box.y;
+    const labelY = above ? y - 13 : y + 7;
+
+    // A plate behind the figure, so it stays readable over the fill.
+    doc.save();
+    doc.fillOpacity(0.86);
+    doc.rect(x - width / 2 - 3, labelY - 1.5, width + 6, 10).fill("#ffffff");
+    doc.restore();
+    doc.fillOpacity(1);
+
+    doc.fillColor(best ? colour : COLOURS.ink);
+    doc.text(text, x - width / 2, labelY, { lineBreak: false });
+
+    if (!best) continue;
+    const stamp = when(peak.at).slice(6);
+    doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
+    const stampWidth = doc.widthOfString(stamp);
+    doc.text(stamp, x - stampWidth / 2, above ? labelY - 8 : labelY + 10, { lineBreak: false });
+  }
+
+  doc.lineWidth(1).strokeColor("#000000").fillColor(COLOURS.ink);
+}
+
+/** "Mon 07/09" — the day a peak fell on, the way a week is read. */
+export function dayName(at: number): string {
+  const date = new Date(at);
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${names[date.getUTCDay()]} ${day}/${month}`;
 }
 
 export function when(at: number): string {

@@ -179,11 +179,20 @@ model Equipment {
    */
   board Json?
 
+  /**
+   * Switchboards only — where the board is fed from, over what, and how far.
+   * What a power analysis needs to say anything about headroom: the size of
+   * the device in front of the board, the cables that reach it, and the run.
+   * Free-form shape, never queried, so it lives as JSON. See `lib/supply.ts`.
+   */
+  supply Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  issues  Issue[]
-  rcdRuns RcdTestRun[]
+  issues    Issue[]
+  rcdRuns   RcdTestRun[]
+  powerRuns PowerAnalysis[]
 
   @@index([siteId])
 }
@@ -781,6 +790,16 @@ model PowerAnalysis {
   /** Where the logger was fitted — "Main switchboard". */
   location String?
 
+  /** The board it was fitted to, where that board has been drawn on the site. */
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  /** Why it was recorded: HEADROOM or DRAW. Prints as the objective. */
+  brief String?
+
+  /** Who asked for it, named in the objective. */
+  contactName String?
+
   /** The logger's own export, kept as it came. */
   sourceFileId String?
   sourceFile   UploadedFile? @relation("PowerAnalysisSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
@@ -792,4 +811,5 @@ model PowerAnalysis {
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
+  @@index([equipmentId])
 }
