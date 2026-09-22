@@ -40,16 +40,26 @@ const EMPTY: Calibration = {
  * that would put a lapsed instrument on a report looking current.
  */
 const EXPIRY = [
+  // The due word is required, never optional: made optional this matches a
+  // bare "Date of Calibration" and reports the day it was calibrated as the
+  // day it expires, which is the one misread that matters here.
   /(?:calibration|recalibration|re-?cal(?:ibration)?)\s*(?:due|expiry|expires?)(?:\s*date)?/i,
-  /(?:due|expiry|expires?|valid\s*(?:un)?til|next\s*calibration)(?:\s*date)?/i,
+  /\bre-?calibration\s*date\b/i,
+  /\b(?:next|re-?)\s*(?:calibration|test|check|cert(?:ification)?)(?:\s*date)?/i,
+  /\bdue\b(?:\s*date)?/i,
+  /\bdate\s*due\b/i,
+  /\bexpir(?:y|es?|ation)\b(?:\s*date)?/i,
+  /\bvalid\s*(?:un)?til\b/i,
+  /\bretest\b(?:\s*date)?/i,
 ];
 
 const CALIBRATED = [
-  /date\s*(?:of\s*)?calibrat(?:ion|ed)/i,
-  /calibration\s*date/i,
-  /date\s*calibrated/i,
+  /\bdate\s*(?:of\s*)?calibrat(?:ion|ed)\b/i,
+  /\bcalibrat(?:ion|ed)\s*(?:on\s*)?date\b/i,
+  /\bdate\s*calibrated\b/i,
   /\bcal\.?\s*date\b/i,
-  /\bissued?(?:\s*on)?\b/i,
+  /\bdate\s*of\s*(?:test|issue)\b/i,
+  /\bissued?\b(?:\s*on)?/i,
 ];
 
 const SERIAL = [/serial\s*(?:number|no\.?|#)?/i, /\bs\s*\/\s*n\b/i, /\bsn\b/i];
@@ -74,6 +84,23 @@ export async function readCalibration(pdf: Buffer): Promise<Calibration> {
 }
 
 /**
+ * Every place a label appears, not just the first.
+ *
+ * The word behind a label turns up elsewhere in ordinary prose — "due to",
+ * "issued by" — and a certificate is prose as well as a table. Taking only the
+ * first match means one stray sentence higher up the page loses the fact
+ * entirely, which is exactly how a certificate labelled "Due Date" came back
+ * with no expiry on it. So every occurrence is tried in turn and the first one
+ * that actually yields a value wins.
+ */
+function* matches(text: string, label: RegExp, window: string): Generator<string> {
+  const pattern = new RegExp(`${label.source}\\s*[:\\-\\u2013]?[ \\t]*${window}`, "gi");
+  for (const found of text.matchAll(pattern)) {
+    if (found[1]) yield found[1];
+  }
+}
+
+/**
  * What follows a label, up to the end of the value.
  *
  * A certificate writes "Serial Number: 210457891" or sets the label and the
@@ -84,13 +111,10 @@ export async function readCalibration(pdf: Buffer): Promise<Calibration> {
  */
 function after(text: string, labels: RegExp[], limit: number): string | null {
   for (const label of labels) {
-    const pattern = new RegExp(
-      `${label.source}\\s*[:\\-\\u2013]?[ \\t]*([^\\n\\r]{1,${limit}})`,
-      label.flags.includes("i") ? "i" : "",
-    );
-    const found = pattern.exec(text);
-    const value = found?.[1]?.split(/\s{2,}/)[0]?.trim();
-    if (value && !isLabel(value)) return value;
+    for (const raw of matches(text, label, `([^\\n\\r]{1,${limit}})`)) {
+      const value = raw.split(/\s{2,}/)[0]?.trim();
+      if (value && !isLabel(value)) return value;
+    }
   }
   return null;
 }
@@ -103,15 +127,21 @@ function isLabel(value: string): boolean {
   );
 }
 
+/**
+ * The date a label introduces.
+ *
+ * The window runs past the end of the line, because a table sets the label in
+ * one cell and the date in the next and the text layer can put a line break
+ * between them. It stops at the line after, so a label with nothing against it
+ * cannot reach down the page and claim some other row's date.
+ */
 function date(text: string, labels: RegExp[]): Date | null {
+  const window = "([^\\n\\r]{0,40}(?:\\r?\\n[^\\n\\r]{0,40})?)";
   for (const label of labels) {
-    const pattern = new RegExp(
-      `${label.source}\\s*[:\\-\\u2013]?\\s*([^\\n\\r]{1,40})`,
-      "i",
-    );
-    const found = pattern.exec(text);
-    const parsed = found ? readDate(found[1]) : null;
-    if (parsed) return parsed;
+    for (const raw of matches(text, label, window)) {
+      const parsed = readDate(raw);
+      if (parsed) return parsed;
+    }
   }
   return null;
 }
@@ -143,6 +173,32 @@ export function readDate(text: string): Date | null {
   if (dmy) return build(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
 
   return null;
+}
+
+/**
+ * When the calibration lapses.
+ *
+ * The certificate's own due date wherever it gives one, because that is the
+ * laboratory's statement and no assumption of ours can be better than it.
+ * Where it gives none, a year from the day it was calibrated, which is the
+ * usual interval and is better than a blank row — but it is said to be a
+ * derived date on the report rather than quoted as though the laboratory
+ * wrote it, because on the day it matters the difference is the whole point.
+ */
+export function expiry(
+  calibration: Calibration,
+): { at: Date; derived: boolean } | null {
+  if (calibration.expiresOn) return { at: calibration.expiresOn, derived: false };
+  const from = calibration.calibratedOn;
+  if (!from) return null;
+
+  // Through the same day next year. The 29th of February has no such day, so
+  // it lands on the 1st of March, which is the first day the calibration is
+  // no longer a year old.
+  const at = new Date(
+    Date.UTC(from.getUTCFullYear() + 1, from.getUTCMonth(), from.getUTCDate()),
+  );
+  return { at, derived: true };
 }
 
 function build(year: number, month: number, day: number): Date | null {

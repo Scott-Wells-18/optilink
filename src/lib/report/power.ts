@@ -7,7 +7,7 @@ import { readUpload } from "@/lib/storage";
 import { reportSignature } from "@/lib/signatures";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
-import { readCalibration, type Calibration } from "@/lib/report/calibration";
+import { expiry, readCalibration, type Calibration } from "@/lib/report/calibration";
 import {
   fitted,
   readCertificate,
@@ -808,7 +808,8 @@ function cover(doc: Doc, data: PowerReport) {
           ["Equipment Name", instrument.name],
           ["Model No", instrument.modelNo ?? "\u2014"],
           ["Serial No", instrument.serialNo ?? "\u2014"],
-          ["Calibration Date \u2013 Expiry Date", calibrationSpan(instrument)],
+          ["Certification Date", certificateDate(instrument, instrument.calibration.calibratedOn)],
+          ["Due/Expiry Date", dueDate(instrument)],
         ] as [string, string][])
       : []),
   ];
@@ -896,21 +897,25 @@ function midSentence(text: string): string {
 }
 
 /**
- * "12/03/2026 \u2013 12/03/2027", from whatever the certificate said.
+ * A date off the certificate, or why there isn't one.
  *
- * Either date alone still goes on: a certificate that gives only the day it
- * was issued is worth saying so, and one that gives only the day it lapses is
- * worth saying loudly. Neither, and the row says the certificate did not give
- * them rather than leaving a reader to assume it was never calibrated.
+ * "Not stated" and "no certificate" are different answers and a reader acts on
+ * them differently, so they are not both left as a dash. A certificate that is
+ * on file but does not label its dates in any way this can read still says so
+ * plainly rather than looking like an instrument that was never calibrated.
  */
-function calibrationSpan(instrument: Instrument): string {
-  const { calibratedOn, expiresOn } = instrument.calibration;
-  if (calibratedOn && expiresOn) {
-    return `${shortDate(calibratedOn)} \u2013 ${shortDate(expiresOn)}`;
-  }
-  if (calibratedOn) return `Calibrated ${shortDate(calibratedOn)}`;
-  if (expiresOn) return `Expires ${shortDate(expiresOn)}`;
+function certificateDate(instrument: Instrument, at: Date | null): string {
+  if (at) return shortDate(at);
   return instrument.certificate ? "Not stated on the certificate" : "\u2014";
+}
+
+/** The due date, marked where it was worked out rather than quoted. */
+function dueDate(instrument: Instrument): string {
+  const due = expiry(instrument.calibration);
+  if (!due) return instrument.certificate ? "Not stated on the certificate" : "\u2014";
+  // One word, because the column is narrow and the point still lands: this
+  // date is ours, not the laboratory's.
+  return due.derived ? `${shortDate(due.at)}  (assumed)` : shortDate(due.at);
 }
 
 /** A small letterspaced heading, the one marker of hierarchy on the cover. */
