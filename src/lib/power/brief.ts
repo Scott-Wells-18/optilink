@@ -15,8 +15,8 @@ export const BRIEFS = ["HEADROOM", "DRAW"] as const;
 export type Brief = (typeof BRIEFS)[number];
 
 export const BRIEF_LABELS: Record<Brief, string> = {
-  HEADROOM: "Current headroom",
-  DRAW: "Current draw",
+  HEADROOM: "Current Headroom",
+  DRAW: "Current Draw",
 };
 
 export const BRIEF_NOTES: Record<Brief, string> = {

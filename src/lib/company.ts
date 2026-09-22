@@ -9,7 +9,7 @@ export const COMPANY = {
   licence: "91510C",
   /** Qualified supervisor certificate. */
   supervisor: "24046S",
-  addressLine1: "20-22 Parramatta St, Cronulla",
+  addressLine1: "Unit 6, 20-22 Parramatta St, Cronulla",
   addressLine2: "New South Wales 2230",
   phone: "0418 614 154",
   email: "scott@optilink.com.au",

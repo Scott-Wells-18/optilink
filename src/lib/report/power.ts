@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "@/lib/db";
-import { COMPANY } from "@/lib/company";
+import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { readUpload } from "@/lib/storage";
 import { reportSignature } from "@/lib/signatures";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
@@ -215,12 +215,27 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
 /** A heading, a paragraph and its bullets. A block with no bullets is prose. */
 type Block = { text: string; bullets?: string[] };
 
-const WHAT_IT_IS: Block[] = [
+/**
+ * `WHAT_IT_IS`, with the logger's own sampling interval written into it.
+ *
+ * The interval is read out of the recording rather than described in the
+ * abstract: a reader who wants to know how closely the installation was
+ * watched should not have to work it out from the readings count and the
+ * dates. A file whose interval could not be established falls back to saying
+ * so in general terms rather than inventing a number.
+ */
+function whatItIs(intervalMinutes: number): Block[] {
+  const every =
+    intervalMinutes > 0
+      ? `at ${intervalMinutes} minute intervals`
+      : "at regular intervals";
+
+  return [
   {
     text: "A power logger was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.",
   },
   {
-    text: "Current transformers were fitted to each monitored conductor and readings were recorded at regular intervals. This provides a record of the electrical loading that occurred while the logger was installed.",
+    text: `Current transformers were fitted to each monitored conductor and readings were recorded ${every}. This provides a record of the electrical loading that occurred while the logger was installed.`,
   },
   {
     text: "The recorded data shows the actual current measured during the monitoring period, including:",
@@ -237,7 +252,8 @@ const WHAT_IT_IS: Block[] = [
   {
     text: "All current values shown in this report are derived from the recorded logger data. Where chart data is grouped into display intervals, the highest recorded value within each interval is shown rather than an average value. This allows short-duration peaks recorded within the interval to remain visible in the report.",
   },
-];
+  ];
+}
 
 /** What the headroom figure is, and what it is not. */
 const HEADROOM_MEANS: Block[] = [
@@ -454,13 +470,15 @@ function cover(doc: Doc, data: PowerReport) {
     doc.text(data.siteLocation, MARGIN, y, { width: left });
   }
 
+  recordedBy(doc, data);
+
   /* --- right: what was recorded, and the facts --------------------------- */
   const x = MARGIN + left + 40;
   const width = CONTENT - left - 40;
   let at = 132;
 
   const scope = safe(
-    `${data.boardName}${data.supply.area ? `, ${data.supply.area}` : ""}${data.feed ? `, fed from ${data.feed}` : ""} — three phases and neutral, logged every ${
+    `${data.boardName}${data.supply.area ? `, ${data.supply.area}` : ""}${data.feed ? `, fed from ${midSentence(data.feed)}` : ""} — three phases and neutral, logged every ${
       summary.intervalMinutes || 5
     } minutes over ${days} ${days === 1 ? "day" : "days"}`,
   );
@@ -485,7 +503,6 @@ function cover(doc: Doc, data: PowerReport) {
         : "\u2014",
     ],
     ["Report date", shortDate(data.reportDate)],
-    ["Recorded by", `${COMPANY.name} \u00b7 Lic ${COMPANY.licence}`],
   ];
 
   for (const [name, value] of facts) {
@@ -500,9 +517,11 @@ function cover(doc: Doc, data: PowerReport) {
 
   /* --- the foot ---------------------------------------------------------- */
   const footY = PAGE.height - MARGIN - 32;
-  doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-  const noteHeight = doc.heightOfString(NOTE, { width: CONTENT, lineGap: 1.5 });
-  doc.text(NOTE, MARGIN, footY - noteHeight - 18, { width: CONTENT, lineGap: 1.5 });
+  // Held to the right-hand column so it sits under the facts rather than
+  // across the signature, which has the left-hand column to itself.
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  const noteHeight = doc.heightOfString(NOTE, { width, lineGap: 1.4 });
+  doc.text(NOTE, x, footY - noteHeight - 16, { width, lineGap: 1.4 });
 
   doc.rect(MARGIN, footY, CONTENT, 32).fill(COLOURS.bar);
   doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
@@ -517,6 +536,50 @@ function cover(doc: Doc, data: PowerReport) {
   doc.fillColor(COLOURS.ink).font("Helvetica");
 }
 
+/**
+ * Who recorded it, signed.
+ *
+ * Sat low on the cover rather than in the facts table beside it: a signature
+ * is not a fact about the recording, it is the person putting their name to
+ * it, and on the other three reports it lives in the same place at the foot of
+ * the left-hand column. The signature sits on the rule the way a pen lands on
+ * a form, and the licence numbers go under the name.
+ */
+function recordedBy(doc: Doc, data: PowerReport) {
+  const y = PAGE.height - MARGIN - 170;
+
+  label(doc, "Recorded by", MARGIN, y);
+
+  if (data.signature) {
+    doc.image(data.signature, MARGIN + 6, y + 18, { fit: [170, 46] });
+  }
+  doc.rect(MARGIN, y + 66, 220, 0.8).fill(COLOURS.inkSoft);
+
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
+  doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
+  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
+  doc.text(COMPANY.name, MARGIN, y + 91, { lineBreak: false });
+  doc.text(
+    `Contractor Licence ${COMPANY.licence}  \u00b7  Qualified Supervisor ${COMPANY.supervisor}`,
+    MARGIN,
+    y + 105,
+    { lineBreak: false },
+  );
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * A phrase written for the head of a line, used in the middle of one.
+ *
+ * The feed reads "The street supply" in its own row of the supply table and
+ * "fed from The street supply" in a sentence, which is a capital in the wrong
+ * place. A board's own name keeps its capitals, because "DB1" and "Main
+ * Switchboard" are names rather than sentence openings.
+ */
+function midSentence(text: string): string {
+  return /^The\s/.test(text) ? `the${text.slice(3)}` : text;
+}
+
 /** A small letterspaced heading, the one marker of hierarchy on the cover. */
 function label(doc: Doc, text: string, x: number, y: number) {
   doc.fillColor(COLOURS.inkSoft).font("Helvetica-Bold").fontSize(8);
@@ -527,11 +590,11 @@ function label(doc: Doc, text: string, x: number, y: number) {
 /** What a power analysis is, and what this one found. */
 function explain(doc: Doc, data: PowerReport, channels: Channel[], weekCount: number) {
   doc.addPage();
-  heading(doc, data, "About this recording");
+  heading(doc, data, "About This Recording");
 
   /* --- left: what was recorded, and what it does and does not show ------- */
   const column = 380;
-  const y = blocks(doc, MARGIN, 104, column, WHAT_IT_IS, 9);
+  const y = blocks(doc, MARGIN, 104, column, whatItIs(data.summary.intervalMinutes), 9);
 
   /* --- right: what this one found ---------------------------------------- */
   const x = MARGIN + column + 44;
@@ -601,7 +664,7 @@ function offset(widths: number[], index: number): number {
 
 function briefPage(doc: Doc, data: PowerReport, channels: Channel[]) {
   doc.addPage();
-  heading(doc, data, "The brief and the supply");
+  heading(doc, data, "The Brief and the Supply");
 
   const column = 430;
   let y = 104;
@@ -744,7 +807,7 @@ function headroomPanel(
  */
 function limitsPage(doc: Doc, data: PowerReport) {
   doc.addPage();
-  heading(doc, data, "Limitations and maximum demand");
+  heading(doc, data, "Limitations and Maximum Demand");
 
   const gap = 44;
   const column = (CONTENT - gap) / 2;
@@ -798,9 +861,9 @@ function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
     weekCount > 1 ? `Week ${number} of ${weekCount}` : "The recording";
 
   const entries: [string, number][] = [
-    ["About this recording", 2],
-    ["The brief and the supply", 3],
-    ["Limitations and maximum demand", 4],
+    ["About This Recording", 2],
+    ["The Brief and the Supply", 3],
+    ["Limitations and Maximum Demand", 4],
     ...Array.from({ length: weekCount }, (_, index): [string, number] => [
       `All conductors \u2014 ${week(index + 1)}`,
       FIRST_CHART + index,
