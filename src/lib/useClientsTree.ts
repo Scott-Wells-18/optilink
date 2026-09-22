@@ -12,6 +12,7 @@ import {
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 import { usePersisted } from "@/lib/session";
 import type { Contact, ContactInput } from "@/lib/contacts";
+import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDialog";
 import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 
 /**
@@ -120,6 +121,16 @@ type SiteRecord = {
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
 
+/** A piece of our own test gear, as the Equipment section lists it. */
+type TestEquipmentRecord = {
+  id: string;
+  name: string;
+  serialNo: string | null;
+  modelNo: string | null;
+  certFile: { id: string; originalName: string } | null;
+  photoFile: { id: string; originalName: string } | null;
+};
+
 export type DialogField = {
   name: string;
   label: string;
@@ -212,6 +223,8 @@ export function useClientsTree(enabled: boolean) {
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
   const [power, setPower] = usePersisted<PowerSpec | null>("power", null);
+  const [testGear, setTestGear] = useState<TestEquipmentRecord[]>([]);
+  const [gearDialog, setGearDialog] = usePersisted<EquipmentDraft | null>("gear", null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -225,10 +238,22 @@ export function useClientsTree(enabled: boolean) {
     }
   }, []);
 
+  /** Our own test gear is a flat list of its own, not part of the client tree. */
+  const refreshGear = useCallback(async () => {
+    try {
+      const response = await fetch("/api/test-equipment", { cache: "no-store" });
+      if (!response.ok) return;
+      setTestGear(await response.json());
+    } catch {
+      // The section shows what it has; a failed refresh is not worth a banner.
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
     void refresh();
-  }, [enabled, refresh]);
+    void refreshGear();
+  }, [enabled, refresh, refreshGear]);
 
   const submit = useCallback(
     async (values: Record<string, unknown>) => {
@@ -994,6 +1019,15 @@ export function useClientsTree(enabled: boolean) {
    * logger's recording: the file goes in, and a report comes out with a week
    * of it on each page.
    */
+  const removeGear = useCallback(
+    async (id: string, what: string) => {
+      if (!window.confirm(`Remove ${what}? Reports already issued keep their copy.`)) return;
+      await fetch(`/api/test-equipment/${id}`, { method: "DELETE" }).catch(() => {});
+      await refreshGear();
+    },
+    [refreshGear],
+  );
+
   const powerNodes = useMemo<TreeNode[]>(
     () =>
       clients
@@ -1044,10 +1078,50 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startPowerRun, setPowerDate, setPower],
   );
 
+  const equipmentNodes = useMemo<TreeNode[]>(
+    () => [
+      ...testGear.map<TreeNode>((item) => ({
+        id: `gear:${item.id}`,
+        label: item.name,
+        detail: [item.modelNo, item.serialNo ? `S/N ${item.serialNo}` : null]
+          .filter(Boolean)
+          .join("  ·  ") || (item.certFile ? "Calibrated" : "No certificate"),
+        variant: "info",
+        onActivate: () =>
+          setGearDialog({
+            id: item.id,
+            name: item.name,
+            serialNo: item.serialNo,
+            modelNo: item.modelNo,
+            certFileId: item.certFile?.id ?? null,
+            certName: item.certFile?.originalName ?? null,
+            photoFileId: item.photoFile?.id ?? null,
+            photoUrl: item.photoFile ? `/api/files/${item.photoFile.id}` : null,
+          }),
+        onRemove: () => void removeGear(item.id, item.name),
+      })),
+      {
+        id: "add:gear",
+        label: "Add new",
+        detail: "Equipment",
+        variant: "add",
+        onActivate: () => setGearDialog({ ...EMPTY_EQUIPMENT }),
+      },
+    ],
+    [testGear, setGearDialog, removeGear],
+  );
+
   return {
     nodes,
     thermalNodes,
     baNodes,
+    equipmentNodes,
+    gearDialog,
+    closeGear: () => setGearDialog(null),
+    savedGear: () => {
+      setGearDialog(null);
+      void refreshGear();
+    },
     rcdNodes,
     swmsNodes,
     powerNodes,

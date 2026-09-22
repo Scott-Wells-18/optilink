@@ -46,6 +46,7 @@ export async function PATCH(
       location?: string;
       date?: string;
       equipmentId?: string | null;
+      instrumentId?: string | null;
       brief?: string | null;
       contactName?: string | null;
     };
@@ -54,6 +55,7 @@ export async function PATCH(
       if (body[key] !== undefined) data[key] = body[key]?.slice(0, 200) || null;
     }
     if ("equipmentId" in body) data.equipmentId = body.equipmentId || null;
+    if ("instrumentId" in body) data.instrumentId = body.instrumentId || null;
     if ("brief" in body) data.brief = isBrief(body.brief) ? body.brief : null;
     if (body.date) {
       const when = new Date(`${body.date}T00:00:00Z`);

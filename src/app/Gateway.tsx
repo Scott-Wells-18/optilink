@@ -19,6 +19,7 @@ import { RcdWizard } from "@/components/RcdWizard";
 import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { PowerDialog } from "@/components/PowerDialog";
+import { EquipmentDialog } from "@/components/EquipmentDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -61,6 +62,7 @@ export function Gateway({
         if (section.id === "rcd") return { ...section, children: clients.rcdNodes };
         if (section.id === "swms") return { ...section, children: clients.swmsNodes };
         if (section.id === "power") return { ...section, children: clients.powerNodes };
+        if (section.id === "equipment") return { ...section, children: clients.equipmentNodes };
         return section;
       }),
     [
@@ -70,6 +72,7 @@ export function Gateway({
       clients.rcdNodes,
       clients.swmsNodes,
       clients.powerNodes,
+      clients.equipmentNodes,
     ],
   );
 
@@ -190,6 +193,14 @@ export function Gateway({
           runId={clients.power.runId}
           siteName={clients.power.siteName}
           onClose={clients.closePower}
+        />
+      ) : null}
+
+      {open && clients.gearDialog ? (
+        <EquipmentDialog
+          initial={clients.gearDialog}
+          onClose={clients.closeGear}
+          onSaved={clients.savedGear}
         />
       ) : null}
 

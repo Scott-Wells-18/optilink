@@ -1463,6 +1463,8 @@ body {
 
 /* A new question after a list of answers wants air, or the two read as one. */
 .issue-picks + .board-section-head,
+.supply-grid + .board-section-head,
+.rcd-drop + .board-section-head,
 .dialog-field + .board-section-head,
 .rcd-facts + .board-section-head,
 .issue-empty + .board-section-head {
@@ -1507,6 +1509,17 @@ body {
 
 .board-supply .supply {
   margin-top: 0;
+}
+
+/* A photograph of an instrument, shown back after it is uploaded. */
+.equipment-photo {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  margin-bottom: 10px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
 }
 
 .supply-grid {

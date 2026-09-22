@@ -9,25 +9,29 @@ import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
- * Loading a logger's recording onto an analysis.
+ * Loading an analyser's recording onto an analysis.
  *
  * The recording itself answers most of it — when it started, how long it ran,
  * how often it sampled and what each channel peaked at are all in the file, so
  * they are read out rather than asked for, and shown straight back so a file
  * that read wrongly is obvious before anything is sent to a client.
  *
- * What the file cannot say is why the logger went on, which board it went on,
- * and what feeds that board. Those three are what turn a set of currents into
- * an answer, so they are asked here — and the supply is written back onto the
- * board itself, where the next recording will already know it.
+ * What the file cannot say is why the analyser went on, which board it went
+ * on, what feeds that board and which instrument took the readings. Those are
+ * what turn a set of currents into an answer, so they are asked here — and the
+ * supply is written back onto the board itself, where the next recording will
+ * already know it.
  */
 
 type BoardRecord = { id: string; name: string; supply: unknown };
+
+type Instrument = { id: string; name: string; modelNo: string | null; serialNo: string | null };
 
 type Run = {
   id: string;
   location: string | null;
   equipmentId: string | null;
+  instrumentId: string | null;
   brief: string | null;
   contactName: string | null;
   sourceFile: { id: string; originalName: string } | null;
@@ -53,6 +57,7 @@ export function PowerDialog({
   const [run, setRun] = useState<Run | null>(null);
   const [namingContact, setNamingContact] = usePersisted<boolean>(`${key}:naming`, false);
   const [supply, setSupply] = useState<Supply>(EMPTY_SUPPLY);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +73,15 @@ export function PowerDialog({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Our own test gear, so the report can name the instrument the readings
+  // came off and bind its calibration certificate into the back of it.
+  useEffect(() => {
+    void fetch("/api/test-equipment", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : []))
+      .then(setInstruments)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -279,11 +293,48 @@ export function PowerDialog({
             ) : null}
 
             <div className="board-section-head">
+              <h3 className="board-section-title">What was it recorded with?</h3>
+              <p className="board-section-note">
+                {instruments.length > 0
+                  ? "The instrument's calibration certificate is bound into the back of the report."
+                  : "Nothing is on file yet. Add it under Equipment and it will appear here."}
+              </p>
+            </div>
+            {instruments.length > 0 ? (
+              <div className="issue-picks">
+                {instruments.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`issue-pick ${run?.instrumentId === item.id ? "is-on" : ""}`}
+                    onClick={() =>
+                      void patch({
+                        instrumentId: run?.instrumentId === item.id ? null : item.id,
+                      })
+                    }
+                  >
+                    <span className="issue-pick-mark is-one" aria-hidden />
+                    <span className="issue-pick-body">
+                      <span className="issue-pick-label">{item.name}</span>
+                      {item.serialNo || item.modelNo ? (
+                        <span className="issue-pick-note">
+                          {[item.modelNo, item.serialNo ? `S/N ${item.serialNo}` : null]
+                            .filter(Boolean)
+                            .join("  ·  ")}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="board-section-head">
               <h3 className="board-section-title">Which board was it on?</h3>
               <p className="board-section-note">
                 {boards.length > 0
                   ? "Picking the board brings its supply details with it, and writes anything you change back onto the board."
-                  : "No switchboards have been drawn at this site yet. Say where the logger went instead."}
+                  : "No switchboards have been drawn at this site yet."}
               </p>
             </div>
             {boards.length > 0 ? (
@@ -319,9 +370,9 @@ export function PowerDialog({
             )}
 
             <div className="board-section-head">
-              <h3 className="board-section-title">The logger&rsquo;s recording</h3>
+              <h3 className="board-section-title">The analyser&rsquo;s recording</h3>
               <p className="board-section-note">
-                The CSV or spreadsheet off the logger: a column of timestamps and a column
+                The CSV or spreadsheet off the analyser: a column of timestamps and a column
                 of maximum current for each phase and the neutral.
               </p>
             </div>
@@ -365,9 +416,13 @@ export function PowerDialog({
                   </div>
                   <div>
                     <dt>Pages</dt>
-                    {/* Cover, the explainer, the brief, a combined chart per
-                        week, then each conductor a week to a page. */}
-                    <dd>{3 + weekCount + weekCount * channelCount}</dd>
+                    {/* Cover, the explainer, the brief, the limitations, a
+                        combined chart per week, then each conductor a week to
+                        a page, then the equipment. */}
+                    <dd>
+                      {4 + weekCount + weekCount * channelCount + (run?.instrumentId ? 1 : 0)}
+                      {run?.instrumentId ? "+" : ""}
+                    </dd>
                   </div>
                 </dl>
 
@@ -429,7 +484,7 @@ export function PowerDialog({
   );
 }
 
-/** "07/09 11:55" — the way it is read off a logger. */
+/** "07/09 11:55" — the way it is read off an analyser. */
 function stamp(at: number): string {
   const date = new Date(at);
   const pad = (value: number) => String(value).padStart(2, "0");

@@ -8,6 +8,14 @@ import { reportSignature } from "@/lib/signatures";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
 import {
+  fitted,
+  readCertificate,
+  stampCertificate,
+  type Box,
+  type Certificate,
+  type Slot,
+} from "@/lib/report/certificate";
+import {
   SERIES,
   SOLO_FILL_OPACITY,
   dailyPeaks,
@@ -90,6 +98,8 @@ export type PowerReport = PageMeta & {
   feed: string | null;
   brief: Brief;
   contactName: string | null;
+  /** The instrument the readings were taken with, where one was named. */
+  instrument: Instrument | null;
   reportDate: Date;
   recording: Recording;
   summary: Summary;
@@ -117,6 +127,7 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
     include: {
       sourceFile: true,
       equipment: { select: { id: true, name: true, supply: true } },
+      instrument: { include: { certFile: true, photoFile: true } },
       site: {
         include: {
           client: { select: { name: true } },
@@ -191,6 +202,7 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
       feed: feed ? safe(feed) : null,
       brief: run.brief,
       contactName: run.contactName ? safe(run.contactName) : null,
+      instrument: await readInstrument(run.instrument),
       reportDate: new Date(),
       recording,
       summary,
@@ -200,7 +212,72 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
   };
 }
 
+/* --- the instrument the readings were taken with -------------------------- */
+
+export type Instrument = {
+  name: string;
+  serialNo: string | null;
+  modelNo: string | null;
+  /** A photograph of it, already loaded. */
+  photo: Buffer | null;
+  /** Its calibration certificate, ready to be stamped into the report. */
+  certificate: Certificate | null;
+  /** True where a certificate was filed but could not be opened. */
+  certificateUnreadable: boolean;
+};
+
+type InstrumentRow = {
+  name: string;
+  serialNo: string | null;
+  modelNo: string | null;
+  certFile: { storedName: string } | null;
+  photoFile: { storedName: string } | null;
+} | null;
+
+/**
+ * The instrument, with its certificate and photograph read off disk.
+ *
+ * Neither file is allowed to take the report down with it. A missing photo
+ * leaves the block without one; a certificate that will not open is reported
+ * on the page rather than swallowed, because a report that silently drops the
+ * evidence for its own numbers is worse than one that says the evidence is
+ * missing.
+ */
+async function readInstrument(row: InstrumentRow): Promise<Instrument | null> {
+  if (!row) return null;
+
+  let photo: Buffer | null = null;
+  if (row.photoFile) {
+    photo = await readUpload(row.photoFile.storedName).catch(() => null);
+  }
+
+  let certificate: Certificate | null = null;
+  let certificateUnreadable = false;
+  if (row.certFile) {
+    const bytes = await readUpload(row.certFile.storedName).catch(() => null);
+    certificate = bytes ? await readCertificate(bytes) : null;
+    certificateUnreadable = certificate === null;
+  }
+
+  return {
+    name: safe(row.name),
+    serialNo: row.serialNo ? safe(row.serialNo) : null,
+    modelNo: row.modelNo ? safe(row.modelNo) : null,
+    photo,
+    certificate,
+    certificateUnreadable,
+  };
+}
+
 /* --- the fixed wording ---------------------------------------------------- */
+
+/**
+ * What the instrument is called throughout the report.
+ *
+ * One name in one place: it appears in five paragraphs and on the equipment
+ * page, and five copies of a name is five things to miss when it changes.
+ */
+const ANALYSER = "MultiFunction Electrical Analyzer";
 
 /**
  * What the report says about itself.
@@ -232,10 +309,10 @@ function whatItIs(intervalMinutes: number): Block[] {
 
   return [
   {
-    text: "A Power Analyser was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.",
+    text: `A ${ANALYSER} was installed to record the current drawn by each phase and the neutral while the installation operated under normal conditions during the monitoring period.`,
   },
   {
-    text: `Current transformers were fitted to each monitored conductor and readings were recorded ${every}. This provides a record of the electrical loading that occurred while the logger was installed.`,
+    text: `Current transformers were fitted to each monitored conductor and readings were recorded ${every}. This provides a record of the electrical loading that occurred while the ${ANALYSER} was installed.`,
   },
   {
     text: "The recorded data shows the actual current measured during the monitoring period, including:",
@@ -250,7 +327,7 @@ function whatItIs(intervalMinutes: number): Block[] {
     text: "These results provide an indication of the electrical loading present during the monitoring period. They do not, by themselves, confirm the maximum demand of the installation or the amount of additional load that may be connected.",
   },
   {
-    text: "All current values shown in this report are derived from the recorded logger data. Where chart data is grouped into display intervals, the highest recorded value within each interval is shown rather than an average value. This allows short-duration peaks recorded within the interval to remain visible in the report.",
+    text: `All current values shown in this report are derived from the recorded ${ANALYSER} data. Where chart data is grouped into display intervals, the highest recorded value within each interval is shown rather than an average value. This allows short-duration peaks recorded within the interval to remain visible in the report.`,
   },
   ];
 }
@@ -288,7 +365,7 @@ const LIMITATIONS: Block[] = [
     text: "The time and season of the year have not been normalised or adjusted for in this report. Accordingly, electrical demand at other times of the year may be higher or lower than the demand recorded during this monitoring period.",
   },
   {
-    text: "The recorded results should therefore be considered a snapshot of the installation's electrical demand under the conditions that existed while the logger was installed.",
+    text: `The recorded results should therefore be considered a snapshot of the installation's electrical demand under the conditions that existed while the ${ANALYSER} was installed.`,
   },
 ];
 
@@ -318,7 +395,7 @@ const HOW_TO_READ: [string, string][] = [
   ],
   [
     "Highlighted readings",
-    "Highlighted or ringed points identify recorded logger values and show the current and time associated with the selected peak.",
+    `Highlighted or ringed points identify recorded ${ANALYSER} values and show the current and time associated with the selected peak.`,
   ],
   [
     "Monitoring period",
@@ -408,10 +485,204 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
     });
   }
 
+  const slots = equipmentPages(doc, data);
+
   stampPages(doc, data);
   doc.end();
-  return done;
+
+  const pdf = await done;
+  // The certificate's own pages go in last, into the gaps that were left and
+  // bordered for them.
+  const certificate = data.instrument?.certificate;
+  return certificate ? stampCertificate(pdf, certificate, slots, PAGE.height) : pdf;
 }
+
+/* --- the equipment the readings were taken with --------------------------- */
+
+/** The body of a page, between the heading rule and the page foot. */
+const BODY = { top: 104, height: 436 };
+
+/**
+ * The instrument block on the first equipment page.
+ *
+ * Kept narrow on purpose. A portrait certificate on a landscape page is
+ * limited by the height of the page, not its width, so every point this block
+ * does not take is a point of width the certificate can have — and at two
+ * pages across, each one of those points is worth about one and a half points
+ * of certificate height.
+ */
+const BLOCK = { photo: 96, gap: 14, details: 140, gutter: 22 };
+
+/** How many certificate pages go on a page, with and without the block. */
+const FIRST_PAGE = 2;
+const LATER_PAGE = 3;
+
+/** A certificate page is set in from its border, and the border from its gap. */
+const BORDER_GAP = 5;
+const BORDER_WIDTH = 1.4;
+
+/**
+ * The equipment page, and however many more the certificate needs.
+ *
+ * Returns the gaps the certificate's own pages are stamped into afterwards.
+ * They are drawn here, borders and all, because the border has to sit around
+ * the page at whatever size that page ends up, and only this function knows
+ * what size that is.
+ */
+function equipmentPages(doc: Doc, data: PowerReport): Slot[] {
+  const instrument = data.instrument;
+  if (!instrument) return [];
+
+  const slots: Slot[] = [];
+  const sizes = instrument.certificate?.sizes ?? [];
+
+  doc.addPage();
+  heading(doc, data, "Equipment Used");
+  instrumentBlock(doc, instrument);
+
+  const left = MARGIN + BLOCK.photo + BLOCK.gap + BLOCK.details + BLOCK.gutter;
+  layCertificates(doc, sizes.slice(0, FIRST_PAGE), 0, {
+    x: left,
+    y: BODY.top,
+    width: MARGIN + CONTENT - left,
+    height: BODY.height,
+  }, doc.bufferedPageRange().count - 1, sizes.length, slots);
+
+  // Anything the first page could not take, three across on a page of its own.
+  for (let from = FIRST_PAGE; from < sizes.length; from += LATER_PAGE) {
+    doc.addPage();
+    heading(doc, data, "Equipment Used", "Calibration certificate, continued");
+    layCertificates(doc, sizes.slice(from, from + LATER_PAGE), from, {
+      x: MARGIN,
+      y: BODY.top,
+      width: CONTENT,
+      height: BODY.height,
+    }, doc.bufferedPageRange().count - 1, sizes.length, slots);
+  }
+
+  return slots;
+}
+
+/** How many pages the equipment section will run to. */
+function equipmentPageCount(data: PowerReport): number {
+  if (!data.instrument) return 0;
+  const sizes = data.instrument.certificate?.sizes.length ?? 0;
+  return 1 + Math.ceil(Math.max(0, sizes - FIRST_PAGE) / LATER_PAGE);
+}
+
+/**
+ * The instrument itself: its photograph, and what it is, beside it.
+ *
+ * The photograph is small on purpose. It is there so a reader can see the box
+ * the readings came out of, not to be looked at, and the space it does not
+ * take is space the certificate does.
+ */
+function instrumentBlock(doc: Doc, instrument: Instrument) {
+  let x = MARGIN;
+  let width = BLOCK.photo + BLOCK.gap + BLOCK.details;
+
+  if (instrument.photo) {
+    try {
+      doc.image(instrument.photo, MARGIN, BODY.top, { fit: [BLOCK.photo, 88] });
+      x = MARGIN + BLOCK.photo + BLOCK.gap;
+      width = BLOCK.details;
+    } catch {
+      // An image the renderer will not take is not worth a failed report.
+    }
+  }
+
+  let y = BODY.top;
+  const rows: [string, string | null][] = [
+    ["Equipment name", instrument.name],
+    ["Serial no", instrument.serialNo],
+    ["Model no", instrument.modelNo],
+  ];
+
+  for (const [name, value] of rows) {
+    label(doc, name, x, y);
+    y += 13;
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(COLOURS.ink);
+    doc.text(safe(value ?? "\u2014"), x, y, { width });
+    y += doc.heightOfString(safe(value ?? "\u2014"), { width }) + 12;
+  }
+
+  const note = instrument.certificateUnreadable
+    ? "A calibration certificate is on file for this instrument but could not be read, so it has not been reproduced here."
+    : instrument.certificate
+      ? "The calibration certificate is reproduced on this page exactly as it was issued. Nothing has been retyped or redrawn."
+      : "No calibration certificate has been filed against this instrument.";
+
+  const below = Math.max(y, BODY.top + 100) + 8;
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe(note),
+    MARGIN,
+    below,
+    { width: BLOCK.photo + BLOCK.gap + BLOCK.details, lineGap: 1.8 },
+  );
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * Certificate pages across a region, each as large as it will go.
+ *
+ * Every page gets the same share of the width whatever shape it is, so a
+ * certificate whose second page is landscape does not shove the first one over
+ * — and each is fitted inside its share rather than stretched to fill it.
+ *
+ * The blue rule is set out from the page edge rather than drawn on it, so the
+ * certificate's own border, where it has one, stays its own.
+ */
+function layCertificates(
+  doc: Doc,
+  sizes: { width: number; height: number }[],
+  offset: number,
+  region: Box,
+  page: number,
+  total: number,
+  slots: Slot[],
+) {
+  if (sizes.length === 0) return;
+
+  const gap = 18;
+  const inset = BORDER_GAP + BORDER_WIDTH + 2;
+  const share = (region.width - gap * (sizes.length - 1)) / sizes.length;
+
+  sizes.forEach((size, index) => {
+    const space: Box = {
+      x: region.x + index * (share + gap) + inset,
+      y: region.y + inset,
+      width: share - inset * 2,
+      height: region.height - inset * 2,
+    };
+    const box = fitted(space, size);
+
+    // A hairline on the page edge gives a white certificate a definite edge;
+    // the blue rule sits outside it.
+    doc.lineWidth(0.5).strokeColor(COLOURS.hair);
+    doc.rect(box.x, box.y, box.width, box.height).stroke();
+    doc.lineWidth(BORDER_WIDTH).strokeColor(COLOURS.accent);
+    doc.rect(
+      box.x - BORDER_GAP,
+      box.y - BORDER_GAP,
+      box.width + BORDER_GAP * 2,
+      box.height + BORDER_GAP * 2,
+    ).stroke();
+    doc.lineWidth(1).strokeColor("#000000");
+
+    doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+    doc.text(
+      `PAGE ${offset + index + 1} OF ${total}`,
+      box.x - BORDER_GAP,
+      box.y + box.height + BORDER_GAP + 5,
+      { width: box.width + BORDER_GAP * 2, align: "center", characterSpacing: 1.1 },
+    );
+    doc.fillColor(COLOURS.ink);
+
+    slots.push({ ...box, page, source: offset + index });
+  });
+}
+
 
 /**
  * The cover.
@@ -643,8 +914,13 @@ function explain(doc: Doc, data: PowerReport, channels: Channel[], weekCount: nu
   );
   doc.text(how, x, at, { width, lineGap: 1.6 });
 
-  contents(doc, Math.max(y, at + doc.heightOfString(how, { width, lineGap: 1.6 })) + 26,
-    channels, weekCount);
+  contents(
+    doc,
+    Math.max(y, at + doc.heightOfString(how, { width, lineGap: 1.6 })) + 26,
+    channels,
+    weekCount,
+    equipmentPageCount(data),
+  );
   doc.fillColor(COLOURS.ink);
 }
 
@@ -848,7 +1124,13 @@ function howToRead(doc: Doc, y: number) {
  * pages is fixed: the covers, the notes, a chart per week with everything on
  * it, then each conductor on its own a week at a time.
  */
-function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
+function contents(
+  doc: Doc,
+  y: number,
+  channels: Channel[],
+  weekCount: number,
+  equipmentPages: number,
+) {
   const week = (number: number) =>
     weekCount > 1 ? `Week ${number} of ${weekCount}` : "The recording";
 
@@ -866,6 +1148,12 @@ function contents(doc: Doc, y: number, channels: Channel[], weekCount: number) {
         FIRST_CHART + weekCount + place * weekCount + index,
       ]),
     ),
+    ...(equipmentPages > 0
+      ? ([["Equipment Used", FIRST_CHART + weekCount * (channels.length + 1)]] as [
+          string,
+          number,
+        ][])
+      : []),
   ];
 
   label(doc, "What is in this report", MARGIN, y);
@@ -962,7 +1250,7 @@ function weekPage(
   let y = PLOT.y + PLOT.height + 26;
   doc.font("Helvetica").fontSize(7).fillColor(COLOURS.inkSoft);
   doc.text(
-    `Each line is the highest reading in every ${describeWindow(spec)} window. Peaks are the logger's own, untouched.`,
+    `Each line is the highest reading in every ${describeWindow(spec)} window. Peaks are the instrument's own, untouched.`,
     PLOT.x + PLOT.width - 300,
     y - 1,
     { width: 300, align: "right", lineBreak: false },
