@@ -1,26 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   COLUMNS,
   MAX_ROWS,
   MAX_SECTIONS,
   MIN_ROWS,
+  PHASES,
   STATE_LABELS,
   createBoard,
   createSection,
   emptyCell,
+  nextFitting,
   nextState,
-  fitsThreePhase,
-  isSpanned,
   positionNumber,
+  spanAt,
   withRows,
   type Board,
   type BoardSection,
   type CellState,
   type Numbering,
+  type Part,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
+import { DeviceMark } from "@/components/DeviceMark";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
@@ -111,23 +114,21 @@ export function BoardEditor({
   }
 
   /**
-   * One click along the cycle, skipping what will not fit.
+   * One click along the cycle: nothing, blank, breaker, three-phase breaker,
+   * RCD, and on round.
    *
-   * A three-phase RCD occupies the way above and the way below its own, so at
-   * the top or the bottom of a column, or where a neighbour is already taken
-   * by another one, the cycle steps straight past it rather than offering a
-   * device that could not physically go there.
+   * A three-phase device is three modules tall and cannot go at the top or the
+   * bottom of a column, or beside another one. There the cycle steps straight
+   * over it rather than offering a device that could not physically be there.
    */
   function cycleCell(index: number) {
     editActive((section) => {
       // A way taken up by a three-phase device beside it is not its own to
       // change: the device above or below is what is in it.
-      if (isSpanned(section, index)) return section;
+      if (spanAt(section, index).part !== "whole") return section;
 
       const cells = [...section.cells];
-      let next = nextState(cells[index].state);
-      if (next === "RCD_3P" && !fitsThreePhase(section, index)) next = nextState(next);
-      cells[index] = { ...cells[index], state: next };
+      cells[index] = { ...cells[index], state: nextFitting(section, index) };
       return { ...section, cells };
     });
   }
@@ -143,8 +144,8 @@ export function BoardEditor({
   function cycleExtra(index: number) {
     editActive((section) => {
       const extras = [...section.extras];
-      // Contactors only exist out here, so this cycle has the extra stop.
-      extras[index] = { ...extras[index], state: nextState(extras[index].state, true) };
+      // Out here nothing is stacked, so every device fits.
+      extras[index] = { ...extras[index], state: nextState(extras[index].state) };
       return { ...section, extras };
     });
   }
@@ -318,7 +319,7 @@ export function BoardEditor({
             <div className="board-section-head">
               <h3 className="board-section-title">Additional</h3>
               <p className="board-section-note">
-                Anything outside the grid — beside the board, or up by the main switch.
+                Anything up by the main switch — an isolator, a surge device, a contactor.
               </p>
             </div>
             <div className="board-extra-row">
@@ -358,24 +359,50 @@ export function BoardEditor({
                 {active.name.trim() || "Section"}
               </h3>
               <p className="board-section-note">
-                Click a position to change it. {active.rows * COLUMNS} positions.
+                Click a way to walk it through the devices. {active.rows * COLUMNS} ways.
               </p>
             </div>
 
             <div className="board-grid">
               {rows.map((indexes, row) => (
                 <div className="board-row" key={row}>
-                  {indexes.map((index) => (
-                    <Cell
-                      key={index}
-                      number={positionNumber(active, index, board.numbering)}
-                      state={active.cells[index].state}
-                      label={active.cells[index].label}
-                      spanned={isSpanned(active, index)}
-                      onCycle={() => cycleCell(index)}
-                      onLabel={(value) => labelCell(index, value)}
-                    />
-                  ))}
+                  {indexes.map((index, column) => {
+                    const span = spanAt(active, index);
+                    // A way drawing part of the device beside it shows that
+                    // device's name, not its own: there is only one device.
+                    const owner =
+                      span.part === "top"
+                        ? index + COLUMNS
+                        : span.part === "bottom"
+                          ? index - COLUMNS
+                          : index;
+                    const cell = (
+                      <Cell
+                        key={index}
+                        state={span.state}
+                        part={span.part}
+                        label={active.cells[owner].label}
+                        onCycle={() => cycleCell(index)}
+                        onLabel={(value) => labelCell(owner, value)}
+                      />
+                    );
+                    // The numbers run up the middle, between the two rails,
+                    // the way they are printed on the escutcheon.
+                    if (column === 0) {
+                      return (
+                        <Fragment key={index}>
+                          {cell}
+                          <span className="board-gutter">
+                            <span>{positionNumber(active, index, board.numbering)}</span>
+                            <span>
+                              {positionNumber(active, index + 1, board.numbering)}
+                            </span>
+                          </span>
+                        </Fragment>
+                      );
+                    }
+                    return cell;
+                  })}
                 </div>
               ))}
             </div>
@@ -435,29 +462,29 @@ export function BoardEditor({
 }
 
 function Cell({
-  number,
   state,
+  part = "whole",
   label,
-  spanned = false,
   onCycle,
   onLabel,
   onRemove,
 }: {
-  number?: number;
   state: CellState;
+  /** Which third of a three-phase device this way is drawing. */
+  part?: Part;
   label: string;
-  /** Taken up by a three-phase device above or below it. */
-  spanned?: boolean;
   onCycle: () => void;
   onLabel: (value: string) => void;
   onRemove?: () => void;
 }) {
   /**
-   * The whole position is the switch — a click anywhere on it moves to the next
-   * state. Naming is deliberately behind its own control: an always-live text
-   * box would swallow most of those clicks.
+   * The whole position is the switch — a click anywhere on it puts down
+   * whatever is in hand. Naming is deliberately behind its own control: an
+   * always-live text box would swallow most of those clicks.
    */
   const [editing, setEditing] = useState(false);
+  const spanned = part === "top" || part === "bottom";
+  const phase = spanned || part === "middle" ? PHASES[partIndex(part)] : null;
 
   return (
     <div
@@ -470,7 +497,7 @@ function Cell({
       tabIndex={spanned ? -1 : 0}
       title={
         spanned
-          ? "Taken up by the three-phase RCD beside it"
+          ? `${STATE_LABELS[state]} — this way is part of the device beside it`
           : `${STATE_LABELS[state]} — click to change`
       }
       onKeyDown={(event) => {
@@ -481,7 +508,8 @@ function Cell({
         }
       }}
     >
-      <span className="board-cell-no">{number ?? "R"}</span>
+      <DeviceMark state={state} part={part} />
+      {phase && part !== "bottom" ? <span className="board-cell-phase">{phase}</span> : null}
 
       {editing ? (
         <input
@@ -489,7 +517,7 @@ function Cell({
           className="board-cell-label"
           value={label}
           placeholder="Name"
-          aria-label={number ? `Position ${number} name` : "RCD name"}
+          aria-label="Circuit name"
           onChange={(event) => onLabel(event.target.value)}
           onClick={(event) => event.stopPropagation()}
           onBlur={() => setEditing(false)}
@@ -498,16 +526,18 @@ function Cell({
             if (event.key === "Enter" || event.key === "Escape") setEditing(false);
           }}
         />
-      ) : (
+      ) : (part === "whole" || part === "bottom") &&
+        state !== "EMPTY" &&
+        state !== "BLANK" ? (
         <span className={`board-cell-text ${label ? "" : "is-blank"}`}>
           {label || "Unnamed"}
         </span>
-      )}
+      ) : null}
 
       <button
         type="button"
         className="board-cell-edit"
-        aria-label={number ? `Name position ${number}` : "Name this RCD"}
+        aria-label="Name this way"
         onClick={(event) => {
           event.stopPropagation();
           setEditing(true);
@@ -533,6 +563,11 @@ function Cell({
       ) : null}
     </div>
   );
+}
+
+/** Which phase a third of a three-phase device switches. */
+function partIndex(part: Part): number {
+  return part === "top" ? 0 : part === "middle" ? 1 : 2;
 }
 
 function NumberingPicker({

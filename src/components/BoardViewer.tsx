@@ -12,11 +12,14 @@ import {
   isRcd,
   positionNumber,
   slotKey,
+  spanAt,
   type Board,
   type BoardCell,
   type FreeItem,
+  type Part,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
+import { DeviceMark } from "@/components/DeviceMark";
 import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { IssueDialog } from "@/components/IssueDialog";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
@@ -269,17 +272,30 @@ export function BoardViewer({
             <div className="board-grid">
               {rows.map((indexes, row) => (
                 <div className="board-row" key={row}>
-                  {indexes.map((index) => (
-                    <ViewCell
-                      key={index}
-                      cell={active.cells[index]}
-                      number={positionNumber(active, index, board.numbering)}
-                      slot={slotKey(active.id, "cell", index)}
-                      active={slot === slotKey(active.id, "cell", index)}
-                      findings={countFor("cell", index)}
-                      onPick={setSlot}
-                    />
-                  ))}
+                  {indexes.map((index) => {
+                    const span = spanAt(active, index);
+                    // A way drawing part of the three-phase device beside it
+                    // belongs to that device: it is picked, named and counted
+                    // as the one way the device actually sits in.
+                    const owner =
+                      span.part === "top"
+                        ? index + COLUMNS
+                        : span.part === "bottom"
+                          ? index - COLUMNS
+                          : index;
+                    return (
+                      <ViewCell
+                        key={index}
+                        cell={{ state: span.state, label: active.cells[owner].label }}
+                        part={span.part}
+                        number={positionNumber(active, index, board.numbering)}
+                        slot={slotKey(active.id, "cell", owner)}
+                        active={slot === slotKey(active.id, "cell", owner)}
+                        findings={countFor("cell", owner)}
+                        onPick={setSlot}
+                      />
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -428,6 +444,7 @@ function Rank({ issue }: { issue: Issue }) {
 
 function ViewCell({
   cell,
+  part = "whole",
   number,
   slot,
   active,
@@ -435,6 +452,8 @@ function ViewCell({
   onPick,
 }: {
   cell: BoardCell;
+  /** Which third of a three-phase device this way is drawing. */
+  part?: Part;
   number?: number;
   slot: string;
   active: boolean;
@@ -459,11 +478,16 @@ function ViewCell({
         }
       }}
     >
+      <DeviceMark state={cell.state} part={part} />
       <span className="board-cell-no">{number ?? "R"}</span>
-      <span className={`board-cell-text ${cell.label ? "" : "is-blank"}`}>
-        {cell.label || (selectable ? "Unnamed" : "")}
-      </span>
-      {findings > 0 ? <span className="board-cell-count">{findings}</span> : null}
+      {part === "whole" || part === "bottom" ? (
+        <span className={`board-cell-text ${cell.label ? "" : "is-blank"}`}>
+          {cell.label || (selectable ? "Unnamed" : "")}
+        </span>
+      ) : null}
+      {findings > 0 && part !== "top" && part !== "middle" ? (
+        <span className="board-cell-count">{findings}</span>
+      ) : null}
     </div>
   );
 }
@@ -489,7 +513,7 @@ function pickedCell(board: Board, slot: string): Picked | null {
       title: item.label || "Unnamed",
       kind: STATE_LABELS[item.state],
       where: item.label || STATE_LABELS[item.state],
-      device: isRcd(item.state) ? "RCD" : STATE_LABELS[item.state].toLowerCase(),
+      device: isRcd(item.state) ? STATE_LABELS[item.state].split(",")[0] : STATE_LABELS[item.state].toLowerCase(),
       fixedType: null,
     };
   }

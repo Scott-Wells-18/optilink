@@ -6,7 +6,10 @@ import {
   MAX_ITEMS,
   MIN_ITEM_H,
   MIN_ITEM_W,
+  DEVICES,
+  isThreePhase,
   STATE_LABELS,
+  STATE_SHORT,
   createFreeBoard,
   createItem,
   isRcd,
@@ -16,6 +19,7 @@ import {
   type CellState,
   type FreeItem,
 } from "@/lib/board";
+import { DeviceMark } from "@/components/DeviceMark";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
@@ -34,8 +38,14 @@ import { clearSession, usePersisted } from "@/lib/session";
  * the same drawing works on a laptop and on a phone at the switchboard.
  */
 
-/** What can be dropped on the board, in the order the palette offers them. */
-const PALETTE: CellState[] = ["BREAKER", "RCD", "RCD_3P", "CONTACTOR", "BLANK"];
+/**
+ * What can be dropped on the board, in the order the palette offers them.
+ *
+ * A freehand board places each device where it really sits, so a three-phase
+ * one is just a taller box rather than three ways on a grid — it is drawn to
+ * whatever size it is on the wall.
+ */
+const PALETTE: CellState[] = DEVICES;
 
 type Drag =
   | { kind: "move"; id: string; dx: number; dy: number }
@@ -373,8 +383,10 @@ export function FreeBoardEditor({
                     className={`free-add is-${state.toLowerCase()}`}
                     onClick={() => add(state)}
                   >
-                    <span className="free-add-swatch" aria-hidden />
-                    {STATE_LABELS[state]}
+                    <span className="free-add-swatch" aria-hidden>
+                      <DeviceMark state={state} />
+                    </span>
+                    {STATE_SHORT[state]}
                   </button>
                 ))}
               </div>
@@ -415,15 +427,16 @@ export function FreeBoardEditor({
                       if (sequencing) bumpOrder(item);
                     }}
                   >
+                    <DeviceMark state={item.state} />
                     {item.order !== null ? (
                       <span className="free-item-order">{item.order}</span>
                     ) : null}
                     <span className={`free-item-text ${item.label ? "" : "is-blank"}`}>
                       {item.label || STATE_LABELS[item.state]}
                     </span>
-                    {item.state === "RCD_3P" ? (
+                    {isThreePhase(item.state) ? (
                       <span className="free-item-phase" aria-hidden>
-                        3ph
+                        3{"\u03c6"}
                       </span>
                     ) : null}
 
@@ -481,7 +494,9 @@ export function FreeBoardEditor({
                       title={STATE_LABELS[state]}
                       aria-label={STATE_LABELS[state]}
                       onClick={() => edit(selected.id, (item) => ({ ...item, state }))}
-                    />
+                    >
+                      <DeviceMark state={state} />
+                    </button>
                   ))}
                 </div>
                 <button
@@ -603,15 +618,16 @@ export function FreeBoardView({
               }
             }}
           >
+            <DeviceMark state={item.state} />
             {showOrder && isRcd(item.state) ? (
               <span className="free-item-order">{rank}</span>
             ) : null}
             <span className={`free-item-text ${item.label ? "" : "is-blank"}`}>
               {item.label || STATE_LABELS[item.state]}
             </span>
-            {item.state === "RCD_3P" ? (
+            {isThreePhase(item.state) ? (
               <span className="free-item-phase" aria-hidden>
-                3ph
+                3{"\u03c6"}
               </span>
             ) : null}
             {badge ? <span className="board-cell-count">{badge}</span> : null}

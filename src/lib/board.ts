@@ -7,7 +7,29 @@
  * positions. Fifteen rows is thirty positions, which covers most sections.
  */
 
-export type CellState = "EMPTY" | "BLANK" | "BREAKER" | "RCD" | "RCD_3P" | "CONTACTOR";
+/**
+ * What is in a way.
+ *
+ * These are devices, not colours. An RCD and an RCBO are different things and
+ * a board that says "RCD" where an RCBO sits is wrong on a compliance
+ * document: an RCD protects people and nothing else, while an RCBO is an RCD
+ * and a breaker in one enclosure and protects the cable as well. Both take an
+ * RCD test; only one of them will trip on an overload.
+ *
+ * Every device comes in single and three-phase. A three-phase device is three
+ * modules tall and occupies the way above and the way below its own.
+ */
+export type CellState =
+  | "EMPTY"
+  | "BLANK"
+  | "BREAKER"
+  | "BREAKER_3P"
+  | "RCD"
+  | "RCD_3P"
+  | "RCBO"
+  | "RCBO_3P"
+  | "CONTACTOR"
+  | "CONTACTOR_3P";
 
 export type BoardCell = { state: CellState; label: string };
 
@@ -97,31 +119,89 @@ export const MIN_ROWS = 1;
 export const MAX_ROWS = 40;
 export const MAX_SECTIONS = 12;
 
-/** Clicking a position in the grid walks through these, then starts again. */
-const GRID_CYCLE: CellState[] = ["EMPTY", "BLANK", "BREAKER", "RCD", "RCD_3P"];
+/**
+ * Every device that can go in a way, in the order they are offered.
+ *
+ * Single-phase first with its three-phase twin beside it, so the pair reads as
+ * one device in two sizes rather than as two unrelated things.
+ */
+export const DEVICES: CellState[] = [
+  "BLANK",
+  "BREAKER",
+  "BREAKER_3P",
+  "RCD",
+  "RCD_3P",
+  "RCBO",
+  "RCBO_3P",
+  "CONTACTOR",
+  "CONTACTOR_3P",
+];
 
-/** Outside the grid there can also be contactors. */
-const EXTRA_CYCLE: CellState[] = [...GRID_CYCLE, "CONTACTOR"];
+/**
+ * Clicking a way walks through these, then starts again.
+ *
+ * Empty first, then the devices in the order above: each one, then its
+ * three-phase twin. A three-phase device that will not fit where it was
+ * clicked is stepped straight past rather than offered.
+ */
+const GRID_CYCLE: CellState[] = ["EMPTY", ...DEVICES];
+
+/** Everything a saved board may legitimately hold. */
+const KNOWN: CellState[] = GRID_CYCLE;
 
 export const STATE_LABELS: Record<CellState, string> = {
   EMPTY: "Nothing there",
   BLANK: "Blank",
   BREAKER: "Breaker",
+  BREAKER_3P: "Breaker, three phase",
   RCD: "RCD",
   RCD_3P: "RCD, three phase",
+  RCBO: "RCBO",
+  RCBO_3P: "RCBO, three phase",
   CONTACTOR: "Contactor",
+  CONTACTOR_3P: "Contactor, three phase",
+};
+
+/** The short name, for a palette button or a tight column. */
+export const STATE_SHORT: Record<CellState, string> = {
+  EMPTY: "Empty",
+  BLANK: "Blank",
+  BREAKER: "Breaker",
+  BREAKER_3P: "Breaker 3φ",
+  RCD: "RCD",
+  RCD_3P: "RCD 3φ",
+  RCBO: "RCBO",
+  RCBO_3P: "RCBO 3φ",
+  CONTACTOR: "Contactor",
+  CONTACTOR_3P: "Contactor 3φ",
 };
 
 /** Positions carrying a device — the ones a thermal photo can be pinned to. */
 export function isDevice(state: CellState): boolean {
-  return (
-    state === "BREAKER" || state === "RCD" || state === "RCD_3P" || state === "CONTACTOR"
-  );
+  return state !== "EMPTY" && state !== "BLANK";
 }
 
-/** Positions an RCD test lands on. A breaker has nothing to trip. */
+/**
+ * Positions an RCD test lands on.
+ *
+ * An RCBO as well as an RCD. They are not the same device — an RCD protects
+ * people and nothing else, an RCBO is an RCD and a breaker in one enclosure
+ * and protects the cable too — but both carry the same residual-current
+ * element and are tested exactly the same way. A breaker has nothing to trip
+ * and a contactor is not a protective device at all.
+ */
 export function isRcd(state: CellState): boolean {
-  return state === "RCD" || state === "RCD_3P";
+  return state === "RCD" || state === "RCD_3P" || state === "RCBO" || state === "RCBO_3P";
+}
+
+/** Three modules tall, occupying the way above and the way below its own. */
+export function isThreePhase(state: CellState): boolean {
+  return state.endsWith("_3P");
+}
+
+/** How many modules a device takes up on the board. */
+export function polesOf(state: CellState): number {
+  return isThreePhase(state) ? 3 : 1;
 }
 
 /**
@@ -131,22 +211,54 @@ export function isRcd(state: CellState): boolean {
  * of the instrument's records rather than one.
  */
 export function testsFor(state: CellState): number {
-  return state === "RCD_3P" ? 3 : 1;
+  return isRcd(state) && isThreePhase(state) ? 3 : 1;
 }
 
 /**
- * Whether a position is taken up by a three-phase device above or below it.
+ * Which part of a device a way is drawing.
  *
- * A three-phase RCD is three modules tall and occupies the way above and the
- * way below its own. That is worked out from where the device sits rather than
- * written onto its neighbours, so nothing has to be cleared when one is placed
- * and nothing is lost when one is taken away: whatever was in those ways is
- * still there, and comes back the moment the device is removed.
+ * A single device fills its way on its own and is "whole". A three-phase one
+ * is three modules tall, so the way above it draws the device's top, its own
+ * way draws the middle — where the toggle is — and the way below draws the
+ * bottom. Drawn that way the three read as one device standing across three
+ * ways, which is what it is.
  */
+export type Part = "whole" | "top" | "middle" | "bottom";
+
+export type Span = { state: CellState; part: Part };
+
+/**
+ * What a way is really showing: its own device, or part of the three-phase one
+ * standing across it.
+ *
+ * Worked out from where the device sits rather than written onto its
+ * neighbours, so nothing has to be cleared when one is placed and nothing is
+ * lost when one is taken away: whatever was in those ways is still there, and
+ * comes back the moment the device is removed.
+ */
+export function spanAt(section: BoardSection, index: number): Span {
+  const own = section.cells[index]?.state ?? "EMPTY";
+
+  // A three-phase device only stands across three ways where it has three to
+  // stand across. One saved somewhere it cannot fit — a board drawn before
+  // that was prevented, or edited outside the app — is drawn in its own way
+  // alone rather than hanging off the end of the rail.
+  const claims = (at: number) =>
+    isThreePhase(section.cells[at]?.state ?? "EMPTY") && fitsThreePhase(section, at);
+
+  if (claims(index - COLUMNS)) {
+    return { state: section.cells[index - COLUMNS].state, part: "bottom" };
+  }
+  if (claims(index + COLUMNS)) {
+    return { state: section.cells[index + COLUMNS].state, part: "top" };
+  }
+  return { state: own, part: claims(index) ? "middle" : "whole" };
+}
+
+/** Whether a position is taken up by a three-phase device above or below it. */
 export function isSpanned(section: BoardSection, index: number): boolean {
-  const above = section.cells[index - COLUMNS];
-  const below = section.cells[index + COLUMNS];
-  return above?.state === "RCD_3P" || below?.state === "RCD_3P";
+  const part = spanAt(section, index).part;
+  return part === "top" || part === "bottom";
 }
 
 /**
@@ -162,15 +274,40 @@ export function fitsThreePhase(section: BoardSection, index: number): boolean {
   const below = index + COLUMNS;
   if (above < 0 || below >= section.rows * COLUMNS) return false;
   if (above % COLUMNS !== column || below % COLUMNS !== column) return false;
-  return !isSpanned(section, above) && !isSpanned(section, below);
+
+  // Neither neighbour may be a three-phase device itself, nor be taken up by
+  // one standing across it — which, since a device reaches exactly one way
+  // each side, means looking one further out, away from this position. This
+  // way itself is never counted against it, whether or not it already holds
+  // the device being asked about. Written from the cells alone so it cannot
+  // call back into the span it is being asked about.
+  const three = (at: number) => isThreePhase(section.cells[at]?.state ?? "EMPTY");
+  if (three(above) || three(above - COLUMNS)) return false;
+  if (three(below) || three(below + COLUMNS)) return false;
+  return true;
 }
 
 /** What the instrument's three records are called, in the order they're taken. */
 export const PHASES = ["L1", "L2", "L3"] as const;
 
-export function nextState(state: CellState, inExtras = false): CellState {
-  const cycle = inExtras ? EXTRA_CYCLE : GRID_CYCLE;
-  return cycle[(cycle.indexOf(state) + 1) % cycle.length];
+export function nextState(state: CellState): CellState {
+  return GRID_CYCLE[(GRID_CYCLE.indexOf(state) + 1) % GRID_CYCLE.length];
+}
+
+/**
+ * The next thing that will actually fit here.
+ *
+ * A three-phase device needs the way above and the way below, so at the top or
+ * the bottom of a column, or beside another one, the cycle steps over it
+ * rather than stopping on something that could not physically be there.
+ */
+export function nextFitting(section: BoardSection, index: number): CellState {
+  let next = nextState(section.cells[index].state);
+  for (let guard = 0; guard < GRID_CYCLE.length; guard += 1) {
+    if (!isThreePhase(next) || fitsThreePhase(section, index)) return next;
+    next = nextState(next);
+  }
+  return "EMPTY";
 }
 
 export function emptyCell(): BoardCell {
@@ -335,7 +472,7 @@ export function normaliseBoard(value: unknown): Board {
 function normaliseItem(value: unknown): FreeItem | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<FreeItem>;
-  if (!EXTRA_CYCLE.includes(raw.state as CellState) || raw.state === "EMPTY") return null;
+  if (!KNOWN.includes(raw.state as CellState) || raw.state === "EMPTY") return null;
 
   const size = (given: unknown, least: number) =>
     typeof given === "number" && Number.isFinite(given)
@@ -386,7 +523,7 @@ function normaliseCell(value: unknown): BoardCell {
   if (!value || typeof value !== "object") return emptyCell();
   const raw = value as Partial<BoardCell>;
   return {
-    state: EXTRA_CYCLE.includes(raw.state as CellState) ? (raw.state as CellState) : "EMPTY",
+    state: KNOWN.includes(raw.state as CellState) ? (raw.state as CellState) : "EMPTY",
     label: typeof raw.label === "string" ? raw.label.slice(0, 80) : "",
   };
 }
@@ -401,11 +538,13 @@ export function describeBoard(board: Board): string {
   const parts: string[] = [];
   if (isFreeBoard(board)) parts.push("Drawn freehand");
   else if (board.sections.length > 1) parts.push(`${board.sections.length} sections`);
-  const breakers = count("BREAKER");
+  const breakers = count("BREAKER") + count("BREAKER_3P");
   const rcds = count("RCD") + count("RCD_3P");
-  const contactors = count("CONTACTOR");
+  const rcbos = count("RCBO") + count("RCBO_3P");
+  const contactors = count("CONTACTOR") + count("CONTACTOR_3P");
   if (breakers) parts.push(`${breakers} breaker${breakers === 1 ? "" : "s"}`);
   if (rcds) parts.push(`${rcds} RCD${rcds === 1 ? "" : "s"}`);
+  if (rcbos) parts.push(`${rcbos} RCBO${rcbos === 1 ? "" : "s"}`);
   if (contactors) parts.push(`${contactors} contactor${contactors === 1 ? "" : "s"}`);
   return parts.join("  ·  ") || "Not drawn up yet";
 }
