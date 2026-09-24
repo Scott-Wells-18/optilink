@@ -14,7 +14,7 @@ import {
   type Numbering,
 } from "@/lib/board";
 import { namesMatch } from "@/lib/rcd/names";
-import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
+import { type RcdRow } from "@/lib/rcd/parse";
 
 /**
  * Pairing the instrument's tests with the ways on the board.
@@ -242,7 +242,20 @@ export type MappingResult = {
 };
 
 /**
- * Deal the real tests onto the walk.
+ * Deal the instrument's tests onto the walk.
+ *
+ * Every row is dealt, in the order the instrument numbered them, including a
+ * row that came back with nothing measured. That was not always so: rows
+ * reading "---" across all six measurements used to be taken out first, on the
+ * understanding that the instrument logs a fetch whenever it is woken without
+ * a device on the leads. It does not reliably do that. A first test that came
+ * back empty is a first test all the same, and taking it out slides every
+ * later reading onto the wrong way — which is worse than reporting an empty
+ * one, because it is wrong quietly.
+ *
+ * A device whose readings are all empty now lands on its own way and is
+ * assessed as having recorded nothing, which is visible on the results page
+ * and can be acted on.
  *
  * `extras` says how many times over a way was tested: a way marked ×2 swallows
  * two further rows after its own, which are set aside rather than mapped. On a
@@ -253,8 +266,9 @@ export function mapTests(
   positions: Position[],
   extras: Record<string, number> = {},
 ): MappingResult {
-  const dropped = rows.filter(isEmptyRow);
-  const real = rows.filter((row) => !isEmptyRow(row));
+  // Nothing is held back: the instrument's sequence is the walk's sequence.
+  const dropped: RcdRow[] = [];
+  const real = rows;
 
   const pairs: Pairing[] = [];
   const duplicates: RcdRow[] = [];

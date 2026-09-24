@@ -1,10 +1,20 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
+import { readInstrument, type Instrument } from "@/lib/report/instrument";
+import { expiry } from "@/lib/report/calibration";
+import {
+  fitted,
+  readCertificate,
+  stampCertificate,
+  type Box,
+  type Certificate,
+  type Slot,
+} from "@/lib/report/certificate";
 import { prisma } from "@/lib/db";
 import { readUpload } from "@/lib/storage";
 import { COMPANY } from "@/lib/company";
-import { LIMIT_SOURCE, showReading, type Verdict } from "@/lib/rcd/assess";
+import { showReading, type Verdict } from "@/lib/rcd/assess";
 import { loadTuning } from "@/lib/rcd/settings";
 import { CHECKLIST } from "@/lib/rcd/checklist";
 import { normaliseWalk } from "@/lib/rcd/map";
@@ -89,15 +99,18 @@ export type RcdResultRow = {
 };
 
 
-export type RcdReport = PageMeta & {
+/**
+ * One switchboard, tested.
+ *
+ * Everything in here is a fact about that board: its own readings, its own
+ * walk, its own corrections, its own instrument export. A visit that took in
+ * three boards carries three of these, and the report sets each out under its
+ * own name rather than running them together.
+ */
+export type BoardTest = {
   boardName: string;
   testDate: Date;
-  reportDate: Date;
-  contactName: string | null;
-  instrument: string | null;
   results: RcdResultRow[];
-  limits: { kindLabel: string; limits: RcdLimits }[];
-  concernPercent: number;
   corrections: {
     droppedEmpty: string[];
     droppedDuplicate: string[];
@@ -105,100 +118,142 @@ export type RcdReport = PageMeta & {
     walk: string;
   };
   checklist: { question: string; answer: string }[];
+  /** The instrument's own export for this board, and its page sizes. */
   original: Buffer | null;
-  /** How many pages the instrument's own report runs to. */
-  originalPages: number;
+  originalPages: Certificate | null;
+};
+
+export type RcdReport = PageMeta & {
+  reportDate: Date;
+  contactName: string | null;
+  /** The instrument, named for the report rather than for any one board. */
+  instrument: string | null;
+  /** Our own gear, where one was chosen: for the Equipment Used pages. */
+  gear: Instrument | null;
+  boards: BoardTest[];
+  limits: { kindLabel: string; limits: RcdLimits }[];
+  concernPercent: number;
 };
 
 /* --- gathering ------------------------------------------------------------ */
 
-export async function loadRcdReport(runId: string): Promise<RcdReport | null> {
-  const run = await prisma.rcdTestRun.findUnique({
-    where: { id: runId },
+export async function loadRcdReport(reportId: string): Promise<RcdReport | null> {
+  const report = await prisma.rcdReport.findUnique({
+    where: { id: reportId },
     include: {
-      equipment: { select: { name: true } },
-      sourceFile: true,
+      instrument: { include: { certFile: true, photoFile: true } },
       site: {
         include: {
           client: { select: { name: true } },
           contacts: { orderBy: { createdAt: "asc" }, take: 1 },
         },
       },
-      results: { orderBy: { position: "asc" } },
+      tests: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          equipment: { select: { name: true } },
+          sourceFile: true,
+          results: { orderBy: { position: "asc" } },
+        },
+      },
     },
   });
-  if (!run) return null;
+  if (!report) return null;
 
   const tuning = await loadTuning();
-  const parsed = (run.parsed ?? {}) as {
-    company?: string | null;
-    siteName?: string | null;
-    boardName?: string | null;
-  };
-  const identity = resolveIdentity(parsed, {
-    siteName: run.site.name,
-    siteLocation: run.site.location,
-    boardName: run.equipment?.name ?? "Switchboard",
-  });
-  const corrections = (run.corrections ?? {}) as {
-    droppedEmpty?: string[];
-    droppedDuplicate?: string[];
-    untested?: string[];
-    walk?: unknown;
-  };
-  const checklist = (run.checklist ?? {}) as Record<string, boolean | string>;
-  const original = run.sourceFile ? await fileBytes(run.sourceFile.storedName) : null;
+  const boards: BoardTest[] = [];
+  // The instrument's own name for itself, off whichever board's export gives
+  // one: it is the same machine across a visit.
+  let named: string | null = null;
+
+  for (const run of report.tests) {
+    const parsed = (run.parsed ?? {}) as {
+      company?: string | null;
+      siteName?: string | null;
+      boardName?: string | null;
+    };
+    if (!named && parsed.company) named = safe(parsed.company);
+
+    const identity = resolveIdentity(parsed, {
+      siteName: report.site.name,
+      siteLocation: report.site.location,
+      boardName: run.equipment?.name ?? "Switchboard",
+    });
+    const corrections = (run.corrections ?? {}) as {
+      droppedEmpty?: string[];
+      droppedDuplicate?: string[];
+      untested?: string[];
+      walk?: unknown;
+    };
+    const checklist = (run.checklist ?? {}) as Record<string, boolean | string>;
+    const original = run.sourceFile ? await fileBytes(run.sourceFile.storedName) : null;
+
+    boards.push({
+      boardName: safe(identity.boardName),
+      testDate: run.date,
+      results: run.results.map((result) => ({
+        label: safe(result.label),
+        ratingMa: result.ratingMa,
+        kindLabel: result.kind ? tuning.limits[result.kind].kindLabel : "—",
+        half: pick(result.halfAt0, result.halfAt180),
+        rated: pick(result.ratedAt0, result.ratedAt180),
+        five: pick(result.fiveAt0, result.fiveAt180),
+        angles: [
+          one(result.halfAt0),
+          one(result.halfAt180),
+          one(result.ratedAt0),
+          one(result.ratedAt180),
+          one(result.fiveAt0),
+          one(result.fiveAt180),
+        ],
+        touchVolts: result.touchVolts,
+        verdict: result.verdict as Verdict,
+        reasons: result.reasons.map(safe),
+      })),
+      corrections: {
+        droppedEmpty: (corrections.droppedEmpty ?? []).map(safe),
+        droppedDuplicate: (corrections.droppedDuplicate ?? []).map(safe),
+        untested: (corrections.untested ?? []).map(safe),
+        walk: describeWalk(corrections.walk),
+      },
+      checklist: CHECKLIST.map((item) => ({
+        question: item.question,
+        answer: safe(answerFor(checklist[item.key])),
+      })),
+      original,
+      originalPages: original ? await readCertificate(original) : null,
+    });
+  }
+
+  const first = report.tests[0];
+  const identity = resolveIdentity(
+    (first?.parsed ?? {}) as { siteName?: string | null; boardName?: string | null },
+    {
+      siteName: report.site.name,
+      siteLocation: report.site.location,
+      boardName: first?.equipment?.name ?? "Switchboard",
+    },
+  );
+  const gear = await readInstrument(report.instrument);
 
   return {
-    clientName: safe(run.site.client.name),
+    clientName: safe(report.site.client.name),
     siteName: safe(identity.siteName),
     siteLocation: identity.siteLocation ? safe(identity.siteLocation) : null,
-    contactName: run.site.contacts[0] ? safe(run.site.contacts[0].name) : null,
-    boardName: safe(identity.boardName),
-    testDate: run.date,
+    contactName: report.site.contacts[0] ? safe(report.site.contacts[0].name) : null,
     reportDate: new Date(),
-    instrument: parsed.company ? safe(parsed.company) : null,
-    results: run.results.map((result) => ({
-      label: safe(result.label),
-      ratingMa: result.ratingMa,
-      kindLabel: result.kind ? tuning.limits[result.kind].kindLabel : "—",
-      half: pick(result.halfAt0, result.halfAt180),
-      rated: pick(result.ratedAt0, result.ratedAt180),
-      five: pick(result.fiveAt0, result.fiveAt180),
-      angles: [
-        one(result.halfAt0),
-        one(result.halfAt180),
-        one(result.ratedAt0),
-        one(result.ratedAt180),
-        one(result.fiveAt0),
-        one(result.fiveAt180),
-      ],
-      touchVolts: result.touchVolts,
-      verdict: result.verdict as Verdict,
-      reasons: result.reasons.map(safe),
-    })),
+    instrument: gear?.name ?? named,
+    gear,
+    boards,
     limits: Object.values(tuning.limits).map((limits) => ({
       kindLabel: limits.kindLabel,
       limits,
     })),
     concernPercent: tuning.concernPercent,
-    corrections: {
-      droppedEmpty: (corrections.droppedEmpty ?? []).map(safe),
-      droppedDuplicate: (corrections.droppedDuplicate ?? []).map(safe),
-      untested: (corrections.untested ?? []).map(safe),
-      walk: describeWalk(corrections.walk),
-    },
-    checklist: CHECKLIST.map((item) => ({
-      question: item.question,
-      answer: safe(answerFor(checklist[item.key])),
-    })),
-    original,
-    originalPages: original ? await countPages(original) : 0,
     logo: await brandBytes("logo.jpg"),
     signature: await reportSignature(),
   };
 }
-
 
 /** A single reading, with a refusal to trip called what it is. */
 function one(value: number | null): Reading {
@@ -309,6 +364,11 @@ const GROUPS: { verdict: Verdict; title: string; blurb: string; empty: string }[
 ];
 
 /** Cover and contents are drawn by hand; the sections follow. */
+/**
+ * The first page a flowed section can land on, where the contents runs to a
+ * single page. A longer contents pushes it down, which `buildRcdReport` works
+ * out before anything is packed.
+ */
 const FIRST_SECTION_PAGE = 3;
 
 const ROW_HEIGHT = 22;
@@ -338,61 +398,144 @@ const TOUCH_WIDTH = CONTENT - RESULT_COLUMNS.reduce((total, width) => total + wi
 export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
   const { doc, done } = newDocument();
 
-  // The instrument's pages are bound on at the end, and they count towards the
-  // total the reader sees at the foot of every page.
-  const appended = data.originalPages;
+  // How long the contents runs has to be known before anything is packed: a
+  // visit with six boards lists more than fits on one page, and every page
+  // number after it would otherwise be one out.
+  const listed = 2 + data.boards.length * 2 + data.boards.filter(hasOriginal).length + 1;
+  const contentsPages = Math.max(1, Math.ceil(listed / ENTRIES_PER_PAGE));
 
   // Everything after the contents is measured and packed first, so the page
   // numbers the contents prints are the pages things actually landed on.
-  const laid = layout(sections(doc, data, appended), FIRST_SECTION_PAGE);
+  const laid = layout(sections(doc, data), 2 + contentsPages + 1);
+
+  // The pages carrying other people's documents come after the flowed
+  // sections, and their numbers are worked out the same way.
+  const placed = placement(data, 2 + contentsPages + laid.count);
 
   cover(doc, data);
-  contents(doc, data, laid);
+  contents(doc, data, laid, placed);
   render(doc, data, laid);
 
-  stampPageNumbers(doc, appended);
+  // The pages that carry other people's documents — each board's instrument
+  // export, and the instrument's calibration certificate — are drawn after
+  // the flowed sections, because they are placed rather than flowed.
+  const originals = originalPages(doc, data);
+  const certificate = equipmentPages(doc, data);
+
+  stampPageNumbers(doc, 0);
   doc.end();
 
-  const ours = await done;
-  return data.original ? await append(ours, data.original) : ours;
+  let out = await done;
+  for (const { board, slots } of originals) {
+    if (board.originalPages) {
+      out = await stampCertificate(out, board.originalPages, slots, PAGE.height);
+    }
+  }
+  if (data.gear?.certificate && certificate.length > 0) {
+    out = await stampCertificate(out, data.gear.certificate, certificate, PAGE.height);
+  }
+
+  return attachOriginals(out, data);
 }
 
 /** Every section of the report, in the order it is read. */
-function sections(doc: Doc, data: RcdReport, appended: number): Section[] {
-  const out: Section[] = [
-    definitions(doc, data),
-    basis(doc, data),
-    results(doc, data),
-    corrections(doc, data),
-  ];
-  if (appended > 0) out.push(originalDivider(doc, data, appended));
+function sections(doc: Doc, data: RcdReport): Section[] {
+  const out: Section[] = [definitions(doc, data), basis(doc, data)];
+
+  // Each board gets its own results and its own corrections, under its own
+  // name: a visit that took in three boards is three sets of readings, and
+  // running them together would lose which reading belongs to which board.
+  data.boards.forEach((board, index) => {
+    out.push(results(doc, data, board, index));
+    out.push(corrections(doc, data, board, index));
+  });
+
   return out;
+}
+
+/** Each board's own key into the laid-out page numbers. */
+function boardKey(prefix: string, index: number): string {
+  return `${prefix}:${index}`;
+}
+
+/** Contents rows that fit on a page of contents. */
+const ENTRIES_PER_PAGE = 13;
+
+function hasOriginal(board: BoardTest): boolean {
+  return (board.originalPages?.sizes.length ?? 0) > 0;
+}
+
+/** How many pages of ours one borrowed document takes. */
+function sheetsFor(pages: number): number {
+  return Math.ceil(pages / PER_PAGE);
+}
+
+/**
+ * Where the placed pages land.
+ *
+ * They are drawn after everything that flows, so their numbers are simply
+ * counted on from the end of the flowed sections — each board's instrument
+ * record in turn, then the equipment page.
+ */
+function placement(
+  data: RcdReport,
+  from: number,
+): { originals: (number | null)[]; equipment: number | null } {
+  let at = from;
+  const originals = data.boards.map((board) => {
+    const pages = board.originalPages?.sizes.length ?? 0;
+    if (pages === 0) return null;
+    const start = at;
+    at += sheetsFor(pages);
+    return start;
+  });
+  return { originals, equipment: data.gear ? at : null };
 }
 
 /* --- the cover and the contents ------------------------------------------- */
 
+/** Every device on every board, for the counts the cover and contents carry. */
+function everyResult(data: RcdReport): RcdResultRow[] {
+  return data.boards.flatMap((board) => board.results);
+}
+
 function cover(doc: Doc, data: RcdReport) {
-  const failed = data.results.filter((result) => result.verdict === "FAIL").length;
+  const all = everyResult(data);
+  const failed = all.filter((result) => result.verdict === "FAIL").length;
+  const boards = data.boards.length;
+  const tested = data.boards.map((board) => board.boardName).join(", ");
+  // The visit's date is the earliest board's, since that is the day the work
+  // started; a visit that ran over two days says so on each board's own page.
+  const testDate =
+    data.boards.reduce<Date | null>(
+      (held, board) => (!held || board.testDate < held ? board.testDate : held),
+      null,
+    ) ?? data.reportDate;
+
   coverPage(doc, data, {
     title: "Residual Current Device Test Report",
     eyebrow: "RCD testing",
     subtitle: data.siteLocation || data.siteName,
     dateLabel: "Test date",
-    date: data.testDate,
+    date: testDate,
     scopeLabel: "Tested on this visit",
-    scope: `${data.boardName} — one switchboard, ${data.results.length} ${
-      data.results.length === 1 ? "device" : "devices"
-    } tested${failed ? `, ${failed} failed` : ""}`,
+    scope: `${tested || "—"} — ${boards} ${
+      boards === 1 ? "switchboard" : "switchboards"
+    }, ${all.length} ${all.length === 1 ? "device" : "devices"} tested${
+      failed ? `, ${failed} failed` : ""
+    }`,
     rows: [
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
-      ["Switchboard", data.boardName],
+      [boards === 1 ? "Switchboard" : "Switchboards", tested || "—"],
+      ["Instrument", data.instrument ?? "—"],
       ["Tested by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
     ],
     note:
-      "This report is issued to the addressee named above and relates only to the switchboard and devices listed " +
-      "on it. Testing was carried out with a calibrated instrument and assessed against AS/NZS 3017. It records " +
-      "how each device performed on the day of testing; it is not a warranty of future performance.",
+      "This report is issued to the addressee named above and relates only to the switchboards and devices listed " +
+      "on it. Testing was carried out with a calibrated instrument and assessed against the criteria set out " +
+      "inside. It records how each device performed on the day of testing; it is not a warranty of future " +
+      "performance.",
     marks: [],
   });
 }
@@ -400,23 +543,36 @@ function cover(doc: Doc, data: RcdReport) {
 /** One row of the contents: what it is, how much of it there is, and where. */
 type Entry = { title: string; note: string; count: string; page: string; tone: string };
 
-function contents(doc: Doc, data: RcdReport, laid: Layout) {
+function contents(
+  doc: Doc,
+  data: RcdReport,
+  laid: Layout,
+  placed: { originals: (number | null)[]; equipment: number | null },
+) {
   doc.addPage();
   sectionBar(doc, "Contents", MARGIN);
 
   const where = data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName;
+  const boards = data.boards.length;
+  const earliest =
+    data.boards.reduce<Date | null>(
+      (held, board) => (!held || board.testDate < held ? board.testDate : held),
+      null,
+    ) ?? data.reportDate;
+
   doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
   doc.text(
-    `Residual current devices at ${data.boardName}, ${where}, were tested on ${longDate(
-      data.testDate,
-    )} for ${data.clientName}. Each device was tested at half, one and five times its rated residual current, in both polarities.`,
+    safe(
+      `Residual current devices on ${boards} ${
+        boards === 1 ? "switchboard" : "switchboards"
+      } at ${where} were tested on ${longDate(earliest)} for ${
+        data.clientName
+      }. Each device was tested at half, one and five times its rated residual current, in both polarities.`,
+    ),
     MARGIN,
     MARGIN + 46,
     { width: CONTENT, lineGap: 2.5 },
   );
-
-  const counted = (verdict: Verdict) =>
-    data.results.filter((result) => result.verdict === verdict).length;
 
   const entries: Entry[] = [
     {
@@ -428,59 +584,88 @@ function contents(doc: Doc, data: RcdReport, laid: Layout) {
     },
     {
       title: "Basis of assessment",
-      note: "The limits every reading was judged against, and their source.",
+      note: "The criteria every reading was judged against, and their source.",
       count: "",
       page: String(laid.pageOf.basis),
       tone: COLOURS.accent,
     },
-    // Every verdict is listed whether or not anything landed in it: a client
-    // has to be able to see at a glance that nothing failed, rather than infer
-    // it from a section that is not there.
-    ...GROUPS.map((group) => {
-      const total = counted(group.verdict);
-      return {
-        title: group.title,
-        note: group.blurb,
-        count: `${total} ${total === 1 ? "device" : "devices"}`,
-        page: total > 0 ? String(laid.pageOf[group.verdict] ?? laid.pageOf.results) : "—",
-        tone: toneFor(group.verdict).fill,
-      };
-    }),
-    {
-      title: "Corrections applied",
-      note: "What was set aside before the results were drawn up, and why.",
-      count: "",
-      page: String(laid.pageOf.corrections),
-      tone: COLOURS.accent,
-    },
   ];
 
-  if (data.originalPages > 0) {
+  // A board at a time, so the reader can go straight to the board they care
+  // about rather than to a verdict that spans all of them.
+  data.boards.forEach((board, index) => {
+    const failed = board.results.filter((result) => result.verdict === "FAIL").length;
+    const concerns = board.results.filter((result) => result.verdict === "CONCERN").length;
     entries.push({
-      title: "Original instrument report",
-      note: "The tester's own export, reproduced unaltered.",
-      count: `${data.originalPages} ${data.originalPages === 1 ? "page" : "pages"}`,
-      page: String(laid.pageOf.original),
+      title: `${board.boardName} — results`,
+      note: failed
+        ? `${failed} failed, ${concerns} raised as a concern.`
+        : concerns
+          ? `Nothing failed; ${concerns} raised as a concern.`
+          : "Every device satisfied the criteria applied.",
+      count: `${board.results.length} ${board.results.length === 1 ? "device" : "devices"}`,
+      page: String(laid.pageOf[boardKey("results", index)] ?? "—"),
+      tone: failed
+        ? toneFor("FAIL").fill
+        : concerns
+          ? toneFor("CONCERN").fill
+          : toneFor("PASS").fill,
+    });
+    entries.push({
+      title: `${board.boardName} — corrections`,
+      note: "What was set aside before this board's results were drawn up.",
+      count: "",
+      page: String(laid.pageOf[boardKey("corrections", index)] ?? "—"),
+      tone: COLOURS.accent,
+    });
+  });
+
+  data.boards.forEach((board, index) => {
+    const pages = board.originalPages?.sizes.length ?? 0;
+    const at = placed.originals[index];
+    if (pages === 0 || at === null || at === undefined) return;
+    entries.push({
+      title: `${board.boardName} — instrument record`,
+      note: "The tester's own export for this board, reproduced unaltered.",
+      count: `${pages} ${pages === 1 ? "page" : "pages"}`,
+      page: String(at),
+      tone: COLOURS.accent,
+    });
+  });
+
+  if (data.gear && placed.equipment !== null) {
+    entries.push({
+      title: "Equipment used",
+      note: "The instrument the readings were taken with, and its calibration.",
+      count: "",
+      page: String(placed.equipment),
       tone: COLOURS.accent,
     });
   }
 
   let y = doc.y + 22;
   for (const entry of entries) {
+    // A contents that runs past the foot of the page takes a page of its own
+    // rather than printing over the footer.
+    if (y + 48 > PAGE.height - MARGIN - 40) {
+      footer(doc, data);
+      doc.addPage();
+      y = MARGIN;
+    }
     doc.rect(MARGIN, y, CONTENT, 40).fillAndStroke("#ffffff", COLOURS.hair);
     doc.rect(MARGIN, y, 5, 40).fill(entry.tone);
 
-    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(12);
-    doc.text(entry.title, MARGIN + 18, y + 8, { width: 230, ellipsis: true, height: 14 });
+    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(11.5);
+    doc.text(safe(entry.title), MARGIN + 18, y + 8, { width: 250, ellipsis: true, height: 14 });
     doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(entry.note, MARGIN + 18, y + 24, {
+    doc.text(safe(entry.note), MARGIN + 18, y + 24, {
       width: CONTENT - 210,
       ellipsis: true,
       height: 11,
     });
 
     if (entry.count) {
-      doc.font("Helvetica-Bold").fontSize(11.5).fillColor(entry.tone);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(entry.tone);
       doc.text(entry.count, MARGIN + CONTENT - 180, y + 9, { width: 108, align: "right" });
     }
     doc.font("Helvetica").fontSize(10).fillColor(COLOURS.bar);
@@ -633,34 +818,6 @@ function basis(doc: Doc, data: RcdReport): Section {
     },
   });
 
-  if (data.checklist.length > 0) {
-    pieces.push({
-      height: 30,
-      keepWith: 1,
-      draw: (y) => sectionBar(doc, "Site Checks", y),
-    });
-    data.checklist.forEach((item, index) => {
-      const height = Math.max(
-        ROW_HEIGHT,
-        measureText(doc, item.question, { width: CONTENT - 140, size: 9.5, lineGap: 0 }) + 10,
-      );
-      pieces.push({
-        height,
-        draw: (y) => {
-          doc
-            .rect(MARGIN, y, CONTENT, height)
-            .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
-          doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9.5);
-          doc.text(item.question, MARGIN + 8, y + 6, { width: CONTENT - 140 });
-          doc
-            .font("Helvetica-Bold")
-            .text(item.answer, MARGIN + CONTENT - 124, y + 6, { width: 116, align: "right" });
-        },
-      });
-    });
-    pieces.push({ height: 18, draw: () => {} });
-  }
-
   pieces.push({
     height: 30,
     keepWith: 1,
@@ -692,11 +849,11 @@ function toneFor(verdict: Verdict) {
       : SEVERITY.pass;
 }
 
-function results(doc: Doc, data: RcdReport): Section {
+function results(doc: Doc, data: RcdReport, board: BoardTest, index: number): Section {
   const pieces: Piece[] = [];
 
   for (const group of GROUPS) {
-    const rows = data.results.filter((result) => result.verdict === group.verdict);
+    const rows = board.results.filter((result) => result.verdict === group.verdict);
     const tone = toneFor(group.verdict);
 
     pieces.push({
@@ -800,8 +957,8 @@ function results(doc: Doc, data: RcdReport): Section {
   }
 
   return {
-    id: "results",
-    title: "Test Results",
+    id: boardKey("results", index),
+    title: `Test Results — ${board.boardName}`,
     pieces,
     // A table that runs over the page keeps its column headings; a page that
     // opens on a heading or an empty group's note does not want them.
@@ -823,7 +980,7 @@ function results(doc: Doc, data: RcdReport): Section {
 
 /* --- what was set aside --------------------------------------------------- */
 
-function corrections(doc: Doc, data: RcdReport): Section {
+function corrections(doc: Doc, data: RcdReport, board: BoardTest, index: number): Section {
   const pieces: Piece[] = [];
 
   for (const line of CORRECTIONS_NOTE) {
@@ -842,17 +999,19 @@ function corrections(doc: Doc, data: RcdReport): Section {
     values.length ? `${values.length} (${values.join(", ")})` : "None";
 
   const lines: [string, string][] = [
-    ["Order worked", data.corrections.walk],
-    ["Incomplete / non-device records excluded", listed(data.corrections.droppedEmpty)],
-    ["Superseded repeat tests excluded", listed(data.corrections.droppedDuplicate)],
-    ["RCDs not tested", listed(data.corrections.untested)],
+    ["Switchboard", board.boardName],
+    ["Tested on", shortDate(board.testDate)],
+    ["Order worked", board.corrections.walk],
+    ["Incomplete / non-device records excluded", listed(board.corrections.droppedEmpty)],
+    ["Superseded repeat tests excluded", listed(board.corrections.droppedDuplicate)],
+    ["RCDs not tested", listed(board.corrections.untested)],
     ["Instrument", data.instrument ?? "—"],
   ];
 
   lines.forEach(([label, value], index) => {
     const height = Math.max(
       ROW_HEIGHT,
-      measureText(doc, value, { width: CONTENT - 190, size: 9.5, lineGap: 0 }) + 10,
+      measureText(doc, value, { width: CONTENT - 244, size: 9.5, lineGap: 0 }) + 10,
     );
     pieces.push({
       height,
@@ -861,11 +1020,42 @@ function corrections(doc: Doc, data: RcdReport): Section {
           .rect(MARGIN, y, CONTENT, height)
           .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
         doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9.5);
-        doc.text(label, MARGIN + 8, y + 6, { width: 164, ellipsis: true, height: 11 });
-        doc.font("Helvetica").text(value, MARGIN + 180, y + 6, { width: CONTENT - 190 });
+        // Wide enough for "Incomplete / non-device records excluded", which is
+        // the longest of them and was being cut off.
+        doc.text(label, MARGIN + 8, y + 6, { width: 218, ellipsis: true, height: 11 });
+        doc.font("Helvetica").text(value, MARGIN + 234, y + 6, { width: CONTENT - 244 });
       },
     });
   });
+
+  if (board.checklist.length > 0) {
+    pieces.push({ height: 16, draw: () => {} });
+    pieces.push({
+      height: 30,
+      keepWith: 1,
+      draw: (y) => sectionBar(doc, "Site Checks", y),
+    });
+    board.checklist.forEach((item, index) => {
+      const height = Math.max(
+        ROW_HEIGHT,
+        measureText(doc, item.question, { width: CONTENT - 140, size: 9.5, lineGap: 0 }) + 10,
+      );
+      pieces.push({
+        height,
+        draw: (y) => {
+          doc
+            .rect(MARGIN, y, CONTENT, height)
+            .fillAndStroke(index % 2 ? COLOURS.soft : "#ffffff", COLOURS.hair);
+          doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9.5);
+          doc.text(item.question, MARGIN + 8, y + 6, { width: CONTENT - 140 });
+          doc
+            .font("Helvetica-Bold")
+            .text(item.answer, MARGIN + CONTENT - 124, y + 6, { width: 116, align: "right" });
+        },
+      });
+    });
+    pieces.push({ height: 18, draw: () => {} });
+  }
 
   const note = safe(NOT_TESTED_NOTE);
   pieces.push({
@@ -883,7 +1073,11 @@ function corrections(doc: Doc, data: RcdReport): Section {
     draw: (y) => signOff(doc, data, y + 44),
   });
 
-  return { id: "corrections", title: "Corrections Applied", pieces };
+  return {
+    id: boardKey("corrections", index),
+    title: `Corrections Applied — ${board.boardName}`,
+    pieces,
+  };
 }
 
 /* --- the instrument's own report ------------------------------------------ */
@@ -893,77 +1087,6 @@ function corrections(doc: Doc, data: RcdReport): Section {
 
 
 
-/**
- * A page of its own, so the instrument's report cannot be missed when the
- * client flips through — and so it is obvious where ours stops and theirs
- * starts.
- */
-function originalDivider(doc: Doc, data: RcdReport, pages: number): Section {
-  const one = pages === 1;
-  const lines = [
-    {
-      text: safe(
-        one
-          ? "The page that follows is the test instrument's own report."
-          : `The ${pages} pages that follow are the test instrument's own report.`,
-      ),
-      size: 15,
-      font: "Helvetica-Bold",
-      gap: 16,
-    },
-    {
-      text: safe(
-        one
-          ? "It is reproduced exactly as it was downloaded from the instrument and has not been edited, reformatted or re-typed in any way. Nothing in this report changes it."
-          : "They are reproduced exactly as they were downloaded from the instrument and have not been edited, reformatted or re-typed in any way. Nothing in this report changes them.",
-      ),
-      size: 11,
-      font: "Helvetica",
-      gap: 14,
-    },
-    {
-      text: safe(
-        `The same file is also attached to this PDF as \u201coriginal-instrument-report.pdf\u201d, so the instrument's own record can be extracted and checked against ${
-          one ? "this page" : "these pages"
-        } independently.`,
-      ),
-      size: 11,
-      font: "Helvetica",
-      gap: 26,
-    },
-  ];
-
-  const pieces: Piece[] = [{ height: 18, draw: () => {} }];
-  for (const line of lines) {
-    const height =
-      measureText(doc, line.text, { width: CONTENT, size: line.size, font: line.font, lineGap: 3 }) +
-      line.gap;
-    pieces.push({
-      height,
-      draw: (y) => {
-        doc.font(line.font).fontSize(line.size).fillColor(COLOURS.ink);
-        doc.text(line.text, MARGIN, y, { width: CONTENT, lineGap: 3 });
-      },
-    });
-  }
-
-  pieces.push({
-    height: 22,
-    draw: (y) => {
-      doc.rect(MARGIN, y, CONTENT, 2).fill(COLOURS.accent);
-    },
-  });
-  pieces.push({
-    height: 16,
-    draw: (y) => {
-      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.inkSoft);
-      doc.text(`Instrument: ${data.instrument ?? "\u2014"}`, MARGIN, y, { width: CONTENT });
-      doc.fillColor(COLOURS.ink);
-    },
-  });
-
-  return { id: "original", title: "Original Instrument Report", pieces };
-}
 
 async function countPages(pdf: Buffer): Promise<number> {
   try {
@@ -974,26 +1097,292 @@ async function countPages(pdf: Buffer): Promise<number> {
 }
 
 /**
- * pdfkit cannot copy pages out of an existing PDF, so the instrument's export
- * is bound on with pdf-lib — and attached whole as well, because a page that
- * has been through two libraries is a copy, and the point of including it is
- * to have the original.
+ * Up to four documents on a page, laid out so each is as large as it can be.
+ *
+ * One fills most of the page on its own; two stack; three put two across the
+ * top and one across the foot; four go two by two. Past four they are too
+ * small to read, so a fifth starts a new page.
  */
-async function append(ours: Buffer, original: Buffer): Promise<Buffer> {
+function cells(count: number, region: Box): Box[] {
+  const gap = 14;
+  const half = (region.height - gap) / 2;
+  const column = (region.width - gap) / 2;
+
+  if (count <= 1) {
+    // Eighty per cent of the region, centred: large, but plainly a
+    // reproduction on our page rather than a page of ours.
+    const width = region.width * 0.8;
+    const height = region.height * 0.8;
+    return [
+      {
+        x: region.x + (region.width - width) / 2,
+        y: region.y + (region.height - height) / 2,
+        width,
+        height,
+      },
+    ];
+  }
+
+  if (count === 2) {
+    return [
+      { x: region.x, y: region.y, width: region.width, height: half },
+      { x: region.x, y: region.y + half + gap, width: region.width, height: half },
+    ];
+  }
+
+  const top = [
+    { x: region.x, y: region.y, width: column, height: half },
+    { x: region.x + column + gap, y: region.y, width: column, height: half },
+  ];
+  if (count === 3) {
+    // The odd one out takes the whole foot and is centred inside it.
+    return [...top, { x: region.x, y: region.y + half + gap, width: region.width, height: half }];
+  }
+  return [
+    ...top,
+    { x: region.x, y: region.y + half + gap, width: column, height: half },
+    { x: region.x + column + gap, y: region.y + half + gap, width: column, height: half },
+  ];
+}
+
+/** As many as go on a page before they stop being readable. */
+const PER_PAGE = 4;
+
+/** The body of a placed page, between the heading rule and the page foot. */
+const PLACED = { top: MARGIN + 46, bottom: PAGE.height - MARGIN - 34 };
+
+/** A certificate page is set in from its border, and the border from its gap. */
+const BORDER_GAP = 5;
+const BORDER_WIDTH = 1.4;
+
+/**
+ * One borrowed page in its gap, with the Optilink rule set out around it.
+ *
+ * The blue rule sits outside the page's own edge rather than on it, so a
+ * document that has a border of its own keeps it.
+ */
+function place(
+  doc: Doc,
+  size: { width: number; height: number },
+  space: Box,
+  caption: string,
+): Box {
+  const inset = BORDER_GAP + BORDER_WIDTH + 2;
+  const box = fitted(
+    {
+      x: space.x + inset,
+      y: space.y + inset,
+      width: space.width - inset * 2,
+      height: space.height - inset * 2 - 12,
+    },
+    size,
+  );
+
+  doc.lineWidth(0.5).strokeColor(COLOURS.hair);
+  doc.rect(box.x, box.y, box.width, box.height).stroke();
+  doc.lineWidth(BORDER_WIDTH).strokeColor(COLOURS.accent);
+  doc
+    .rect(
+      box.x - BORDER_GAP,
+      box.y - BORDER_GAP,
+      box.width + BORDER_GAP * 2,
+      box.height + BORDER_GAP * 2,
+    )
+    .stroke();
+  doc.lineWidth(1).strokeColor("#000000");
+
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+  doc.text(caption, box.x - BORDER_GAP, box.y + box.height + BORDER_GAP + 4, {
+    width: box.width + BORDER_GAP * 2,
+    align: "center",
+    characterSpacing: 1.1,
+  });
+  doc.fillColor(COLOURS.ink);
+
+  return box;
+}
+
+/** The heading that sits above a page of somebody else's document. */
+function placedHeading(doc: Doc, title: string, note: string) {
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
+  doc.text(safe(title), MARGIN, MARGIN, { width: CONTENT });
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  doc.text(safe(note), MARGIN, MARGIN + 17, { width: CONTENT, height: 11, ellipsis: true });
+  doc.rect(MARGIN, MARGIN + 32, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, MARGIN + 31, 44, 2.2).fill(COLOURS.accent);
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * Each board's instrument export, reproduced page for page.
+ *
+ * The pages are the instrument's own, embedded rather than redrawn, so what
+ * the reader sees is the file that came off the machine. The gaps are cut
+ * here and filled once the document is closed.
+ */
+function originalPages(
+  doc: Doc,
+  data: RcdReport,
+): { board: BoardTest; slots: Slot[] }[] {
+  const out: { board: BoardTest; slots: Slot[] }[] = [];
+
+  for (const board of data.boards) {
+    const sizes = board.originalPages?.sizes ?? [];
+    if (sizes.length === 0) continue;
+
+    const slots: Slot[] = [];
+    for (let from = 0; from < sizes.length; from += PER_PAGE) {
+      const chunk = sizes.slice(from, from + PER_PAGE);
+      doc.addPage();
+      placedHeading(
+        doc,
+        `Original Instrument Report — ${board.boardName}`,
+        `${data.instrument ?? "The test instrument"}'s own export, reproduced unaltered.`,
+      );
+
+      const page = doc.bufferedPageRange().count - 1;
+      const region: Box = {
+        x: MARGIN,
+        y: PLACED.top,
+        width: CONTENT,
+        height: PLACED.bottom - PLACED.top,
+      };
+      chunk.forEach((size, at) => {
+        const box = place(
+          doc,
+          size,
+          cells(chunk.length, region)[at],
+          `PAGE ${from + at + 1} OF ${sizes.length}`,
+        );
+        slots.push({ ...box, page, source: from + at });
+      });
+    }
+    out.push({ board, slots });
+  }
+
+  return out;
+}
+
+/**
+ * The instrument the readings were taken with, and its calibration.
+ *
+ * The same page the power analysis carries, for the same reason: a
+ * measurement is worth what the instrument behind it is worth.
+ */
+function equipmentPages(doc: Doc, data: RcdReport): Slot[] {
+  const gear = data.gear;
+  if (!gear) return [];
+
+  const sizes = gear.certificate?.sizes ?? [];
+  const slots: Slot[] = [];
+
+  doc.addPage();
+  placedHeading(doc, "Equipment Used", "The instrument, and the certificate that says it reads true.");
+
+  let y = PLACED.top + 6;
+  if (gear.photo) {
+    try {
+      doc.image(gear.photo, MARGIN, y, { fit: [120, 96] });
+    } catch {
+      // An image the renderer will not take is not worth a failed report.
+    }
+  }
+  const x = gear.photo ? MARGIN + 136 : MARGIN;
+  const width = gear.photo ? CONTENT - 136 : CONTENT;
+
+  const rows: [string, string][] = [
+    ["Equipment name", gear.name],
+    ["Model no", gear.modelNo ?? "—"],
+    ["Serial no", gear.serialNo ?? "—"],
+    [
+      "Certification date",
+      gear.calibration.calibratedOn ? shortDate(gear.calibration.calibratedOn) : "—",
+    ],
+    ["Due/expiry date", dueDate(gear)],
+  ];
+  for (const [name, value] of rows) {
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(name, x, y, { width: 118, lineBreak: false });
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
+    doc.text(safe(value), x + 124, y - 1, { width: width - 124, height: 12, ellipsis: true });
+    y += 17;
+  }
+
+  if (sizes.length === 0) return slots;
+
+  const top = Math.max(y + 16, PLACED.top + 116);
+  for (let from = 0; from < sizes.length; from += PER_PAGE) {
+    const chunk = sizes.slice(from, from + PER_PAGE);
+    if (from > 0) {
+      doc.addPage();
+      placedHeading(doc, "Equipment Used", "Calibration certificate, continued.");
+    }
+    const page = doc.bufferedPageRange().count - 1;
+    const region: Box = {
+      x: MARGIN,
+      y: from === 0 ? top : PLACED.top,
+      width: CONTENT,
+      height: PLACED.bottom - (from === 0 ? top : PLACED.top),
+    };
+    chunk.forEach((size, at) => {
+      const box = place(
+        doc,
+        size,
+        cells(chunk.length, region)[at],
+        `PAGE ${from + at + 1} OF ${sizes.length}`,
+      );
+      slots.push({ ...box, page, source: from + at });
+    });
+  }
+
+  return slots;
+}
+
+/** The due date, the certificate's own or a year from its certification. */
+function dueDate(gear: Instrument): string {
+  const due = expiry(gear.calibration);
+  if (!due) return gear.certificate ? "Not stated on the certificate" : "—";
+  return shortDate(due.at);
+}
+
+/**
+ * Every original, attached whole as well as reproduced.
+ *
+ * A page that has been through two libraries is a copy; the point of
+ * including the instrument's record is to have the file itself, so it rides
+ * along as an attachment that can be pulled out and opened on its own.
+ */
+async function attachOriginals(ours: Buffer, data: RcdReport): Promise<Buffer> {
+  const files = data.boards
+    .map((board, index) => ({ board, index }))
+    .filter((entry) => entry.board.original);
+  if (files.length === 0 && !data.gear?.certificate) return ours;
+
   try {
     const target = await PDFDocument.load(ours);
-    const source = await PDFDocument.load(original);
-    const pages = await target.copyPages(source, source.getPageIndices());
-    for (const page of pages) target.addPage(page);
-
-    await target.attach(new Uint8Array(original), "original-instrument-report.pdf", {
-      mimeType: "application/pdf",
-      description: "The test instrument's own export, unaltered.",
-    });
-
+    for (const { board, index } of files) {
+      await target.attach(
+        new Uint8Array(board.original as Buffer),
+        `instrument-report-${index + 1}.pdf`,
+        {
+          mimeType: "application/pdf",
+          description: `${board.boardName}: the test instrument's own export, unaltered.`,
+        },
+      );
+    }
+    if (data.gear?.certificate) {
+      await target.attach(
+        new Uint8Array(data.gear.certificate.bytes),
+        "calibration-certificate.pdf",
+        {
+          mimeType: "application/pdf",
+          description: `${data.gear.name}: calibration certificate, unaltered.`,
+        },
+      );
+    }
     return Buffer.from(await target.save());
   } catch {
-    // A report without the original bound in still beats no report.
+    // A report without the attachments still beats no report.
     return ours;
   }
 }

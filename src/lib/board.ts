@@ -134,6 +134,37 @@ export function testsFor(state: CellState): number {
   return state === "RCD_3P" ? 3 : 1;
 }
 
+/**
+ * Whether a position is taken up by a three-phase device above or below it.
+ *
+ * A three-phase RCD is three modules tall and occupies the way above and the
+ * way below its own. That is worked out from where the device sits rather than
+ * written onto its neighbours, so nothing has to be cleared when one is placed
+ * and nothing is lost when one is taken away: whatever was in those ways is
+ * still there, and comes back the moment the device is removed.
+ */
+export function isSpanned(section: BoardSection, index: number): boolean {
+  const above = section.cells[index - COLUMNS];
+  const below = section.cells[index + COLUMNS];
+  return above?.state === "RCD_3P" || below?.state === "RCD_3P";
+}
+
+/**
+ * Whether a three-phase device will fit at this position.
+ *
+ * It needs a way above and a way below in the same column, and neither of
+ * them may already be taken by another three-phase device. That rules out the
+ * top and bottom of every column, which is where one physically cannot go.
+ */
+export function fitsThreePhase(section: BoardSection, index: number): boolean {
+  const column = index % COLUMNS;
+  const above = index - COLUMNS;
+  const below = index + COLUMNS;
+  if (above < 0 || below >= section.rows * COLUMNS) return false;
+  if (above % COLUMNS !== column || below % COLUMNS !== column) return false;
+  return !isSpanned(section, above) && !isSpanned(section, below);
+}
+
 /** What the instrument's three records are called, in the order they're taken. */
 export const PHASES = ["L1", "L2", "L3"] as const;
 

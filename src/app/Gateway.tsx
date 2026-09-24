@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
+import { BrandMark } from "@/components/BrandMark";
 import { TreeNav } from "@/components/TreeNav";
 import { SECTIONS } from "@/lib/navTree";
 import { useClientsTree } from "@/lib/useClientsTree";
@@ -16,6 +16,7 @@ import { BoardViewer } from "@/components/BoardViewer";
 import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
+import { RcdInstrumentDialog } from "@/components/RcdInstrumentDialog";
 import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { PowerDialog } from "@/components/PowerDialog";
@@ -93,14 +94,7 @@ export function Gateway({
   }
 
   const brand = logoUrl ? (
-    <Image
-      src={logoUrl}
-      alt={companyName}
-      width={720}
-      height={240}
-      className="gate-logo-image"
-      priority
-    />
+    <BrandMark src={logoUrl} alt={companyName} className="gate-logo-image" />
   ) : (
     <Logo />
   );
@@ -182,6 +176,14 @@ export function Gateway({
 
       {open && clients.rcd ? (
         <RcdWizard runId={clients.rcd.runId} onClose={clients.closeRcd} />
+      ) : null}
+
+      {open && clients.rcdInstrument ? (
+        <RcdInstrumentDialog
+          reportId={clients.rcdInstrument.reportId}
+          instrumentId={clients.rcdInstrument.instrumentId}
+          onClose={clients.closeRcdInstrument}
+        />
       ) : null}
 
       {open && clients.rcdLimits ? (

@@ -11,6 +11,8 @@ import {
   createSection,
   emptyCell,
   nextState,
+  fitsThreePhase,
+  isSpanned,
   positionNumber,
   withRows,
   type Board,
@@ -108,10 +110,24 @@ export function BoardEditor({
     }));
   }
 
+  /**
+   * One click along the cycle, skipping what will not fit.
+   *
+   * A three-phase RCD occupies the way above and the way below its own, so at
+   * the top or the bottom of a column, or where a neighbour is already taken
+   * by another one, the cycle steps straight past it rather than offering a
+   * device that could not physically go there.
+   */
   function cycleCell(index: number) {
     editActive((section) => {
+      // A way taken up by a three-phase device beside it is not its own to
+      // change: the device above or below is what is in it.
+      if (isSpanned(section, index)) return section;
+
       const cells = [...section.cells];
-      cells[index] = { ...cells[index], state: nextState(cells[index].state) };
+      let next = nextState(cells[index].state);
+      if (next === "RCD_3P" && !fitsThreePhase(section, index)) next = nextState(next);
+      cells[index] = { ...cells[index], state: next };
       return { ...section, cells };
     });
   }
@@ -355,6 +371,7 @@ export function BoardEditor({
                       number={positionNumber(active, index, board.numbering)}
                       state={active.cells[index].state}
                       label={active.cells[index].label}
+                      spanned={isSpanned(active, index)}
                       onCycle={() => cycleCell(index)}
                       onLabel={(value) => labelCell(index, value)}
                     />
@@ -421,6 +438,7 @@ function Cell({
   number,
   state,
   label,
+  spanned = false,
   onCycle,
   onLabel,
   onRemove,
@@ -428,6 +446,8 @@ function Cell({
   number?: number;
   state: CellState;
   label: string;
+  /** Taken up by a three-phase device above or below it. */
+  spanned?: boolean;
   onCycle: () => void;
   onLabel: (value: string) => void;
   onRemove?: () => void;
@@ -441,15 +461,20 @@ function Cell({
 
   return (
     <div
-      className={`board-cell is-${state.toLowerCase()}`}
+      className={`board-cell is-${state.toLowerCase()} ${spanned ? "is-spanned" : ""}`}
+      aria-disabled={spanned || undefined}
       onClick={() => {
-        if (!editing) onCycle();
+        if (!editing && !spanned) onCycle();
       }}
       role="button"
-      tabIndex={0}
-      title={`${STATE_LABELS[state]} — click to change`}
+      tabIndex={spanned ? -1 : 0}
+      title={
+        spanned
+          ? "Taken up by the three-phase RCD beside it"
+          : `${STATE_LABELS[state]} — click to change`
+      }
       onKeyDown={(event) => {
-        if (editing) return;
+        if (editing || spanned) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onCycle();

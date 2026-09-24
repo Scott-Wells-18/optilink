@@ -81,6 +81,15 @@ type RcdRunRecord = {
   _count: { results: number };
 };
 
+/** One visit's report, holding however many switchboards were tested on it. */
+type RcdReportRecord = {
+  id: string;
+  name: string | null;
+  date: string;
+  instrument: { id: string; name: string } | null;
+  tests: RcdRunRecord[];
+};
+
 type PowerRunRecord = {
   id: string;
   name: string | null;
@@ -114,7 +123,7 @@ type SiteRecord = {
   contacts: Contact[];
   inspections: InspectionRecord[];
   jobs: JobRecord[];
-  rcdRuns: RcdRunRecord[];
+  rcdReports: RcdReportRecord[];
   safetyDocs: SafetyDocRecord[];
   powerRuns: PowerRunRecord[];
 };
@@ -174,6 +183,9 @@ export type ViewerSpec = {
 /** The RCD wizard, opened on one test run. */
 export type RcdSpec = { runId: string; siteName: string };
 
+/** Choosing which instrument a visit's boards were tested with. */
+export type RcdInstrumentSpec = { reportId: string; instrumentId: string | null };
+
 /** One power analysis, opened to load its recording. */
 export type PowerSpec = { runId: string; siteName: string };
 
@@ -223,6 +235,10 @@ export function useClientsTree(enabled: boolean) {
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
   const [power, setPower] = usePersisted<PowerSpec | null>("power", null);
+  const [rcdInstrument, setRcdInstrument] = usePersisted<RcdInstrumentSpec | null>(
+    "rcdgear",
+    null,
+  );
   const [testGear, setTestGear] = useState<TestEquipmentRecord[]>([]);
   const [gearDialog, setGearDialog] = usePersisted<EquipmentDraft | null>("gear", null);
   const [error, setError] = useState<string | null>(null);
@@ -775,14 +791,46 @@ export function useClientsTree(enabled: boolean) {
   );
 
   const startRcdTest = useCallback(
-    async (siteId: string) => {
+    async (siteId: string, reportId?: string) => {
       const response = await fetch("/api/rcd-tests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId, reportId }),
+      });
+      if (!response.ok) {
+        setError("The test could not be started.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const startRcdReport = useCallback(
+    async (siteId: string) => {
+      const response = await fetch("/api/rcd-reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ siteId }),
       });
       if (!response.ok) {
-        setError("The test could not be started.");
+        setError("The report could not be started.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const setRcdReportDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/rcd-reports/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
         return;
       }
       await refresh();
@@ -803,41 +851,78 @@ export function useClientsTree(enabled: boolean) {
             id: `rcd:site:${site.id}`,
             label: site.name,
             detail:
-              site.location?.trim() || countLabel(site.rcdRuns.length, "test", "tests"),
+              site.location?.trim() ||
+              countLabel(site.rcdReports.length, "report", "reports"),
             children: [
-              ...site.rcdRuns.map<TreeNode>((run) => {
-                const title = run.name?.trim() || isoLabel(run.date);
-                const done = run._count.results > 0;
+              ...site.rcdReports.map<TreeNode>((report) => {
+                const title = report.name?.trim() || isoLabel(report.date);
+                // A report can be issued once at least one board has been
+                // worked through to its results.
+                const ready = report.tests.some((test) => test._count.results > 0);
+                const boards = report.tests.length;
                 return {
-                  id: `rcdrun:${run.id}`,
+                  id: `rcdreport:${report.id}`,
                   label: title,
-                  detail: done
-                    ? `${run.equipment?.name ?? "Board"}  ·  ${countLabel(
-                        run._count.results,
-                        "device",
-                        "devices",
-                      )}`
-                    : run.sourceFileId
-                      ? "Corrections not finished"
-                      : "No export loaded yet",
-                  variant: "info",
+                  detail: [
+                    countLabel(boards, "switchboard", "switchboards"),
+                    report.instrument?.name,
+                  ]
+                    .filter(Boolean)
+                    .join("  \u00b7  "),
                   editDate: {
-                    value: isoDate(run.date),
-                    onSave: (value) => void setRcdDate(run.id, value),
+                    value: isoDate(report.date),
+                    onSave: (value: string) => void setRcdReportDate(report.id, value),
                   },
-                  onActivate: () => setRcd({ runId: run.id, siteName: site.name }),
-                  onDownload: done
-                    ? () => download(`/api/rcd-tests/${run.id}/report`)
+                  onDownload: ready
+                    ? () => download(`/api/rcd-reports/${report.id}/report`)
                     : undefined,
-                  onRemove: () => void remove(`/api/rcd-tests/${run.id}`, title),
+                  onRemove: () => void remove(`/api/rcd-reports/${report.id}`, title),
+                  children: [
+                    ...report.tests.map<TreeNode>((run) => {
+                      const done = run._count.results > 0;
+                      const name = run.equipment?.name ?? "Switchboard";
+                      return {
+                        id: `rcdrun:${run.id}`,
+                        label: name,
+                        detail: done
+                          ? countLabel(run._count.results, "device", "devices")
+                          : run.sourceFileId
+                            ? "Corrections not finished"
+                            : "No export loaded yet",
+                        variant: "info",
+                        onActivate: () => setRcd({ runId: run.id, siteName: site.name }),
+                        onRemove: () => void remove(`/api/rcd-tests/${run.id}`, name),
+                      };
+                    }),
+                    {
+                      id: `add:rcdtest:${report.id}`,
+                      label: "Add new",
+                      detail: "Switchboard",
+                      variant: "add",
+                      onActivate: () => void startRcdTest(site.id, report.id),
+                    },
+                    {
+                      id: `rcdgear:${report.id}`,
+                      label: report.instrument?.name ?? "Instrument used",
+                      detail: report.instrument
+                        ? "Change the instrument"
+                        : "Not recorded yet",
+                      variant: "info",
+                      onActivate: () =>
+                        setRcdInstrument({
+                          reportId: report.id,
+                          instrumentId: report.instrument?.id ?? null,
+                        }),
+                    },
+                  ],
                 };
               }),
               {
                 id: `add:rcd:${site.id}`,
                 label: "Add new",
-                detail: "Test",
+                detail: "Report",
                 variant: "add",
-                onActivate: () => void startRcdTest(site.id),
+                onActivate: () => void startRcdReport(site.id),
               },
             ],
           }));
@@ -1148,6 +1233,11 @@ export function useClientsTree(enabled: boolean) {
     jobItem,
     closeJobItem: () => {
       setJobItem(null);
+      void refresh();
+    },
+    rcdInstrument,
+    closeRcdInstrument: () => {
+      setRcdInstrument(null);
       void refresh();
     },
     rcd,

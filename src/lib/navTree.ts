@@ -39,7 +39,7 @@ export const SECTIONS: TreeNode[] = [
   {
     id: "rcd",
     label: "RCD",
-    detail: "Safety switch testing",
+    detail: "RCD testing",
     children: [],
   },
   {

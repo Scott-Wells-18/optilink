@@ -116,7 +116,8 @@ model TestEquipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  powerRuns PowerAnalysis[]
+  powerRuns  PowerAnalysis[]
+  rcdReports RcdReport[]
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,7 @@ model Site {
   contacts    Contact[]
   jobs        Job[]
   rcdRuns     RcdTestRun[]
+  rcdReports  RcdReport[]
   safetyDocs  SafetyDoc[]
   powerRuns   PowerAnalysis[]
 
@@ -421,10 +423,43 @@ model JobPhoto {
 // so the instrument's own record is always recoverable.
 // ---------------------------------------------------------------------------
 
+/**
+ * One issued RCD report, covering however many switchboards were tested.
+ *
+ * A visit to a depot is one report and several boards, so the boards hang off
+ * a dated report rather than each producing a PDF of its own. Each board keeps
+ * its own instrument export, its own walk and its own corrections, because
+ * those are facts about that board and not about the visit.
+ */
+model RcdReport {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  name String?
+  date DateTime @default(now()) @db.Date
+
+  /** The instrument every board on this visit was tested with. */
+  instrumentId String?
+  instrument   TestEquipment? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tests RcdTestRun[]
+
+  @@index([siteId])
+  @@index([instrumentId])
+}
+
 model RcdTestRun {
   id     String @id @default(cuid())
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The report this board belongs to. Absent on runs filed before reports. */
+  reportId String?
+  report   RcdReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   /** The board that was tested. */
   equipmentId String?
@@ -455,6 +490,7 @@ model RcdTestRun {
   results RcdResult[]
 
   @@index([siteId])
+  @@index([reportId])
 }
 
 model RcdResult {

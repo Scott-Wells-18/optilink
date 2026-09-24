@@ -1539,6 +1539,17 @@ body {
   margin-top: 0;
 }
 
+/* A way taken up by the three-phase RCD above or below it. Greyed back so the
+   device plainly occupies three modules, and inert because the way is not its
+   own to change. Whatever was drawn in it is still there and comes back when
+   the device is removed. */
+.board-cell.is-spanned {
+  opacity: 0.5;
+  filter: grayscale(1);
+  cursor: default;
+  pointer-events: none;
+}
+
 /* A photograph of an instrument, shown back after it is uploaded. */
 .equipment-photo {
   display: block;

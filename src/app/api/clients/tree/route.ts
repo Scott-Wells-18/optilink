@@ -54,15 +54,24 @@ export async function GET() {
               },
             },
           },
-          rcdRuns: {
+          rcdReports: {
             orderBy: { createdAt: "asc" },
             select: {
               id: true,
               name: true,
               date: true,
-              sourceFileId: true,
-              equipment: { select: { id: true, name: true } },
-              _count: { select: { results: true } },
+              instrument: { select: { id: true, name: true } },
+              tests: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  id: true,
+                  name: true,
+                  date: true,
+                  sourceFileId: true,
+                  equipment: { select: { id: true, name: true } },
+                  _count: { select: { results: true } },
+                },
+              },
             },
           },
           powerRuns: {
