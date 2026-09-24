@@ -6,13 +6,14 @@ import {
   MAX_ROWS,
   MAX_SECTIONS,
   MIN_ROWS,
-  PHASES,
   STATE_LABELS,
   createBoard,
   createSection,
   emptyCell,
   nextFitting,
   nextState,
+  ownerOf,
+  phaseOf,
   positionNumber,
   spanAt,
   withRows,
@@ -389,12 +390,7 @@ export function BoardEditor({
                     const span = spanAt(active, index);
                     // A way drawing part of the device beside it shows that
                     // device's name, not its own: there is only one device.
-                    const owner =
-                      span.part === "top"
-                        ? index + COLUMNS
-                        : span.part === "bottom"
-                          ? index - COLUMNS
-                          : index;
+                    const owner = ownerOf(index, span.part);
                     const cell = (
                       <Cell
                         key={index}
@@ -502,8 +498,8 @@ function Cell({
    * always-live text box would swallow most of those clicks.
    */
   const [editing, setEditing] = useState(false);
-  const spanned = part === "top" || part === "bottom";
-  const phase = spanned || part === "middle" ? PHASES[partIndex(part)] : null;
+  const spanned = part !== "whole" && part !== "middle";
+  const phase = part === "whole" ? null : phaseOf(part);
 
   return (
     <div
@@ -528,7 +524,7 @@ function Cell({
       }}
     >
       <DeviceMark state={state} part={part} />
-      {phase && part !== "bottom" ? <span className="board-cell-phase">{phase}</span> : null}
+      {phase ? <span className="board-cell-phase">{phase}</span> : null}
 
       {editing ? (
         <input
@@ -545,7 +541,7 @@ function Cell({
             if (event.key === "Enter" || event.key === "Escape") setEditing(false);
           }}
         />
-      ) : (part === "whole" || part === "bottom") &&
+      ) : (part === "whole" || part === "top") &&
         state !== "EMPTY" &&
         state !== "BLANK" ? (
         <span className={`board-cell-text ${label ? "" : "is-blank"}`}>
@@ -582,11 +578,6 @@ function Cell({
       ) : null}
     </div>
   );
-}
-
-/** Which phase a third of a three-phase device switches. */
-function partIndex(part: Part): number {
-  return part === "top" ? 0 : part === "middle" ? 1 : 2;
 }
 
 function NumberingPicker({

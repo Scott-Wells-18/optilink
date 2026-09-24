@@ -11,6 +11,7 @@ import {
   isFreeBoard,
   isRcd,
   positionNumber,
+  ownerOf,
   slotKey,
   spanAt,
   type Board,
@@ -274,15 +275,10 @@ export function BoardViewer({
                 <div className="board-row" key={row}>
                   {indexes.map((index) => {
                     const span = spanAt(active, index);
-                    // A way drawing part of the three-phase device beside it
-                    // belongs to that device: it is picked, named and counted
-                    // as the one way the device actually sits in.
-                    const owner =
-                      span.part === "top"
-                        ? index + COLUMNS
-                        : span.part === "bottom"
-                          ? index - COLUMNS
-                          : index;
+                    // A way drawing part of the device beside it belongs to
+                    // that device: it is picked, named and counted as the one
+                    // way the device actually sits in.
+                    const owner = ownerOf(index, span.part);
                     return (
                       <ViewCell
                         key={index}
@@ -480,12 +476,12 @@ function ViewCell({
     >
       <DeviceMark state={cell.state} part={part} />
       <span className="board-cell-no">{number ?? "R"}</span>
-      {part === "whole" || part === "bottom" ? (
+      {part === "whole" || part === "top" ? (
         <span className={`board-cell-text ${cell.label ? "" : "is-blank"}`}>
           {cell.label || (selectable ? "Unnamed" : "")}
         </span>
       ) : null}
-      {findings > 0 && part !== "top" && part !== "middle" ? (
+      {findings > 0 && (part === "whole" || part === "top") ? (
         <span className="board-cell-count">{findings}</span>
       ) : null}
     </div>

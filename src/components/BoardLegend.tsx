@@ -1,7 +1,22 @@
 "use client";
 
-import { DEVICES, STATE_SHORT, type CellState } from "@/lib/board";
+import { DEVICES, STATE_SHORT, isThreePhase, polesOf, type CellState, type Part } from "@/lib/board";
 import { DeviceMark } from "@/components/DeviceMark";
+
+/**
+ * The modules a device is made of, top to bottom.
+ *
+ * A three-pole breaker or contactor is three; an RCD or RCBO is four, the
+ * fourth being the neutral and the test button under the poles.
+ */
+const MODULES: Partial<Record<CellState, Part[]>> = Object.fromEntries(
+  DEVICES.filter(isThreePhase).map((state) => [
+    state,
+    (polesOf(state) === 4
+      ? ["top", "middle", "bottom", "button"]
+      : ["top", "middle", "bottom"]) as Part[],
+  ]),
+);
 
 /**
  * The devices, drawn, with one of them in hand.
@@ -69,12 +84,13 @@ function Face({ state }: { state: CellState }) {
   if (state === "EMPTY") {
     return <span className="device-chip-face is-empty" aria-hidden />;
   }
-  if (state.endsWith("_3P")) {
+  const parts = MODULES[state];
+  if (parts) {
     return (
       <span className="device-chip-face is-tall" aria-hidden>
-        <DeviceMark state={state} part="top" />
-        <DeviceMark state={state} part="middle" />
-        <DeviceMark state={state} part="bottom" />
+        {parts.map((part) => (
+          <DeviceMark key={part} state={state} part={part} />
+        ))}
       </span>
     );
   }

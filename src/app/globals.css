@@ -1519,7 +1519,7 @@ body {
 .device-chip-face.is-tall {
   display: flex;
   flex-direction: column;
-  height: 42px;
+  height: 56px;
 }
 
 .device-chip-face.is-tall .device-mark {
@@ -1899,7 +1899,7 @@ body {
 .board-cell-text {
   position: absolute;
   left: 22%;
-  right: 30%;
+  right: 40%;
   top: 50%;
   transform: translateY(-50%);
   padding: 0;

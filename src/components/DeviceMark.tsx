@@ -27,8 +27,8 @@ import { isThreePhase, type CellState, type Part } from "@/lib/board";
 const W = 100;
 const H = 30;
 
-/** The toggle bar, toward the far end of the module. */
-const TOGGLE = { x: 72, w: 11 };
+/** The toggle bar, a little past the middle of the module. */
+const TOGGLE = { x: 63, w: 12 };
 
 export function DeviceMark({
   state,
@@ -145,27 +145,33 @@ function protective(state: CellState, part: Part) {
   const isRcd = state === "RCD" || state === "RCD_3P";
   const isRcbo = state === "RCBO" || state === "RCBO_3P";
 
-  // The bar runs the height of three modules only where the device really is
-  // standing across three.
-  const three = isThreePhase(state) && part === "middle";
+  // One toggle bar across all three poles, drawn once from the middle. A
+  // four-module device's fourth way is the neutral and the test button, and
+  // the bar does not reach it.
+  const across = isThreePhase(state) && part === "middle";
   const showToggle = part === "whole" || part === "middle";
-  // The push button goes on the bottom module of a three-phase device, which
-  // is where it is on the real thing: under the bar, not beside it.
-  const showButton = part === "whole" || part === "bottom";
+
+  // On a one-module device the button sits beside the toggle. On a
+  // three-phase one it has a module of its own, under the poles.
+  const buttonHere = part === "whole" || part === "button";
 
   return (
     <>
       <rect className="dm-shell" x="0.5" y={top(part)} width={W - 1} height={height(part)} />
 
-      {showButton && isRcd ? <Hatched x={5} y={6} width={13} height={18} /> : null}
-      {showButton && isRcbo ? <Hatched x={6} y={9} width={9} height={12} /> : null}
+      {buttonHere && isRcd ? (
+        <Hatched x={part === "button" ? 40 : 5} y={6} width={17} height={18} />
+      ) : null}
+      {buttonHere && isRcbo ? (
+        <Hatched x={part === "button" ? 43 : 6} y={part === "button" ? 8 : 9} width={13} height={14} />
+      ) : null}
 
       {showToggle ? (
         <Hatched
           x={TOGGLE.x}
-          y={three ? -H + 5 : 5}
+          y={across ? -H + 5 : 5}
           width={TOGGLE.w}
-          height={three ? H * 3 - 20 : H - 10}
+          height={across ? H * 3 - 20 : H - 10}
         />
       ) : null}
     </>
@@ -181,6 +187,7 @@ function protective(state: CellState, part: Part) {
  */
 function contactor(part: Part) {
   const poles = [14, 28, 42, 56];
+  void part;
   return (
     <>
       <rect className="dm-shell" x="0.5" y={top(part)} width={W - 1} height={height(part)} />
@@ -215,6 +222,6 @@ function top(part: Part): number {
 
 function height(part: Part): number {
   if (part === "whole") return H - 1;
-  if (part === "middle") return H + 8;
-  return H + 3.5;
+  if (part === "top" || part === "button") return H + 3.5;
+  return H + 8;
 }

@@ -194,14 +194,42 @@ export function isRcd(state: CellState): boolean {
   return state === "RCD" || state === "RCD_3P" || state === "RCBO" || state === "RCBO_3P";
 }
 
-/** Three modules tall, occupying the way above and the way below its own. */
+/** Switches all three phases, and takes up more than one way to do it. */
 export function isThreePhase(state: CellState): boolean {
   return state.endsWith("_3P");
 }
 
-/** How many modules a device takes up on the board. */
+/**
+ * How far a device reaches either side of the way it is clicked into.
+ *
+ * Module widths off the real gear, not a guess:
+ *
+ *  - A three-pole breaker is three modules, one per phase, with a single
+ *    toggle bar across them. Clicked in the middle, it takes the way above
+ *    and the way below.
+ *  - A three-phase RCBO or RCD is **four**: the three poles, plus a fourth
+ *    for the neutral and the test button. The toggle bar still runs across
+ *    the three poles, and the button sits under them — so clicked in the
+ *    middle of the poles it takes one way above and two below.
+ *  - A three-pole contactor is three modules.
+ *
+ * Getting this wrong is not cosmetic: the number of ways a device occupies is
+ * how many ways are left, and a board drawn one short does not match the one
+ * on the wall.
+ */
+export type Extent = { above: number; below: number };
+
+export function extentOf(state: CellState): Extent {
+  if (!isThreePhase(state)) return { above: 0, below: 0 };
+  // The fourth module — neutral and test button — hangs below the poles.
+  if (state === "RCBO_3P" || state === "RCD_3P") return { above: 1, below: 2 };
+  return { above: 1, below: 1 };
+}
+
+/** How many ways a device takes up on the board. */
 export function polesOf(state: CellState): number {
-  return isThreePhase(state) ? 3 : 1;
+  const { above, below } = extentOf(state);
+  return above + below + 1;
 }
 
 /**
@@ -223,7 +251,17 @@ export function testsFor(state: CellState): number {
  * bottom. Drawn that way the three read as one device standing across three
  * ways, which is what it is.
  */
-export type Part = "whole" | "top" | "middle" | "bottom";
+export type Part =
+  /** A one-module device, all of it in its own way. */
+  | "whole"
+  /** The first pole, above the way the device was clicked into. */
+  | "top"
+  /** The way it was clicked into: the middle pole, and where the toggle is. */
+  | "middle"
+  /** The third pole. */
+  | "bottom"
+  /** The fourth module of an RCD or RCBO: the neutral and the test button. */
+  | "button";
 
 export type Span = { state: CellState; part: Part };
 
@@ -236,29 +274,57 @@ export type Span = { state: CellState; part: Part };
  * lost when one is taken away: whatever was in those ways is still there, and
  * comes back the moment the device is removed.
  */
-export function spanAt(section: BoardSection, index: number): Span {
-  const own = section.cells[index]?.state ?? "EMPTY";
+const PARTS: Record<number, Part> = { [-1]: "top", 0: "middle", 1: "bottom", 2: "button" };
 
-  // A three-phase device only stands across three ways where it has three to
-  // stand across. One saved somewhere it cannot fit — a board drawn before
-  // that was prevented, or edited outside the app — is drawn in its own way
-  // alone rather than hanging off the end of the rail.
-  const claims = (at: number) =>
-    isThreePhase(section.cells[at]?.state ?? "EMPTY") && fitsThreePhase(section, at);
+/** How far from the way a device was clicked into each of its parts sits. */
+const STEPS: Record<Part, number> = { whole: 0, top: -1, middle: 0, bottom: 1, button: 2 };
 
-  if (claims(index - COLUMNS)) {
-    return { state: section.cells[index - COLUMNS].state, part: "bottom" };
-  }
-  if (claims(index + COLUMNS)) {
-    return { state: section.cells[index + COLUMNS].state, part: "top" };
-  }
-  return { state: own, part: claims(index) ? "middle" : "whole" };
+/**
+ * The way a device was clicked into, given one of the ways it covers.
+ *
+ * Everything about a device — its name, the photos pinned to it, the tests
+ * taken against it — belongs to that one way, whichever of its modules is
+ * being looked at.
+ */
+export function ownerOf(index: number, part: Part): number {
+  return index - STEPS[part] * COLUMNS;
 }
 
-/** Whether a position is taken up by a three-phase device above or below it. */
+/** Which phase a module switches, or null for the neutral and test module. */
+export function phaseOf(part: Part): string | null {
+  if (part === "top") return PHASES[0];
+  if (part === "middle") return PHASES[1];
+  if (part === "bottom") return PHASES[2];
+  return null;
+}
+
+export function spanAt(section: BoardSection, index: number): Span {
+  // Which way is the device that covers this one clicked into? Anything from
+  // two ways above (a four-module RCBO whose button module this is) to one
+  // way below (whose first pole this is).
+  for (let offset = -2; offset <= 1; offset += 1) {
+    const at = index + offset * COLUMNS;
+    const state = section.cells[at]?.state ?? "EMPTY";
+    if (!isThreePhase(state)) continue;
+
+    // A device saved somewhere it cannot fit — a board drawn before that was
+    // prevented, or edited outside the app — is drawn in its own way alone
+    // rather than hanging off the end of the rail.
+    if (!fitsAt(section, at, state)) continue;
+
+    const { above, below } = extentOf(state);
+    const step = -offset;
+    if (step >= -above && step <= below) return { state, part: PARTS[step] };
+  }
+
+  const own = section.cells[index]?.state ?? "EMPTY";
+  return { state: own, part: "whole" };
+}
+
+/** Whether a position is taken up by a device clicked into another way. */
 export function isSpanned(section: BoardSection, index: number): boolean {
   const part = spanAt(section, index).part;
-  return part === "top" || part === "bottom";
+  return part !== "whole" && part !== "middle";
 }
 
 /**
@@ -268,23 +334,40 @@ export function isSpanned(section: BoardSection, index: number): boolean {
  * them may already be taken by another three-phase device. That rules out the
  * top and bottom of every column, which is where one physically cannot go.
  */
-export function fitsThreePhase(section: BoardSection, index: number): boolean {
-  const column = index % COLUMNS;
-  const above = index - COLUMNS;
-  const below = index + COLUMNS;
-  if (above < 0 || below >= section.rows * COLUMNS) return false;
-  if (above % COLUMNS !== column || below % COLUMNS !== column) return false;
+export function fitsAt(section: BoardSection, index: number, state: CellState): boolean {
+  const { above, below } = extentOf(state);
+  if (above === 0 && below === 0) return true;
 
-  // Neither neighbour may be a three-phase device itself, nor be taken up by
-  // one standing across it — which, since a device reaches exactly one way
-  // each side, means looking one further out, away from this position. This
-  // way itself is never counted against it, whether or not it already holds
-  // the device being asked about. Written from the cells alone so it cannot
-  // call back into the span it is being asked about.
-  const three = (at: number) => isThreePhase(section.cells[at]?.state ?? "EMPTY");
-  if (three(above) || three(above - COLUMNS)) return false;
-  if (three(below) || three(below + COLUMNS)) return false;
+  const column = index % COLUMNS;
+  const last = section.rows * COLUMNS;
+
+  // Every way it needs has to exist, in this same column.
+  for (let step = -above; step <= below; step += 1) {
+    const at = index + step * COLUMNS;
+    if (at < 0 || at >= last || at % COLUMNS !== column) return false;
+  }
+
+  // And none of them may be spoken for by another multi-module device. Written
+  // from the cells alone, so it cannot call back into the span it is being
+  // asked about: for each way it wants, look at every way a device could sit
+  // in and still reach it, and this way itself never counts against it.
+  for (let step = -above; step <= below; step += 1) {
+    const wanted = index + step * COLUMNS;
+    for (let offset = -2; offset <= 1; offset += 1) {
+      const at = wanted + offset * COLUMNS;
+      if (at === index) continue;
+      const other = section.cells[at]?.state ?? "EMPTY";
+      if (!isThreePhase(other)) continue;
+      const reach = extentOf(other);
+      if (-offset >= -reach.above && -offset <= reach.below) return false;
+    }
+  }
   return true;
+}
+
+/** Kept for the three-module case, which is what most callers mean. */
+export function fitsThreePhase(section: BoardSection, index: number): boolean {
+  return fitsAt(section, index, "BREAKER_3P");
 }
 
 /** What the instrument's three records are called, in the order they're taken. */
@@ -304,7 +387,7 @@ export function nextState(state: CellState): CellState {
 export function nextFitting(section: BoardSection, index: number): CellState {
   let next = nextState(section.cells[index].state);
   for (let guard = 0; guard < GRID_CYCLE.length; guard += 1) {
-    if (!isThreePhase(next) || fitsThreePhase(section, index)) return next;
+    if (fitsAt(section, index, next)) return next;
     next = nextState(next);
   }
   return "EMPTY";
