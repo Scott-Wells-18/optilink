@@ -1,4 +1,5 @@
 import { extractText, getDocumentProxy } from "unpdf";
+import { readScan } from "@/lib/report/scan";
 
 /**
  * Reading the facts off a calibration certificate.
@@ -65,16 +66,46 @@ const CALIBRATED = [
 const SERIAL = [/serial\s*(?:number|no\.?|#)?/i, /\bs\s*\/\s*n\b/i, /\bsn\b/i];
 const MODEL = [/model\s*(?:number|no\.?|#)?/i, /\btype\b/i, /\bpart\s*(?:no\.?|number)\b/i];
 
-export async function readCalibration(pdf: Buffer): Promise<Calibration> {
-  let text: string;
+/**
+ * What a certificate says about itself.
+ *
+ * The text in the file first, because where a certificate was typed that is
+ * exact. A certificate that was printed, signed and scanned has no text in it
+ * at all — every word is part of a photograph — so where the text layer gives
+ * up no dates the picture is taken back out of the file and read instead. That
+ * is slower and it is a reading rather than a quotation, which is why it is
+ * only ever the second answer; pass `scanned: false` where there is no time
+ * for it.
+ */
+export async function readCalibration(
+  pdf: Buffer,
+  { scanned = true }: { scanned?: boolean } = {},
+): Promise<Calibration> {
+  const typed = readText(await layer(pdf));
+  if (!scanned || typed.calibratedOn || typed.expiresOn) return typed;
+
+  const read = readText(await readScan(pdf).catch(() => ""));
+  return {
+    // Whatever the text layer did give up stays: it is the better source.
+    serialNo: typed.serialNo ?? read.serialNo,
+    modelNo: typed.modelNo ?? read.modelNo,
+    calibratedOn: read.calibratedOn,
+    expiresOn: read.expiresOn,
+  };
+}
+
+async function layer(pdf: Buffer): Promise<string> {
   try {
     const document = await getDocumentProxy(new Uint8Array(pdf));
-    ({ text } = await extractText(document, { mergePages: true }));
+    const { text } = await extractText(document, { mergePages: true });
+    return text ?? "";
   } catch {
-    return { ...EMPTY };
+    return "";
   }
-  if (!text?.trim()) return { ...EMPTY };
+}
 
+function readText(text: string): Calibration {
+  if (!text.trim()) return { ...EMPTY };
   return {
     serialNo: after(text, SERIAL, 32),
     modelNo: after(text, MODEL, 32),

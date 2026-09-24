@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { badRequest, readJson, serverError } from "@/lib/api";
+import { badRequest, readDay, readJson, serverError } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -27,6 +27,8 @@ export async function POST(request: Request) {
       modelNo?: string;
       certFileId?: string;
       photoFileId?: string;
+      calibratedOn?: string | null;
+      expiresOn?: string | null;
     };
     if (!body.name?.trim()) return badRequest("Give the equipment a name.");
 
@@ -37,6 +39,8 @@ export async function POST(request: Request) {
         modelNo: body.modelNo?.trim().slice(0, 80) || null,
         certFileId: body.certFileId || null,
         photoFileId: body.photoFileId || null,
+        calibratedOn: readDay(body.calibratedOn),
+        expiresOn: readDay(body.expiresOn),
       },
     });
     return NextResponse.json(item);

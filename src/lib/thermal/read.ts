@@ -1,7 +1,5 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import sharp from "sharp";
-import { createWorker, type Worker } from "tesseract.js";
+import { ocrWorker } from "@/lib/ocr";
 
 /**
  * Reading the temperatures a thermal camera burns into its own image.
@@ -26,43 +24,16 @@ export type Reading = {
   text: string[];
 };
 
-const LANG_PATH = path.join(process.cwd(), "tessdata");
-
-/**
- * Pointed at explicitly: the worker is started by absolute path, and the path
- * the library works out for itself is relative to the bundle rather than to
- * where the package actually lives.
- */
-function workerPath(): string | undefined {
-  const candidates = [
-    path.join(process.cwd(), "node_modules/tesseract.js/src/worker-script/node/index.js"),
-    path.join(
-      process.cwd(),
-      "node_modules/.pnpm/node_modules/tesseract.js/src/worker-script/node/index.js",
-    ),
-  ];
-  return candidates.find((candidate) => existsSync(candidate));
-}
 /** Big enough for small overlay text, small enough to stay quick. */
 const TARGET_WIDTH = 2200;
 
-let workerPromise: Promise<Worker> | null = null;
-
-/** One worker for the life of the process — starting one costs seconds. */
-function worker(): Promise<Worker> {
-  workerPromise ??= (async () => {
-    const instance = await createWorker("eng", 1, {
-      langPath: LANG_PATH,
-      workerPath: workerPath(),
-      gzip: true,
-      cachePath: path.join(process.cwd(), ".tesseract"),
-      logger: () => {},
-    });
-    // Sparse-but-uniform: the overlay is a handful of short lines, not prose.
-    await instance.setParameters({ tessedit_pageseg_mode: "6" as never });
-    return instance;
-  })();
-  return workerPromise;
+/**
+ * One uniform block: the overlay is a handful of short lines, not prose. The
+ * worker itself is shared and kept for the life of the process — starting one
+ * costs seconds.
+ */
+function worker() {
+  return ocrWorker("block");
 }
 
 async function passes(image: Buffer): Promise<Buffer[]> {

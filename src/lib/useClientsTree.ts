@@ -138,6 +138,8 @@ type TestEquipmentRecord = {
   modelNo: string | null;
   certFile: { id: string; originalName: string } | null;
   photoFile: { id: string; originalName: string } | null;
+  calibratedOn: string | null;
+  expiresOn: string | null;
 };
 
 export type DialogField = {
@@ -1168,7 +1170,13 @@ export function useClientsTree(enabled: boolean) {
       ...testGear.map<TreeNode>((item) => ({
         id: `gear:${item.id}`,
         label: item.name,
-        detail: [item.modelNo, item.serialNo ? `S/N ${item.serialNo}` : null]
+        // Model, serial, and when the calibration runs out — the last of which
+        // is the thing worth noticing from across the room.
+        detail: [
+          item.modelNo,
+          item.serialNo ? `S/N ${item.serialNo}` : null,
+          item.expiresOn ? `Due ${isoDate(item.expiresOn).split("-").reverse().join("/")}` : null,
+        ]
           .filter(Boolean)
           .join("  ·  ") || (item.certFile ? "Calibrated" : "No certificate"),
         variant: "info",
@@ -1182,6 +1190,8 @@ export function useClientsTree(enabled: boolean) {
             certName: item.certFile?.originalName ?? null,
             photoFileId: item.photoFile?.id ?? null,
             photoUrl: item.photoFile ? `/api/files/${item.photoFile.id}` : null,
+            calibratedOn: item.calibratedOn ? isoDate(item.calibratedOn) : null,
+            expiresOn: item.expiresOn ? isoDate(item.expiresOn) : null,
           }),
         onRemove: () => void removeGear(item.id, item.name),
       })),

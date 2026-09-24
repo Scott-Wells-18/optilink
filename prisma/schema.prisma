@@ -109,6 +109,16 @@ model TestEquipment {
   certFileId String?
   certFile   UploadedFile? @relation("TestEquipmentCert", fields: [certFileId], references: [id], onDelete: SetNull)
 
+  /**
+   * The dates off the certificate, read from it where they can be and always
+   * correctable by hand. Held here rather than read afresh every time a report
+   * is built: a scanned certificate has to be put through character
+   * recognition to be read at all, which is slow and is a reading rather than
+   * a quotation, so it is done once and shown to the person who filed it.
+   */
+  calibratedOn DateTime? @db.Date
+  expiresOn    DateTime? @db.Date
+
   /** A photograph of the instrument. Optional. */
   photoFileId String?
   photoFile   UploadedFile? @relation("TestEquipmentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)

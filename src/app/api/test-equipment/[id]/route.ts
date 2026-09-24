@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { readJson, serverError } from "@/lib/api";
+import { readDay, readJson, serverError } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,8 @@ export async function PATCH(
       modelNo?: string;
       certFileId?: string | null;
       photoFileId?: string | null;
+      calibratedOn?: string | null;
+      expiresOn?: string | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -27,6 +29,9 @@ export async function PATCH(
     }
     for (const key of ["certFileId", "photoFileId"] as const) {
       if (key in body) data[key] = body[key] || null;
+    }
+    for (const key of ["calibratedOn", "expiresOn"] as const) {
+      if (key in body) data[key] = readDay(body[key]);
     }
     if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
 

@@ -23,6 +23,9 @@ export type EquipmentDraft = {
   certName: string | null;
   photoFileId: string | null;
   photoUrl: string | null;
+  /** Both as "2025-12-12", which is what a date input wants. */
+  calibratedOn: string | null;
+  expiresOn: string | null;
 };
 
 export const EMPTY_EQUIPMENT: EquipmentDraft = {
@@ -33,6 +36,8 @@ export const EMPTY_EQUIPMENT: EquipmentDraft = {
   certName: null,
   photoFileId: null,
   photoUrl: null,
+  calibratedOn: null,
+  expiresOn: null,
 };
 
 export function EquipmentDialog({
@@ -46,7 +51,8 @@ export function EquipmentDialog({
 }) {
   const key = `equipment:${initial.id ?? "new"}`;
   const [draft, setDraft] = usePersisted<EquipmentDraft>(key, initial);
-  const [busy, setBusy] = useState<null | "cert" | "photo" | "save">(null);
+  const [busy, setBusy] = useState<null | "cert" | "reading" | "photo" | "save">(null);
+  const [read, setRead] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,6 +79,7 @@ export function EquipmentDialog({
     if (!file) return;
     setBusy("cert");
     setError(null);
+    setRead(null);
     try {
       const stored = await uploadFile(file);
       setDraft((current) => ({
@@ -80,12 +87,62 @@ export function EquipmentDialog({
         certFileId: stored.id,
         certName: stored.originalName,
       }));
+      await readCertificate(stored.id);
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
           ? uploadError.message
           : "That certificate could not be uploaded.",
       );
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Ask what the certificate says, and fill in what comes back.
+   *
+   * A certificate that was typed is read straight out of the file; one that
+   * was printed and scanned has to be put through character recognition,
+   * which takes a few seconds and is a reading rather than a quotation. Either
+   * way what it found lands in the fields below, where it can be looked at
+   * against the certificate and corrected before it goes near a report.
+   */
+  async function readCertificate(fileId: string) {
+    setBusy("reading");
+    try {
+      const response = await fetch("/api/test-equipment/read-certificate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileId }),
+      });
+      if (!response.ok) throw new Error("unread");
+      const found = (await response.json()) as {
+        serialNo: string | null;
+        modelNo: string | null;
+        calibratedOn: string | null;
+        expiresOn: string | null;
+        expiryDerived: boolean;
+      };
+
+      setDraft((current) => ({
+        ...current,
+        // Nothing typed is ever overwritten — the person holding the meter
+        // knows it better than a pattern match does.
+        serialNo: current.serialNo || found.serialNo,
+        modelNo: current.modelNo || found.modelNo,
+        calibratedOn: found.calibratedOn ?? current.calibratedOn,
+        expiresOn: found.expiresOn ?? current.expiresOn,
+      }));
+
+      setRead(
+        found.calibratedOn
+          ? found.expiryDerived
+            ? "Read off the certificate. It states no due date, so this is a year on — change it if the laboratory set a different interval."
+            : "Read off the certificate. Check both dates against it."
+          : "No date could be read off this certificate. Fill the dates in by hand.",
+      );
+    } catch {
+      setRead("This certificate could not be read. Fill the dates in by hand.");
     } finally {
       setBusy(null);
     }
@@ -128,6 +185,8 @@ export function EquipmentDialog({
             modelNo: draft.modelNo ?? "",
             certFileId: draft.certFileId,
             photoFileId: draft.photoFileId,
+            calibratedOn: draft.calibratedOn,
+            expiresOn: draft.expiresOn,
           }),
         },
       );
@@ -202,19 +261,47 @@ export function EquipmentDialog({
             <label className="rcd-drop">
               {busy === "cert"
                 ? "Uploading…"
-                : draft.certName
-                  ? `Replace — ${draft.certName}`
-                  : "Choose the certificate"}
+                : busy === "reading"
+                  ? "Reading the certificate…"
+                  : draft.certName
+                    ? `Replace — ${draft.certName}`
+                    : "Choose the certificate"}
               <input
                 type="file"
                 accept=".pdf,application/pdf"
                 hidden
+                disabled={busy !== null}
                 onChange={(event) => {
                   void takeCertificate(event.target.files);
                   event.target.value = "";
                 }}
               />
             </label>
+
+            <div className="supply-grid">
+              <label className="dialog-field">
+                <span className="dialog-label">Certification date</span>
+                <input
+                  type="date"
+                  className="dialog-input"
+                  value={draft.calibratedOn ?? ""}
+                  onChange={(event) => set("calibratedOn", event.target.value || null)}
+                />
+              </label>
+              <label className="dialog-field">
+                <span className="dialog-label">Due/expiry date</span>
+                <input
+                  type="date"
+                  className="dialog-input"
+                  value={draft.expiresOn ?? ""}
+                  onChange={(event) => set("expiresOn", event.target.value || null)}
+                />
+              </label>
+            </div>
+            <p className="board-section-note is-standalone">
+              {read ??
+                "Filled in from the certificate when one is chosen. Both dates print on every report this instrument appears in, so check them against the certificate."}
+            </p>
 
             <div className="board-section-head">
               <h3 className="board-section-title">

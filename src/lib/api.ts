@@ -89,6 +89,18 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+/**
+ * "2025-12-12" out of a date input, kept as that day.
+ *
+ * Not as a moment: a calibration lapses on a day, and turning it into midnight
+ * somewhere else moves it by one.
+ */
+export function readDay(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const at = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
 export function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }

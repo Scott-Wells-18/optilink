@@ -29,6 +29,8 @@ type InstrumentRow = {
   name: string;
   serialNo: string | null;
   modelNo: string | null;
+  calibratedOn?: Date | null;
+  expiresOn?: Date | null;
   certFile: { storedName: string } | null;
   photoFile: { storedName: string } | null;
 } | null;
@@ -62,7 +64,30 @@ export async function readInstrument(row: InstrumentRow): Promise<Instrument | n
     const bytes = await readUpload(row.certFile.storedName).catch(() => null);
     certificate = bytes ? await readCertificate(bytes) : null;
     certificateUnreadable = certificate === null;
-    if (bytes) calibration = await readCalibration(bytes);
+    // The dates held against the instrument, which were read off the
+    // certificate when it was filed and checked by the person who filed it.
+    // The certificate is only read again where there are none — an instrument
+    // entered before the dates were asked for — and then only its text, never
+    // its pictures: putting a scan through character recognition takes seconds
+    // and no report should wait on it.
+    if (bytes && !row.calibratedOn && !row.expiresOn) {
+      calibration = await readCalibration(bytes, { scanned: false });
+    } else if (bytes) {
+      const stated = await readCalibration(bytes, { scanned: false });
+      calibration = {
+        serialNo: stated.serialNo,
+        modelNo: stated.modelNo,
+        calibratedOn: row.calibratedOn ?? stated.calibratedOn,
+        expiresOn: row.expiresOn ?? stated.expiresOn,
+      };
+    }
+  } else if (row.calibratedOn || row.expiresOn) {
+    calibration = {
+      serialNo: null,
+      modelNo: null,
+      calibratedOn: row.calibratedOn ?? null,
+      expiresOn: row.expiresOn ?? null,
+    };
   }
 
   // The name is whatever the instrument is called under Equipment, full stop.
