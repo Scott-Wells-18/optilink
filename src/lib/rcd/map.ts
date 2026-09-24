@@ -80,10 +80,18 @@ export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position
   // A freehand board has no rows or columns to walk. The operator numbered the
   // RCDs themselves when they drew it, and that numbering is the walk.
   if (isFreeBoard(board)) {
+    // A board drawn freehand has no way numbers to cite, so a device is named
+    // for what was written on it, and failing that for where it falls in the
+    // testing order: RCD-1, RCD-2, and so on.
     return orderedItems(board)
       .filter((item) => isRcd(item.state))
-      .flatMap((item) =>
-        phasesOf(item.state, freeSlotKey(item.id), item.label.trim() || "RCD", null),
+      .flatMap((item, place) =>
+        phasesOf(
+          item.state,
+          freeSlotKey(item.id),
+          item.label.trim() ? `RCD - ${item.label.trim()}` : `RCD-${place + 1}`,
+          null,
+        ),
       );
   }
 
@@ -118,8 +126,16 @@ function extraPositions(section: BoardSection, walk: Walk): Position[] {
     return left - right;
   });
 
+  // Devices beside the grid have no way number, so they are named for what
+  // they are: "RCD-Kitchen GPOs", or "RCD-Additional" where nothing was
+  // written on them.
   return ranked.flatMap((entry) =>
-    phasesOf(entry.cell.state, entry.slot, entry.cell.label.trim() || `Additional ${entry.index + 1}`, null),
+    phasesOf(
+      entry.cell.state,
+      entry.slot,
+      entry.cell.label.trim() ? `RCD-${entry.cell.label.trim()}` : "RCD-Additional",
+      null,
+    ),
   );
 }
 
@@ -142,10 +158,47 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
     return phasesOf(
       cell.state,
       slotKey(section.id, "cell", index),
-      cell.label.trim() || `Way ${number}`,
+      wayLabel(section, index, numbering, cell),
       number,
     );
   });
+}
+
+/**
+ * What a device in the grid is called on the report.
+ *
+ * "CB-4 (Kitchen GPOs)", or "CB-4" where the way was never labelled. A
+ * three-phase device occupies the way above and the way below as well, so it
+ * is named for all three: "CB-1,3,5 (Compressor)". The numbers are the ones
+ * printed on the board, which on an odd/even board are not consecutive.
+ */
+function wayLabel(
+  section: BoardSection,
+  index: number,
+  numbering: Numbering,
+  cell: { state: CellState; label: string },
+): string {
+  const spread = spanOf(cell.state);
+  const numbers: number[] = [];
+  for (let step = -Math.floor(spread / 2); step <= Math.floor(spread / 2); step += 1) {
+    const at = index + step * COLUMNS;
+    if (at < 0 || at >= section.rows * COLUMNS) continue;
+    numbers.push(positionNumber(section, at, numbering));
+  }
+
+  const ways = `CB-${numbers.sort((a, b) => a - b).join(",")}`;
+  const written = cell.label.trim();
+  return written ? `${ways} (${written})` : ways;
+}
+
+/**
+ * How many ways a device occupies on the board.
+ *
+ * A three-phase RCD is three modules wide and sits across the way above and
+ * the way below its own. A single-phase device is one way.
+ */
+function spanOf(state: CellState): number {
+  return testsFor(state) === 3 ? 3 : 1;
 }
 
 /**
