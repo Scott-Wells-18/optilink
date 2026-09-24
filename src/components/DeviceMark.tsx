@@ -96,6 +96,48 @@ function body(state: CellState, part: Part) {
   return protective(state, part);
 }
 
+/**
+ * A part that is operated by hand: a toggle, or a push button.
+ *
+ * Filled in the device's own colour and outlined, with the ribs a real toggle
+ * carries so a thumb does not slip off it. `kind` is what it is, which is what
+ * picks the colour.
+ */
+function Part_({
+  kind,
+  x,
+  y,
+  width,
+  height: tall,
+  ribs = false,
+}: {
+  kind: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  ribs?: boolean;
+}) {
+  return (
+    <>
+      <rect className={`dm-part is-${kind}`} x={x} y={y} width={width} height={tall} rx="1.4" />
+      {ribs ? (
+        <g className="dm-ribs">
+          {[0.28, 0.5, 0.72].map((at) => (
+            <line
+              key={at}
+              x1={x + width * at}
+              y1={y + Math.min(4, tall * 0.18)}
+              x2={x + width * at}
+              y2={y + tall - Math.min(4, tall * 0.18)}
+            />
+          ))}
+        </g>
+      ) : null}
+    </>
+  );
+}
+
 /** Hatched, and outlined on top so the edge stays crisp. */
 function Hatched({
   x,
@@ -159,15 +201,27 @@ function protective(state: CellState, part: Part) {
     <>
       <rect className="dm-shell" x="0.5" y={top(part)} width={W - 1} height={height(part)} />
 
+      {/* The two lines moulded across the body of every one of these. */}
+      <line className="dm-rule" x1="22" y1="12" x2="58" y2="12" />
+      <line className="dm-rule" x1="22" y1="18" x2="58" y2="18" />
+
       {buttonHere && isRcd ? (
-        <Hatched x={part === "button" ? 40 : 5} y={6} width={17} height={18} />
+        <Part_ kind="test" x={part === "button" ? 40 : 5} y={6} width={17} height={18} />
       ) : null}
       {buttonHere && isRcbo ? (
-        <Hatched x={part === "button" ? 43 : 6} y={part === "button" ? 8 : 9} width={13} height={14} />
+        <Part_
+          kind="test"
+          x={part === "button" ? 43 : 6}
+          y={part === "button" ? 8 : 9}
+          width={13}
+          height={14}
+        />
       ) : null}
 
       {showToggle ? (
-        <Hatched
+        <Part_
+          kind={isRcd || isRcbo ? "rcd" : "breaker"}
+          ribs
           x={TOGGLE.x}
           y={across ? -H + 5 : 5}
           width={TOGGLE.w}
@@ -187,7 +241,6 @@ function protective(state: CellState, part: Part) {
  */
 function contactor(part: Part) {
   const poles = [14, 28, 42, 56];
-  void part;
   return (
     <>
       <rect className="dm-shell" x="0.5" y={top(part)} width={W - 1} height={height(part)} />
@@ -195,16 +248,17 @@ function contactor(part: Part) {
       {/* The terminal screws, in two rows the way they are on the real thing. */}
       {poles.map((x) => (
         <g key={x}>
-          <rect className="dm-line" x={x - 3} y="4" width="6" height="6" />
-          <rect className="dm-line" x={x - 3} y={H - 10} width="6" height="6" />
+          <rect className="dm-hole" x={x - 3} y="4" width="6" height="6" rx="1.2" />
+          <rect className="dm-hole" x={x - 3} y={H - 10} width="6" height="6" rx="1.2" />
         </g>
       ))}
 
-      {/* The coil, in its own column down the end. */}
+      {/* The coil, in its own column down the end. Nothing to operate by hand:
+          that is what makes a contactor unmistakable. */}
       <line className="dm-line" x1="68" y1={top(part)} x2="68" y2={top(part) + height(part)} />
-      <rect className="dm-line" x="79" y="4" width="6" height="6" />
-      <rect className="dm-line" x="79" y={H - 10} width="6" height="6" />
-      <Hatched x={74} y={12.5} width={16} height={5} />
+      <rect className="dm-hole" x="79" y="4" width="6" height="6" rx="1.2" />
+      <rect className="dm-hole" x="79" y={H - 10} width="6" height="6" rx="1.2" />
+      <Part_ kind="coil" x={74} y={12} width={16} height={6} />
     </>
   );
 }

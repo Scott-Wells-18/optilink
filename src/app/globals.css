@@ -1819,7 +1819,7 @@ body {
   min-width: 130px;
   height: 30px;
   border: none;
-  border-radius: 0;
+  border-radius: 2px;
   background: none;
   cursor: pointer;
   user-select: none;
@@ -1856,27 +1856,75 @@ body {
 
 /* --- what a device is made of -------------------------------------------
  *
- * Line art, no colour. The body is an outline, the operable parts are
- * hatched: a toggle, a push button, a blank that is hatched right across.
- * Nothing is told apart by colour, so nothing is lost in a black and white
+ * The body is a light shell with an outline; the parts that are operated by
+ * hand carry the colour. Colour is a second cue, not the only one: the shape
+ * still says which device it is, so nothing is lost in a black and white
  * print or to anybody who does not separate red from green.
  */
 
 .dm-shell {
-  fill: #ffffff;
-  stroke: var(--ink-2);
+  fill: #eef2f6;
+  stroke: #b3c2d0;
   stroke-width: 1.1;
+}
+
+.dm-shell.is-blank {
+  fill: #dde5ec;
 }
 
 .dm-line {
   fill: none;
-  stroke: var(--ink-2);
+  stroke: #b3c2d0;
   stroke-width: 1.1;
 }
 
+/* The lines moulded across the body. The circuit name is written over them,
+   the way a label is stuck on the real thing. */
+.dm-rule {
+  stroke: #cbd7e2;
+  stroke-width: 1.2;
+}
+
+.dm-part {
+  stroke: rgba(9, 32, 53, 0.35);
+  stroke-width: 0.9;
+}
+
+/* A breaker's toggle. */
+.dm-part.is-breaker {
+  fill: #14528f;
+}
+
+/* An RCD's or an RCBO's toggle: the same family, its own colour. */
+.dm-part.is-rcd {
+  fill: #0e9f6e;
+}
+
+/* The push button, in the colour a test button actually is. */
+.dm-part.is-test {
+  fill: #e5a63f;
+}
+
+/* A contactor has no toggle at all — it is switched by its coil. */
+.dm-part.is-coil {
+  fill: #cf2f36;
+}
+
+.dm-ribs line {
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 1.1;
+}
+
+.dm-hole {
+  fill: #ffffff;
+  stroke: #8fa2b3;
+  stroke-width: 1.1;
+}
+
+/* A blank stays hatched: there is nothing on it to colour. */
 .dm-hatch-line {
-  stroke: var(--ink-2);
-  stroke-width: 1.4;
+  stroke: #9db0c1;
+  stroke-width: 1.6;
 }
 
 .board-cell-no {
