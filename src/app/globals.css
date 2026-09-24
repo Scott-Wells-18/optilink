@@ -2472,6 +2472,50 @@ body {
   color: var(--accent);
 }
 
+/* The stage's own tally sits beside its name, and pushes the buttons right. */
+.issue-count {
+  margin-right: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Adding a folder is the second way in, so it reads as the quieter one. */
+.issue-add.is-quiet {
+  border-style: none;
+  padding: 7px 4px;
+  color: var(--ink-4);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.issue-add.is-quiet:hover {
+  border-style: none;
+  color: var(--accent);
+}
+
+/* Nine is the page, so at nine the way in closes rather than disappearing. */
+.issue-add.is-full,
+.issue-add.is-busy {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.issue-add.is-full:hover {
+  border-style: dashed;
+  border-color: var(--hair-strong);
+  color: var(--ink-2);
+}
+
+.issue-add.is-busy {
+  color: var(--accent);
+  opacity: 1;
+  border-style: solid;
+  border-color: rgba(27, 155, 216, 0.4);
+}
+
 .issue-shots {
   display: flex;
   flex-wrap: wrap;

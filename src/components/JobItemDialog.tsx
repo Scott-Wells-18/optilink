@@ -2,7 +2,14 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { JOB_STAGES, STAGE_LABELS, STAGE_NOTES, type JobPhotoStage } from "@/lib/jobs";
+import {
+  JOB_STAGES,
+  MAX_PHOTOS_PER_STAGE,
+  PHOTO_BUDGET,
+  STAGE_LABELS,
+  STAGE_NOTES,
+  type JobPhotoStage,
+} from "@/lib/jobs";
 import { uploadImage } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
@@ -51,6 +58,7 @@ export function JobItemDialog({
     {},
   );
   const [busy, setBusy] = useState<JobPhotoStage | "save" | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function forget() {
@@ -58,7 +66,22 @@ export function JobItemDialog({
     clearSession(`${key}:photos`);
   }
 
+  /**
+   * Hand a photo back.
+   *
+   * A picture is uploaded the moment it is chosen, so one taken out of a draft
+   * — or a draft abandoned altogether — has already cost a file on the volume.
+   * The server only lets go of a file nothing else points at, so this is safe
+   * to call for anything.
+   */
+  function release(fileIds: string[]) {
+    for (const fileId of fileIds) {
+      void fetch(`/api/files/${fileId}`, { method: "DELETE" }).catch(() => {});
+    }
+  }
+
   function cancel() {
+    release(JOB_STAGES.flatMap((stage) => (photos[stage] ?? []).map((photo) => photo.fileId)));
     forget();
     onCancel();
   }
@@ -69,29 +92,78 @@ export function JobItemDialog({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // cancel() only drops the draft and calls the prop.
+    // cancel() drops the draft, hands its photos back and calls the prop, so
+    // it has to see the photos as they are now rather than as they were when
+    // the dialog opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onCancel]);
+  }, [onCancel, photos]);
 
   const filled = FIELDS.every((field) => values[field.key]?.trim());
   const ready =
     filled && (photos.BEFORE?.length ?? 0) > 0 && (photos.AFTER?.length ?? 0) > 0;
 
-  async function add(stage: JobPhotoStage, files: FileList | null) {
-    if (!files?.length) return;
+  /**
+   * Take a selection — a handful of photos, or a whole folder off the phone or
+   * the laptop — and put as many of them as the stage still has room for.
+   *
+   * A folder comes in as everything that is in it, so anything that is not a
+   * picture is dropped rather than refused, and the ones that are come in the
+   * order the folder lists them. Three upload at a time: one at a time makes a
+   * folder of nine feel broken on a site connection, and all nine at once is
+   * what makes a phone give up halfway.
+   */
+  async function add(stage: JobPhotoStage, selection: FileList | null) {
+    const pictures = Array.from(selection ?? []).filter(
+      (file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|avif|gif|heic|heif)$/i.test(file.name),
+    );
+    if (pictures.length === 0) return;
+
+    const room = MAX_PHOTOS_PER_STAGE - (photos[stage]?.length ?? 0);
+    if (room <= 0) {
+      setError(`${STAGE_LABELS[stage]} already holds its ${MAX_PHOTOS_PER_STAGE} photos.`);
+      return;
+    }
+
+    const taking = pictures.slice(0, room);
     setBusy(stage);
-    setError(null);
+    setProgress({ done: 0, total: taking.length });
+    const over = pictures.length - taking.length;
+    setError(
+      over > 0
+        ? `${STAGE_LABELS[stage]} holds ${MAX_PHOTOS_PER_STAGE} photos — a page of three by three. ` +
+          `The first ${taking.length} went in; the other ${over} did not.`
+        : null,
+    );
+
     try {
-      const added: Pending[] = [];
-      for (const file of Array.from(files)) {
-        const image = await uploadImage(file);
-        added.push({ fileId: image.id, name: file.name });
+      const added: (Pending | null)[] = new Array(taking.length).fill(null);
+      let next = 0;
+      let finished = 0;
+
+      async function worker() {
+        for (let at = next++; at < taking.length; at = next++) {
+          const file = taking[at];
+          const image = await uploadImage(file, PHOTO_BUDGET);
+          added[at] = { fileId: image.id, name: file.name };
+          finished += 1;
+          setProgress({ done: finished, total: taking.length });
+        }
       }
-      setPhotos((current) => ({ ...current, [stage]: [...(current[stage] ?? []), ...added] }));
+
+      await Promise.all(
+        Array.from({ length: Math.min(3, taking.length) }, () => worker()),
+      );
+
+      const kept = added.filter((photo): photo is Pending => photo !== null);
+      setPhotos((current) => ({
+        ...current,
+        [stage]: [...(current[stage] ?? []), ...kept].slice(0, MAX_PHOTOS_PER_STAGE),
+      }));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
       setBusy(null);
+      setProgress(null);
     }
   }
 
@@ -100,6 +172,7 @@ export function JobItemDialog({
       ...current,
       [stage]: (current[stage] ?? []).filter((photo) => photo.fileId !== fileId),
     }));
+    release([fileId]);
   }
 
   async function save() {
@@ -171,23 +244,58 @@ export function JobItemDialog({
         <div className="issue-slots">
           {JOB_STAGES.map((stage) => {
             const held = photos[stage] ?? [];
+            const full = held.length >= MAX_PHOTOS_PER_STAGE;
+            const uploading = busy === stage;
             return (
               <section className="issue-slot" key={stage}>
                 <div className="issue-slot-head">
                   <h3 className="board-section-title">{STAGE_LABELS[stage]}</h3>
-                  <label className="issue-add">
-                    {busy === stage ? "Uploading…" : held.length ? "Add another" : "Add photo"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      hidden
-                      onChange={(event) => {
-                        void add(stage, event.target.files);
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <span className="issue-count">
+                    {held.length} of {MAX_PHOTOS_PER_STAGE}
+                  </span>
+                  {uploading ? (
+                    <span className="issue-add is-busy">
+                      {progress
+                        ? `Uploading ${progress.done} of ${progress.total}…`
+                        : "Uploading…"}
+                    </span>
+                  ) : (
+                    <>
+                      <label className={`issue-add${full ? " is-full" : ""}`}>
+                        {held.length ? "Add photos" : "Add photos"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          hidden
+                          disabled={full || busy !== null}
+                          onChange={(event) => {
+                            void add(stage, event.target.files);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <label className={`issue-add is-quiet${full ? " is-full" : ""}`}>
+                        Add a folder
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          hidden
+                          disabled={full || busy !== null}
+                          // Chromium and Safari take a whole folder this way;
+                          // a browser that does not understand it simply shows
+                          // the ordinary picker, which is no worse than the
+                          // button beside it.
+                          {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+                          onChange={(event) => {
+                            void add(stage, event.target.files);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
 
                 {held.length ? (

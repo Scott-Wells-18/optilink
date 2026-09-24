@@ -121,6 +121,67 @@ export async function deleteUpload(id: string) {
   await prisma.uploadedFile.delete({ where: { id } });
 }
 
+/**
+ * Every place a stored file can still be spoken for.
+ *
+ * Used to decide whether a file that has just lost one reference is now
+ * unreferenced and can go. It has to name every relation: a file this misses
+ * would be deleted out from under whatever still points at it.
+ */
+const REFERENCES = {
+  thermalFor: true,
+  visualFor: true,
+  photos: true,
+  observationPhotos: true,
+  settingsLogo: true,
+  settingsLogoMark: true,
+  issuePhotos: true,
+  jobPhotos: true,
+  rcdSources: true,
+  safetyTemplates: true,
+  signatures: true,
+  safetyDocSources: true,
+  powerSources: true,
+  equipmentCerts: true,
+  equipmentPhotos: true,
+} as const;
+
+/**
+ * Let go of files nothing points at any more.
+ *
+ * A works report is twenty-seven photographs an item, and deleting the report
+ * used to leave every one of them on the volume for good: the row that joined
+ * them to the job went, and the file itself stayed behind with nothing to find
+ * it by. Visit after visit that is what fills the disk.
+ *
+ * So whoever removes the rows that referenced a file calls this afterwards
+ * with its ids. A file that something else still holds — a photo also used on
+ * a thermal finding, a certificate on a piece of gear — is counted and kept.
+ */
+export async function releaseFiles(ids: string[]): Promise<number> {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (wanted.length === 0) return 0;
+
+  const files = await prisma.uploadedFile.findMany({
+    where: { id: { in: wanted } },
+    select: { id: true, storedName: true, _count: { select: REFERENCES } },
+  });
+
+  let released = 0;
+  for (const file of files) {
+    const held = Object.values(file._count).reduce((total, count) => total + count, 0);
+    if (held > 0) continue;
+    try {
+      await unlink(path.resolve(uploadDir(), file.storedName));
+    } catch {
+      // Already gone from disk — removing the row is still the right outcome.
+    }
+    await prisma.uploadedFile.delete({ where: { id: file.id } });
+    released += 1;
+  }
+  return released;
+}
+
 export function etagFor(buffer: Buffer): string {
   return `"${createHash("sha1").update(buffer).digest("hex")}"`;
 }

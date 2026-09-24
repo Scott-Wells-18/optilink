@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { readUpload } from "@/lib/storage";
-import { JOB_STAGES, STAGE_LABELS, type JobPhotoStage } from "@/lib/jobs";
+import {
+  JOB_STAGES,
+  MAX_PHOTOS_PER_STAGE,
+  STAGE_LABELS,
+  type JobPhotoStage,
+} from "@/lib/jobs";
 import { COMPANY } from "@/lib/company";
 import { tidy, titleCase } from "@/lib/writing";
 import {
@@ -257,29 +262,26 @@ function summary(doc: Doc, data: JobReport, laid: Layout) {
 /* --- how a strip of photos is laid out ------------------------------------ */
 
 /**
- * How many tiles across, for a given number of photos in one stage.
+ * A stage is laid out three tiles across, whatever it holds.
  *
- * The answer is not "always three". Two photos across the full width read as a
- * pair; four read better as two rows of two than as a row of three with one
- * stranded underneath; and past six, tiles have to get smaller or a single
- * item eats three pages. Nothing is ever cropped at any size, so the only
- * thing that changes is how much paper each photo is given.
+ * Nine photographs is what one stage takes and three by three is what nine
+ * makes, so three across is the grid. Holding to it when a stage has fewer
+ * keeps every tile on the page the same size: a before of nine beside an after
+ * of four still reads as one record rather than two different documents.
  */
-function columnsFor(count: number): number {
-  if (count <= 2) return Math.max(1, count);
-  if (count === 3) return 3;
-  if (count === 4) return 2;
-  if (count <= 6) return 3;
-  return 4;
-}
+const ACROSS = 3;
 
 /** A tile never spans more than half the page, however few photos there are. */
 function tileSize(count: number): { columns: number; width: number; height: number } {
-  const columns = columnsFor(count);
+  const columns = Math.max(1, Math.min(ACROSS, count));
   const across = Math.max(2, columns);
   const width = (CONTENT - TILE_GAP * (across - 1)) / across;
   return { columns, width, height: Math.round(width * 0.78) };
 }
+
+/** The grid a stage is drawn on: always three wide, at the size that fits. */
+const GRID_WIDTH = (CONTENT - TILE_GAP * (ACROSS - 1)) / ACROSS;
+const GRID_HEIGHT = Math.round(GRID_WIDTH * 0.78);
 
 /** A photo in its well: contained, centred, never cropped. */
 function drawTile(doc: Doc, bytes: Buffer, x: number, y: number, width: number, height: number) {
@@ -380,15 +382,24 @@ function work(doc: Doc, data: JobReport): Section {
         },
       });
     } else {
-      // One strip per stage, so the story reads before, during, after — and the
-      // stage is named once over the strip rather than under every tile.
+      // One grid per stage, so the story reads before, during, after — and the
+      // stage is named once over its grid rather than under every tile.
+      //
+      // The grid is kept whole: the label asks for every row of it to fit
+      // alongside, so a stage of nine lands as a three-by-three block on one
+      // page rather than six photographs here and three overleaf. A stage
+      // saved before nine was the limit can run to more rows than a page
+      // holds, and asking for the impossible only pushes it off the bottom —
+      // so past three rows it is allowed to break where it must.
       for (const { stage, shots } of stages) {
-        const { columns, width, height } = tileSize(shots.length);
+        const width = GRID_WIDTH;
+        const height = GRID_HEIGHT;
+        const columns = ACROSS;
         const rows = Math.ceil(shots.length / columns);
 
         pieces.push({
           height: LABEL_HEIGHT,
-          keepWith: 1,
+          keepWith: Math.min(rows, Math.ceil(MAX_PHOTOS_PER_STAGE / ACROSS)),
           draw: (y) => {
             doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
             doc.text(

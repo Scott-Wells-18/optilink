@@ -11,15 +11,31 @@ import { useCallback, useRef, useState } from "react";
 const MAX_EDGE = 2200;
 const QUALITY = 0.85;
 
-async function downscale(file: File): Promise<Blob> {
-  // Leave small files, logos and anything with transparency alone.
-  if (file.size < 600_000 || file.type === "image/png" || file.type === "image/webp") {
-    return file;
-  }
+/**
+ * How small a photo is made before it is sent.
+ *
+ * The default is generous, because a thermal or an inspection photo may be
+ * looked at closely. A caller that knows how big the picture will ever be
+ * printed can ask for less — see `PHOTO_BUDGET` in `lib/jobs.ts` — and a
+ * tighter budget also re-encodes the formats the default leaves alone, since
+ * a screenshot saved as a PNG is the largest file most phones produce.
+ */
+export type Budget = { maxEdge: number; quality: number };
+
+async function downscale(file: File, budget?: Budget): Promise<Blob> {
+  const maxEdge = budget?.maxEdge ?? MAX_EDGE;
+  const quality = budget?.quality ?? QUALITY;
+
+  // Leave small files, logos and anything with transparency alone — unless a
+  // budget was asked for, in which case the only thing that matters is size.
+  const lossless = file.type === "image/png" || file.type === "image/webp";
+  const floor = budget ? 120_000 : 600_000;
+  if (file.size < floor || (lossless && !budget)) return file;
+
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1) return file;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && !budget) return file;
 
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(bitmap.width * scale);
@@ -30,7 +46,7 @@ async function downscale(file: File): Promise<Blob> {
     bitmap.close();
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", QUALITY),
+      canvas.toBlob(resolve, "image/jpeg", quality),
     );
     return blob && blob.size < file.size ? blob : file;
   } catch {
@@ -61,8 +77,8 @@ export async function uploadFile(file: File): Promise<UploadedImage> {
   return response.json();
 }
 
-export async function uploadImage(file: File): Promise<UploadedImage> {
-  const blob = await downscale(file);
+export async function uploadImage(file: File, budget?: Budget): Promise<UploadedImage> {
+  const blob = await downscale(file, budget);
   const form = new FormData();
   form.append("file", blob, file.name || "photo.jpg");
   const response = await fetch("/api/upload", { method: "POST", body: form });

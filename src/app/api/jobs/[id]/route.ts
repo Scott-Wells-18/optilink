@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
+import { releaseFiles } from "@/lib/storage";
 
 /** The date it was carried out, and anything recommended but not done. */
 export async function PATCH(
@@ -44,7 +45,14 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
+    // The photographs go with it. Noted before the delete, because the rows
+    // that name them are cascaded away with the report.
+    const photos = await prisma.jobPhoto.findMany({
+      where: { item: { jobId: id } },
+      select: { fileId: true },
+    });
     await prisma.job.delete({ where: { id } });
+    await releaseFiles(photos.map((photo) => photo.fileId));
     return NextResponse.json({ ok: true });
   } catch (error) {
     return serverError(error, "The job could not be removed.");
