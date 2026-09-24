@@ -33,7 +33,7 @@ export function MainSwitchRow({
       >
         <svg className="board-main-switch-mark" viewBox="0 0 60 44" aria-hidden focusable="false">
           {/* The handle, and the three poles it makes and breaks. */}
-          <rect className="dm-toggle" x="22" y="4" width="16" height="9" rx="2" />
+          <rect className="ms-base" x="22" y="4" width="16" height="9" />
           <line className="ms-pole" x1="17" y1="15" x2="17" y2="34" />
           <line className="ms-pole" x1="30" y1="15" x2="30" y2="34" />
           <line className="ms-pole" x1="43" y1="15" x2="43" y2="34" />

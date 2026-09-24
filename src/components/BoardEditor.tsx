@@ -158,6 +158,10 @@ export function BoardEditor({
     });
   }
 
+  function addExtra() {
+    editActive((section) => ({ ...section, extras: [...section.extras, emptyCell()] }));
+  }
+
   function addSection() {
     if (board.sections.length >= MAX_SECTIONS) return;
     const section = createSection();
@@ -238,8 +242,6 @@ export function BoardEditor({
         </header>
 
         <div className="board-scroll">
-        <MainSwitchRow />
-
         <nav className="board-tabs" aria-label="Board sections">
           {board.sections.map((section) => {
             const isActive = section.id === active.id;
@@ -315,53 +317,70 @@ export function BoardEditor({
         </nav>
 
         <div className="board-body">
-          <section className="board-extras">
-            <div className="board-section-head">
-              <h3 className="board-section-title">Additional</h3>
-              <p className="board-section-note">
-                Anything up by the main switch — an isolator, a surge device, a contactor.
-              </p>
-            </div>
-            <div className="board-extra-row">
-              {active.extras.map((cell, index) => (
-                <Cell
-                  key={index}
-                  state={cell.state}
-                  label={cell.label}
-                  onCycle={() => cycleExtra(index)}
-                  onLabel={(value) => labelExtra(index, value)}
-                  onRemove={() =>
-                    editActive((section) => ({
-                      ...section,
-                      extras: section.extras.filter((_, i) => i !== index),
-                    }))
-                  }
-                />
-              ))}
-              <button
-                type="button"
-                className="board-add-extra"
-                onClick={() =>
-                  editActive((section) => ({
-                    ...section,
-                    extras: [...section.extras, emptyCell()],
-                  }))
-                }
-              >
-                + Add
-              </button>
-            </div>
-          </section>
+          {/*
+            * The board itself: an enclosure with the main switch across the
+            * top, a slot either side of it for anything else up by the mains,
+            * and the ways below in two rails with their numbers up the middle.
+            * The dashed squares straddling the sides add a section alongside —
+            * the little board bolted onto the end of a big one.
+            */}
+          <section className="board-case">
+            <button
+              type="button"
+              className="board-side-add is-left"
+              onClick={addSection}
+              disabled={board.sections.length >= MAX_SECTIONS}
+              title="Add a section alongside"
+              aria-label="Add a section alongside"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="board-side-add is-right"
+              onClick={addSection}
+              disabled={board.sections.length >= MAX_SECTIONS}
+              title="Add a section alongside"
+              aria-label="Add a section alongside"
+            >
+              +
+            </button>
 
-          <section className="board-grid-wrap">
-            <div className="board-section-head">
-              <h3 className="board-section-title">
-                {active.name.trim() || "Section"}
-              </h3>
-              <p className="board-section-note">
-                Click a way to walk it through the devices. {active.rows * COLUMNS} ways.
-              </p>
+            <div className="board-top">
+              <div className="board-extra-slot">
+                {active.extras.map((cell, index) => (
+                  <Cell
+                    key={index}
+                    state={cell.state}
+                    label={cell.label}
+                    onCycle={() => cycleExtra(index)}
+                    onLabel={(value) => labelExtra(index, value)}
+                    onRemove={() =>
+                      editActive((section) => ({
+                        ...section,
+                        extras: section.extras.filter((_, i) => i !== index),
+                      }))
+                    }
+                  />
+                ))}
+                <button type="button" className="board-add-extra" onClick={addExtra}>
+                  +
+                </button>
+              </div>
+
+              <MainSwitchRow />
+
+              <div className="board-extra-slot">
+                <button type="button" className="board-add-extra" onClick={addExtra}>
+                  +
+                </button>
+              </div>
             </div>
+
+            <p className="board-case-note">
+              Click a way to walk it through the devices. {active.rows * COLUMNS} ways
+              {active.name.trim() ? ` on ${active.name.trim()}` : ""}.
+            </p>
 
             <div className="board-grid">
               {rows.map((indexes, row) => (
