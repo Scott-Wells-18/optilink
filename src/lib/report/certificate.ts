@@ -84,12 +84,15 @@ export function fitted(
  * turned over on the way in. Getting that wrong puts the certificate off the
  * bottom of the page rather than producing anything that looks wrong, which is
  * why it is done in exactly one place.
+ *
+ * The height each y is turned over against is the page's own, read back off
+ * the document, so a report that turns some of its pages on their side lands
+ * them in the right place without having to say which.
  */
 export async function stampCertificate(
   report: Buffer,
   certificate: Certificate,
   slots: Slot[],
-  pageHeight: number,
 ): Promise<Buffer> {
   if (slots.length === 0) return report;
 
@@ -105,7 +108,7 @@ export async function stampCertificate(
     if (!page || !held) continue;
     page.drawPage(held, {
       x: slot.x,
-      y: pageHeight - slot.y - slot.height,
+      y: page.getHeight() - slot.y - slot.height,
       width: slot.width,
       height: slot.height,
     });

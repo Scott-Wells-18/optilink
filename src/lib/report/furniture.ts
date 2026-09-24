@@ -325,11 +325,15 @@ export function stampPageNumbers(doc: Doc, extraPages = 0) {
     doc.switchToPage(range.start + index);
     const bottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
+    // A page that has been turned on its side is wider and shorter than the
+    // rest, so the number is placed against that page's own edges rather than
+    // against the portrait ones.
+    const width = doc.page.width - MARGIN * 2;
     doc
       .fillColor(COLOURS.bar)
       .font("Helvetica")
       .fontSize(9)
-      .text(`Page ${index + 1} of ${total}`, MARGIN + CONTENT - 150, PAGE.height - 49, {
+      .text(`Page ${index + 1} of ${total}`, MARGIN + width - 150, doc.page.height - 49, {
         width: 150,
         align: "right",
       });

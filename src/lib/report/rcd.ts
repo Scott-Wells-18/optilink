@@ -428,11 +428,11 @@ export async function buildRcdReport(data: RcdReport): Promise<Buffer> {
   let out = await done;
   for (const { board, slots } of originals) {
     if (board.originalPages) {
-      out = await stampCertificate(out, board.originalPages, slots, PAGE.height);
+      out = await stampCertificate(out, board.originalPages, slots);
     }
   }
   if (data.gear?.certificate && certificate.length > 0) {
-    out = await stampCertificate(out, data.gear.certificate, certificate, PAGE.height);
+    out = await stampCertificate(out, data.gear.certificate, certificate);
   }
 
   return attachOriginals(out, data);
@@ -1263,11 +1263,20 @@ function originalPages(
   return out;
 }
 
+/** The Equipment Used pages turn on their side, as the power analysis does. */
+const LANDSCAPE: [number, number] = [PAGE.height, PAGE.width];
+const WIDE = PAGE.height - MARGIN * 2;
+
+/** The instrument block: a photograph, and what it is beside it. */
+const GEAR = { photo: 150, gap: 18, details: 170, gutter: 24 };
+
 /**
  * The instrument the readings were taken with, and its calibration.
  *
- * The same page the power analysis carries, for the same reason: a
- * measurement is worth what the instrument behind it is worth.
+ * Landscape, because a certificate is a portrait page and two of them side by
+ * side need the width — the same reason the power analysis turns this page on
+ * its side. The photograph sits at the left with what the instrument is
+ * beside it, and the certificate takes everything to the right of that.
  */
 function equipmentPages(doc: Doc, data: RcdReport): Slot[] {
   const gear = data.gear;
@@ -1276,19 +1285,20 @@ function equipmentPages(doc: Doc, data: RcdReport): Slot[] {
   const sizes = gear.certificate?.sizes ?? [];
   const slots: Slot[] = [];
 
-  doc.addPage();
-  placedHeading(doc, "Equipment Used", "The instrument, and the certificate that says it reads true.");
+  doc.addPage({ size: LANDSCAPE, margin: MARGIN });
+  wideHeading(doc, "Equipment Used", "The instrument, and the certificate that says it reads true.");
 
-  let y = PLACED.top + 6;
+  const top = MARGIN + 52;
+  let y = top;
   if (gear.photo) {
     try {
-      doc.image(gear.photo, MARGIN, y, { fit: [120, 96] });
+      doc.image(gear.photo, MARGIN, y, { fit: [GEAR.photo, 112] });
     } catch {
       // An image the renderer will not take is not worth a failed report.
     }
   }
-  const x = gear.photo ? MARGIN + 136 : MARGIN;
-  const width = gear.photo ? CONTENT - 136 : CONTENT;
+  const x = gear.photo ? MARGIN + GEAR.photo + GEAR.gap : MARGIN;
+  const width = GEAR.details;
 
   const rows: [string, string][] = [
     ["Equipment name", gear.name],
@@ -1301,28 +1311,43 @@ function equipmentPages(doc: Doc, data: RcdReport): Slot[] {
     ["Due/expiry date", dueDate(gear)],
   ];
   for (const [name, value] of rows) {
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(name, x, y, { width: 118, lineBreak: false });
-    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-    doc.text(safe(value), x + 124, y - 1, { width: width - 124, height: 12, ellipsis: true });
-    y += 17;
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(name.toUpperCase(), x, y, { width, characterSpacing: 1.2, lineBreak: false });
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(COLOURS.ink);
+    doc.text(safe(value), x, y + 11, { width });
+    y += doc.heightOfString(safe(value), { width }) + 18;
   }
+
+  const note = gear.certificate
+    ? "The calibration certificate is reproduced on this page exactly as it was issued. Nothing has been retyped or redrawn."
+    : "No calibration certificate has been filed against this instrument.";
+  doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+  doc.text(safe(note), MARGIN, Math.max(y, top + 124) + 8, {
+    width: GEAR.photo + GEAR.gap + GEAR.details,
+    lineGap: 1.8,
+  });
+  doc.fillColor(COLOURS.ink);
 
   if (sizes.length === 0) return slots;
 
-  const top = Math.max(y + 16, PLACED.top + 116);
+  // The certificate takes the page to the right of the block, and the whole
+  // width of any page after it.
+  const left = MARGIN + GEAR.photo + GEAR.gap + GEAR.details + GEAR.gutter;
+  const bottom = PAGE.width - MARGIN - 30;
+
   for (let from = 0; from < sizes.length; from += PER_PAGE) {
     const chunk = sizes.slice(from, from + PER_PAGE);
-    if (from > 0) {
-      doc.addPage();
-      placedHeading(doc, "Equipment Used", "Calibration certificate, continued.");
+    const first = from === 0;
+    if (!first) {
+      doc.addPage({ size: LANDSCAPE, margin: MARGIN });
+      wideHeading(doc, "Equipment Used", "Calibration certificate, continued.");
     }
     const page = doc.bufferedPageRange().count - 1;
     const region: Box = {
-      x: MARGIN,
-      y: from === 0 ? top : PLACED.top,
-      width: CONTENT,
-      height: PLACED.bottom - (from === 0 ? top : PLACED.top),
+      x: first ? left : MARGIN,
+      y: MARGIN + 52,
+      width: (first ? MARGIN + WIDE - left : WIDE),
+      height: bottom - (MARGIN + 52),
     };
     chunk.forEach((size, at) => {
       const box = place(
@@ -1336,6 +1361,17 @@ function equipmentPages(doc: Doc, data: RcdReport): Slot[] {
   }
 
   return slots;
+}
+
+/** The same heading as a placed page, across the width of a turned page. */
+function wideHeading(doc: Doc, title: string, note: string) {
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.ink);
+  doc.text(safe(title), MARGIN, MARGIN, { width: WIDE });
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  doc.text(safe(note), MARGIN, MARGIN + 18, { width: WIDE, height: 11, ellipsis: true });
+  doc.rect(MARGIN, MARGIN + 34, WIDE, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, MARGIN + 33, 48, 2.2).fill(COLOURS.accent);
+  doc.fillColor(COLOURS.ink);
 }
 
 /** The due date, the certificate's own or a year from its certification. */

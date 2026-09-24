@@ -5,6 +5,7 @@ import {
   isFreeBoard,
   isRcd,
   orderedItems,
+  fitsThreePhase,
   positionNumber,
   slotKey,
   testsFor,
@@ -14,7 +15,7 @@ import {
   type Numbering,
 } from "@/lib/board";
 import { namesMatch } from "@/lib/rcd/names";
-import { type RcdRow } from "@/lib/rcd/parse";
+import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
 
 /**
  * Pairing the instrument's tests with the ways on the board.
@@ -171,6 +172,12 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
  * three-phase device occupies the way above and the way below as well, so it
  * is named for all three: "CB-1,3,5 (Compressor)". The numbers are the ones
  * printed on the board, which on an odd/even board are not consecutive.
+ *
+ * It only claims the neighbouring ways where it genuinely has them. A
+ * three-phase device drawn at the top or the bottom of a column cannot span
+ * three ways, and on a board saved before that was prevented it used to be
+ * named for whichever neighbour existed — "CB-1,2" — which is a pair of ways
+ * no device occupies. Where it cannot span, it is named for its own way alone.
  */
 function wayLabel(
   section: BoardSection,
@@ -178,12 +185,13 @@ function wayLabel(
   numbering: Numbering,
   cell: { state: CellState; label: string },
 ): string {
-  const spread = spanOf(cell.state);
-  const numbers: number[] = [];
-  for (let step = -Math.floor(spread / 2); step <= Math.floor(spread / 2); step += 1) {
-    const at = index + step * COLUMNS;
-    if (at < 0 || at >= section.rows * COLUMNS) continue;
-    numbers.push(positionNumber(section, at, numbering));
+  const numbers = [positionNumber(section, index, numbering)];
+
+  if (spanOf(cell.state) === 3 && fitsThreePhase(section, index)) {
+    numbers.push(
+      positionNumber(section, index - COLUMNS, numbering),
+      positionNumber(section, index + COLUMNS, numbering),
+    );
   }
 
   const ways = `CB-${numbers.sort((a, b) => a - b).join(",")}`;
@@ -242,33 +250,31 @@ export type MappingResult = {
 };
 
 /**
- * Deal the instrument's tests onto the walk.
+ * Deal the real tests onto the walk.
  *
- * Every row is dealt, in the order the instrument numbered them, including a
- * row that came back with nothing measured. That was not always so: rows
- * reading "---" across all six measurements used to be taken out first, on the
- * understanding that the instrument logs a fetch whenever it is woken without
- * a device on the leads. It does not reliably do that. A first test that came
- * back empty is a first test all the same, and taking it out slides every
- * later reading onto the wrong way — which is worse than reporting an empty
- * one, because it is wrong quietly.
+ * Two things are taken out before anything is dealt. The first is a row that
+ * measured nothing at all: the instrument logs a record the moment a sequence
+ * is started, so an aborted attempt and a fetch taken off the leads both come
+ * back as six dashes, and neither is a result. The second is the extra rows
+ * left behind where a way was tested more than once.
  *
- * A device whose readings are all empty now lands on its own way and is
- * assessed as having recorded nothing, which is visible on the results page
- * and can be acted on.
- *
- * `extras` says how many times over a way was tested: a way marked ×2 swallows
- * two further rows after its own, which are set aside rather than mapped. On a
- * three-phase device the repeats follow the third phase, not the first.
+ * `extras` says how many times over a way was tested: a way marked ×2
+ * swallows two further rows after its own, which are set aside rather than
+ * mapped. On a three-phase device the repeats follow the third phase, not the
+ * first.
  */
 export function mapTests(
   rows: RcdRow[],
   positions: Position[],
   extras: Record<string, number> = {},
 ): MappingResult {
-  // Nothing is held back: the instrument's sequence is the walk's sequence.
-  const dropped: RcdRow[] = [];
-  const real = rows;
+  // A row that measured nothing on any of the six tests is not a test. The
+  // instrument logs a record whenever a sequence is started, so an aborted
+  // attempt, a fetch taken off the leads and a device that was never reached
+  // all come back as six dashes. None of them is a result, and dealing them
+  // onto ways puts devices on the report that were never tested.
+  const dropped = rows.filter(isEmptyRow);
+  const real = rows.filter((row) => !isEmptyRow(row));
 
   const pairs: Pairing[] = [];
   const duplicates: RcdRow[] = [];

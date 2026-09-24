@@ -437,7 +437,7 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
   // The certificate's own pages go in last, into the gaps that were left and
   // bordered for them.
   const certificate = data.instrument?.certificate;
-  return certificate ? stampCertificate(pdf, certificate, slots, PAGE.height) : pdf;
+  return certificate ? stampCertificate(pdf, certificate, slots) : pdf;
 }
 
 /* --- the equipment the readings were taken with --------------------------- */
