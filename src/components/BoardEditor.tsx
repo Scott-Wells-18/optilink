@@ -379,10 +379,12 @@ export function BoardEditor({
                   editSection(section.id, (current) => {
                     if (spanAt(current, index).part !== "whole") return current;
                     const cells = [...current.cells];
-                    // Everything is on offer out here, but a device still has
-                    // to have the room: a three-phase one on a rail of six
+                    // A sub-board has a rail of its own, so its ways take what
+                    // any way takes: a breaker or an RCBO. The RCDs and the
+                    // contactors go in the slots by the main switch. The room
+                    // is still checked — a three-phase device on a rail of six
                     // wants three ways along it, and four for an RCBO.
-                    cells[index] = { ...cells[index], state: nextFitting(current, index, true) };
+                    cells[index] = { ...cells[index], state: nextFitting(current, index) };
                     return { ...current, cells };
                   })
                 }
@@ -531,10 +533,12 @@ export function BoardEditor({
                   editSection(section.id, (current) => {
                     if (spanAt(current, index).part !== "whole") return current;
                     const cells = [...current.cells];
-                    // Everything is on offer out here, but a device still has
-                    // to have the room: a three-phase one on a rail of six
+                    // A sub-board has a rail of its own, so its ways take what
+                    // any way takes: a breaker or an RCBO. The RCDs and the
+                    // contactors go in the slots by the main switch. The room
+                    // is still checked — a three-phase device on a rail of six
                     // wants three ways along it, and four for an RCBO.
-                    cells[index] = { ...cells[index], state: nextFitting(current, index, true) };
+                    cells[index] = { ...cells[index], state: nextFitting(current, index) };
                     return { ...current, cells };
                   })
                 }
@@ -600,8 +604,9 @@ export function BoardEditor({
  * main switch of its own — the whole reason it is drawn as its own box rather
  * than as another run of ways inside the big one.
  *
- * Being off the main rail, it takes anything: a breaker, an RCD, an RCBO or a
- * contactor, single or three phase.
+ * It has a rail of its own, so its ways take what any way takes: a breaker or
+ * an RCBO, single or three phase. The RCDs and the contactors belong in the
+ * slots beside the main switch, which is what those are for.
  */
 function SubBoard({
   section,
@@ -655,7 +660,9 @@ function SubBoard({
         </button>
       </header>
 
-      <p className="board-sub-note">No main switch — fed from the board beside it.</p>
+      <p className="board-sub-note">
+        No main switch — fed from the board beside it. Breakers and RCBOs.
+      </p>
 
       <div className="board-sub-rail">
         {section.cells.map((_, index) => {
