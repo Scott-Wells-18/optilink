@@ -418,6 +418,14 @@ export type Discrepancy = {
 
 export const DISCREPANCIES: Discrepancy[] = [
   {
+    code: "SWMS013",
+    where: "printed title",
+    says:
+      "The signatories table prints both signatures and both positions but leaves the two Full Name cells empty.",
+    shouldRead:
+      "Scott Wells and Kye Wells, as every other statement in the library prints them. The app fills those two cells so the signatures are attributable; the released file leaves a signature with no name against it.",
+  },
+  {
     code: "every SWMS",
     where: "printed title",
     says:

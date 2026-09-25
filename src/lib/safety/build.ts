@@ -6,9 +6,9 @@ import { decide, type Answers } from "@/lib/safety/decide";
 import { canFillJsaPdf, fillJsaPdf, type JsaPdfValues } from "@/lib/safety/fillJsaPdf";
 import { fillJsaDocx } from "@/lib/safety/fillJsaDocx";
 import { fillWhs002 } from "@/lib/safety/fillWhs002";
-import { canFill, fillSwms } from "@/lib/safety/fillSwms";
+import { canFill, fillSwms, type SwmsValues } from "@/lib/safety/fillSwms";
 import { signatureBytes, templateBytes, templateFor } from "@/lib/safety/library";
-import type { Whs002 } from "@/lib/safety/whs002";
+import { CIRCUMSTANCES, HAZARDS, conditionOf, type Whs002 } from "@/lib/safety/whs002";
 
 /**
  * Turning one set of answers into the documents themselves.
@@ -168,12 +168,118 @@ async function one(
     submissionDate: values.issued,
     issueDate: values.issued,
     approvalDate: values.assessed || undefined,
-    // Beside a signature that the released template already has printed on it.
-    // Dated only for someone who has actually confirmed.
+    // Beside a signature that the released template already has printed on it,
+    // both in the consultation table on page one and in the signatories table
+    // at the back. Dated only for someone who has actually confirmed.
     consultDateScott: signed("scott") || undefined,
     consultDateKye: signed("kye") || undefined,
+    signatoryDateScott: signed("scott") || undefined,
+    signatoryDateKye: signed("kye") || undefined,
+    // Two of the templates print these names and one leaves them blank beside
+    // the signature. Naming whose signature that is is not a claim that they
+    // have read anything, so unlike the date it does not wait for the signing
+    // step.
+    signatoryNameScott: values.who.find((person) => person.key === "scott")?.name,
+    signatoryNameKye: values.who.find((person) => person.key === "kye")?.name,
     scopeOfWorks: values.description,
+    ...addendum(values),
   });
+}
+
+/**
+ * OEC-SWMS014's energised-work addendum.
+ *
+ * The RCD testing statement carries three pages the others do not: a recorded
+ * site-specific risk assessment, a method, and an authorisation to complete
+ * before work starts. They ask for what OEC-WHS002 asks for, so they are
+ * answered from the same place rather than asked for twice — and they stay
+ * blank when the job never needed OEC-WHS002, because an addendum nobody
+ * filled in is an honest blank and an addendum filled in from nothing is not.
+ */
+function addendum(values: Values): Pick<SwmsValues, "addendum" | "ticks"> {
+  const energised = values.energised;
+  if (!energised.activity && !energised.switchboardId) return {};
+
+  const risk = energised.risk ?? {};
+  const said = (key: string) => {
+    const row = risk[key];
+    const hazard = HAZARDS.find((entry) => entry.key === key);
+    const condition = hazard ? conditionOf(hazard, row?.condition) : undefined;
+    if (!condition) return "";
+    const note = row?.note?.trim();
+    const rating = row?.initial && row?.residual ? ` Initial ${row.initial}, residual ${row.residual}.` : "";
+    return `${condition.label}${note ? ` ${note}` : ""}${rating}`;
+  };
+  const from = (group: Record<string, string> | undefined, key: string) => group?.[key]?.trim() ?? "";
+  const signed = (key: string) => values.who.find((person) => person.key === key);
+  const accepted = (person?: Person) => (person?.date ? `${person.name} — ${person.date}` : "");
+
+  const REASONS: Record<string, number> = { SAFETY: 1, PROPER: 2, S155: 3, NO_ALTERNATIVE: 4 };
+  const ticks: string[] = [];
+  if (energised.circumstance && REASONS[energised.circumstance]) {
+    ticks.push(`reason${REASONS[energised.circumstance]}`);
+  }
+  // The authorisation's eleven lines, in the order the page prints them.
+  const checks: [number, string][] = [
+    [1, from(energised.preStart, "RISK")],
+    [2, from(energised.preStart, "CIRCUMSTANCE")],
+    [3, from(energised.preStart, "IDENTIFIED")],
+    [4, from(energised.preStart, "ISOLATION")],
+    [5, from(energised.preStart, "ACCESS")],
+    [6, from(energised.preStart, "GEAR")],
+    [7, from(energised.equipment, "ARC")],
+    [8, energised.observer === "APPOINTED" ? "yes" : ""],
+    [9, energised.observer === "EXEMPT" ? "yes" : ""],
+    [10, from(energised.preStart, "RESCUE")],
+    [11, from(energised.preStart, "DOCS")],
+  ];
+  for (const [n, answered] of checks) if (answered) ticks.push(`check${n}`);
+
+  const reason = CIRCUMSTANCES.find((one) => one.value === energised.circumstance);
+
+  return {
+    ticks,
+    addendum: {
+      addProject: [values.projectName, values.clientName, values.siteAddress]
+        .filter(Boolean)
+        .join(" — "),
+      addBoard: energised.switchboardId ?? "",
+      addVoltage: [energised.nominalVoltage, energised.supplyInfo].filter(Boolean).join(" · "),
+      addCircuits: energised.circuits ?? "",
+      addMethod: [energised.activityMethod, from(energised.equipment, "TESTER")]
+        .filter(Boolean)
+        .join(" Instrument: "),
+      addWorker: from(energised.equipment, "LICENCE"),
+      addAssessor: from(energised.consultation, "ASSESSOR"),
+      addWhen: [energised.assessedOn, energised.assessedAt].filter(Boolean).join(", "),
+      addConsulted: from(energised.consultation, "PCBU"),
+      addIsolation: from(energised.preliminaries, "ISOLATION"),
+      addJustification: energised.circumstanceEvidence ?? "",
+      addShock: said("shock"),
+      addArc: said("arc"),
+      addAdjacent: said("adjacent"),
+      addDamaged: said("condition"),
+      addOutage: said("outage"),
+      addAccess: said("access"),
+      addOther: said("rescue"),
+      authReference: values.jobNumber ? `Job ${values.jobNumber}` : "",
+      authReason: reason ? reason.label : "",
+      authBoard: [energised.switchboardId, energised.circuits].filter(Boolean).join(" · "),
+      authIsolation: from(energised.preliminaries, "ISOLATION"),
+      authVerified: accepted(signed("scott")),
+      authTester: from(energised.equipment, "TESTER"),
+      authPpe: from(energised.equipment, "ARC"),
+      authObserver: energised.observerName ?? "",
+      authObserverDate: energised.observerCompetency ?? "",
+      authExemption: energised.observerBasis ?? "",
+      authEmergency: from(energised.preStart, "RESCUE"),
+      authWorker: accepted(signed("scott")),
+      authAssessor: accepted(signed("scott")),
+      authConsulted: from(energised.consultation, "PCBU"),
+      authPcbu: accepted(signed("scott")),
+      authValid: [energised.validFrom, energised.validTo].filter(Boolean).join(" — "),
+    },
+  };
 }
 
 function withJobNumber(values: Values): string {
