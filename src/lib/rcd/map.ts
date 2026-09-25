@@ -5,7 +5,9 @@ import {
   isFreeBoard,
   isRcd,
   orderedItems,
-  fitsThreePhase,
+  extentOf,
+  fitsAt,
+  isSpanned,
   positionNumber,
   slotKey,
   testsFor,
@@ -155,6 +157,11 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
   return indexes.flatMap((index) => {
     const cell = section.cells[index];
     if (!cell || !isRcd(cell.state)) return [];
+    // A way another device is standing in is not a device of its own. Whatever
+    // was drawn there before is kept rather than cleared, so without this a
+    // covered way would be walked as well and every test after it would land
+    // one device out.
+    if (isSpanned(section, index)) return [];
     const number = positionNumber(section, index, numbering);
     return phasesOf(
       cell.state,
@@ -168,16 +175,25 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
 /**
  * What a device in the grid is called on the report.
  *
- * "CB-4 (Kitchen GPOs)", or "CB-4" where the way was never labelled. A
- * three-phase device occupies the way above and the way below as well, so it
- * is named for all three: "CB-1,3,5 (Compressor)". The numbers are the ones
- * printed on the board, which on an odd/even board are not consecutive.
+ * "CB-4 (Kitchen GPOs)", or "CB-4" where the way was never labelled. A device
+ * that takes up more than one way is named for every way it takes up, so what
+ * is written on the report matches what is in front of somebody at the board:
+ * a three-pole RCD across three ways reads "CB-1,3,5", and a three-phase RCBO
+ * across four reads "CB-1,3,5,7".
  *
- * It only claims the neighbouring ways where it genuinely has them. A
- * three-phase device drawn at the top or the bottom of a column cannot span
- * three ways, and on a board saved before that was prevented it used to be
- * named for whichever neighbour existed — "CB-1,2" — which is a pair of ways
- * no device occupies. Where it cannot span, it is named for its own way alone.
+ * The fourth way of an RCBO is the module carrying its test button. It is an
+ * occupied way and belongs in the name; it is not a fourth test, and nothing
+ * here treats it as one.
+ *
+ * The numbers are the ones printed on the board, which on an odd/even board
+ * are not consecutive, and they are read off the board's own numbering rather
+ * than counted — hence positionNumber for each way rather than arithmetic on
+ * the first.
+ *
+ * A device is only named for the ways it genuinely has. One saved somewhere
+ * it does not fit — a board drawn before that was prevented, or edited
+ * outside the app — is named for its own way alone rather than for ways no
+ * device occupies.
  */
 function wayLabel(
   section: BoardSection,
@@ -185,14 +201,9 @@ function wayLabel(
   numbering: Numbering,
   cell: { state: CellState; label: string },
 ): string {
-  const numbers = [positionNumber(section, index, numbering)];
-
-  if (spanOf(cell.state) === 3 && fitsThreePhase(section, index)) {
-    numbers.push(
-      positionNumber(section, index - COLUMNS, numbering),
-      positionNumber(section, index + COLUMNS, numbering),
-    );
-  }
+  const numbers = occupiedWays(section, index, cell.state).map((at) =>
+    positionNumber(section, at, numbering),
+  );
 
   const ways = `CB-${numbers.sort((a, b) => a - b).join(",")}`;
   const written = cell.label.trim();
@@ -200,22 +211,33 @@ function wayLabel(
 }
 
 /**
- * How many ways a device occupies on the board.
+ * Every way a device takes up, in the order they run down the rail.
  *
- * A three-phase RCD is three modules wide and sits across the way above and
- * the way below its own. A single-phase device is one way.
+ * Its own way alone unless it is a multi-module device that fits where it
+ * sits: a three-pole breaker or RCD reaches one way each side, a three-phase
+ * RCD or RCBO reaches one above and two below, the last of those being the
+ * neutral and test-button module.
  */
-function spanOf(state: CellState): number {
-  return testsFor(state) === 3 ? 3 : 1;
+function occupiedWays(section: BoardSection, index: number, state: CellState): number[] {
+  if (!fitsAt(section, index, state)) return [index];
+  const { above, below } = extentOf(state);
+  const ways: number[] = [];
+  for (let step = -above; step <= below; step += 1) ways.push(index + step * COLUMNS);
+  return ways;
 }
 
 /**
  * One device, as many tests as it accounts for.
  *
- * A three-phase RCD is tested across each phase in turn, so it takes three of
- * the instrument's records; each comes back as its own result, named for its
- * phase, because a device that trips on two phases and not the third has to
- * read as exactly that.
+ * A three-phase RCD or RCBO is tested across each phase in turn, so it takes
+ * three of the instrument's records — three, whichever of the two it is, and
+ * whether it occupies three ways or four. Each comes back as its own result,
+ * because a device that trips on two phases and not the third has to read as
+ * exactly that.
+ *
+ * The device is named the same on all three: the phase rides alongside rather
+ * than being written into the name, so every row says which device it is and
+ * says separately which phase of it was tested.
  */
 function phasesOf(
   state: CellState,
@@ -227,7 +249,7 @@ function phasesOf(
   if (count === 1) return [{ slot, label, number, phase: null, last: true }];
   return PHASES.slice(0, count).map((phase, index) => ({
     slot,
-    label: `${label} (${phase})`,
+    label,
     number,
     phase,
     last: index === count - 1,
@@ -304,9 +326,15 @@ export function mapTests(
   return { pairs, dropped, duplicates, untested };
 }
 
-/** How many RCDs a board carries, counting a three-phase device once. */
+/**
+ * How many RCDs a board carries, counting a three-phase device once.
+ *
+ * Counted off the walk rather than off the cells, so it is the same set of
+ * devices the tests are dealt onto: a way another device is standing in is
+ * not a device of its own, however it was drawn before that device went in.
+ */
 export function countRcds(board: Board): number {
-  return everyCell(board).filter((cell) => isRcd(cell.state)).length;
+  return new Set(walkPositions(board).map((position) => position.slot)).size;
 }
 
 /** True when every RCD on a freehand board has been given a place in the run. */
@@ -317,18 +345,18 @@ export function sequenceIsSet(board: Board): boolean {
 }
 
 /**
- * How many of the instrument's records the board should account for — three
- * apiece for the three-phase devices, one for the rest.
+ * How many of the instrument's records the board should account for.
+ *
+ * Three apiece for the three-phase devices and one for the rest — three for a
+ * three-phase RCBO as much as for a three-phase RCD, even though the RCBO
+ * takes up a fourth way: that way carries its test button, not another test.
+ *
+ * Counted off the walk, so the number shown while the export is being checked
+ * is exactly the number of records that will be dealt onto devices. Anything
+ * else and the two disagree the moment a board is drawn unusually.
  */
 export function countRcdTests(board: Board): number {
-  return everyCell(board)
-    .filter((cell) => isRcd(cell.state))
-    .reduce((total, cell) => total + testsFor(cell.state), 0);
-}
-
-function everyCell(board: Board) {
-  if (isFreeBoard(board)) return board.items ?? [];
-  return board.sections.flatMap((section) => [...section.cells, ...section.extras]);
+  return walkPositions(board).length;
 }
 
 export type Mismatch = {

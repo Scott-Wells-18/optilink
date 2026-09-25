@@ -3804,6 +3804,53 @@ body {
   color: var(--ink);
 }
 
+/*
+ * Every record against the device it was dealt onto, read down before the
+ * results are saved. Set in the mono face so the CB references line up with
+ * one another and a missed way shows up as a gap in the column.
+ */
+.rcd-map {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.rcd-map th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-4);
+}
+
+.rcd-map td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hair);
+  color: var(--ink-2);
+}
+
+.rcd-map td:first-child,
+.rcd-map td:last-child {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.rcd-map td:nth-child(2) {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A record with nowhere to go. It is still saved; it is just not a device. */
+.rcd-map .is-loose td {
+  color: #b45309;
+}
+
 /* Said out loud rather than hidden: the operator decides if it matters. */
 .rcd-warning {
   margin-bottom: 18px;

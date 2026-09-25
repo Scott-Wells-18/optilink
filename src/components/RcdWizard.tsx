@@ -14,7 +14,8 @@ import {
 } from "@/lib/board";
 import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
-import { countRcdTests } from "@/lib/rcd/map";
+import { countRcds, countRcdTests, mapTests, walkPositions } from "@/lib/rcd/map";
+import type { RcdRow } from "@/lib/rcd/parse";
 import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
@@ -27,13 +28,21 @@ import { clearSession, usePersisted } from "@/lib/session";
  * shows what it is about to throw away.
  */
 
-type Step = "upload" | "board" | "duplicates" | "checks";
+type Step = "upload" | "board" | "duplicates" | "mapping" | "checks";
+
+/**
+ * A record as it comes back off the stored parse.
+ *
+ * The same shape the parser produced, less the timestamp, which crosses as a
+ * string once the parse has been through the database. Nothing here reads it.
+ */
+type Row = Omit<RcdRow, "takenAt">;
 
 type Parsed = {
   boardName: string | null;
   siteName: string | null;
   circuitRange: string | null;
-  rows: { name: string }[];
+  rows: Row[];
   emptyCount: number;
 };
 
@@ -204,6 +213,16 @@ export function RcdWizard({
   const extraTotal = Object.values(extras).reduce((total, count) => total + count, 0);
   const ready = checklistComplete(answers);
 
+  /**
+   * The mapping as it will be saved — worked out here the same way the save
+   * works it out, off the same walk, so what is reviewed is what is written.
+   */
+  const mapping = useMemo(() => {
+    if (!board || !parsed) return null;
+    const positions = walkPositions(board, { order, extrasFirst, extraOrder });
+    return mapTests(parsed.rows as RcdRow[], positions, extras);
+  }, [board, parsed, order, extrasFirst, extraOrder, extras]);
+
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="RCD test">
       <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
@@ -224,6 +243,7 @@ export function RcdWizard({
                   ["upload", "Export"],
                   ["board", "Board"],
                   ["duplicates", "Duplicates"],
+                  ["mapping", "Mapping"],
                   ["checks", "Checks"],
                 ] as [Step, string][]
               ).map(([id, label]) => (
@@ -476,6 +496,72 @@ export function RcdWizard({
               </section>
             ) : null}
 
+            {step === "mapping" ? (
+              <section>
+                <div className="board-section-head">
+                  <h3 className="board-section-title">Which test landed on which device</h3>
+                  <p className="board-section-note">
+                    Every record the instrument kept, against the device it has been
+                    dealt onto — named for every way that device occupies, and for a
+                    three-phase device saying which phase of it this reading is. This
+                    is exactly what goes on the report.
+                  </p>
+                </div>
+                {mapping && board ? (
+                  <>
+                    <p className="issue-empty">
+                      {countRcds(board)} RCDs · {rcdTests} tests expected ·{" "}
+                      {mapping.pairs.filter((pair) => pair.position).length} matched
+                      {mapping.duplicates.length > 0
+                        ? ` · ${mapping.duplicates.length} set aside as repeats`
+                        : ""}
+                      {mapping.dropped.length > 0
+                        ? ` · ${mapping.dropped.length} empty ${
+                            mapping.dropped.length === 1 ? "record" : "records"
+                          } dropped`
+                        : ""}
+                    </p>
+                    <table className="rcd-map">
+                      <thead>
+                        <tr>
+                          <th>Record</th>
+                          <th>Device</th>
+                          <th>Phase</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mapping.pairs.map((pair) => (
+                          <tr
+                            key={pair.row.name}
+                            className={pair.position ? "" : "is-loose"}
+                          >
+                            <td>{pair.row.name}</td>
+                            <td>{pair.position?.label ?? "Nothing left on this board"}</td>
+                            <td>{pair.position?.phase ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {mapping.untested.length > 0 ? (
+                      <p className="board-warning">
+                        No record reached{" "}
+                        {mapping.untested
+                          .map((position) =>
+                            position.phase
+                              ? `${position.label} ${position.phase}`
+                              : position.label,
+                          )
+                          .join(", ")}
+                        .
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="issue-empty">Choose a board first.</p>
+                )}
+              </section>
+            ) : null}
+
             {step === "checks" ? (
               <section>
                 <div className="board-section-head">
@@ -551,7 +637,15 @@ export function RcdWizard({
                 className="dialog-confirm"
                 disabled={!parsed || (step === "board" && !equipmentId)}
                 onClick={() =>
-                  setStep(step === "upload" ? "board" : step === "board" ? "duplicates" : "checks")
+                  setStep(
+                    step === "upload"
+                      ? "board"
+                      : step === "board"
+                        ? "duplicates"
+                        : step === "duplicates"
+                          ? "mapping"
+                          : "checks",
+                  )
                 }
               >
                 Next

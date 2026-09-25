@@ -69,6 +69,10 @@ export async function POST(
             label:
               pair.position?.label ??
               `${pair.row.name} — no matching way on the board`,
+            // Which phase of the device this record is, where the device takes
+            // three. Kept apart from the label so all three rows name the same
+            // device and the phase is its own fact.
+            phase: pair.position?.phase ?? null,
             ratingMa: pair.row.ratingMa,
             kind: kindFor(pair.row),
             halfAt0: store(pair.row.halfAt0),

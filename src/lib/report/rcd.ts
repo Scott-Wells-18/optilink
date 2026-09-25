@@ -81,7 +81,20 @@ import { reportSignature } from "@/lib/signatures";
  */
 
 export type RcdResultRow = {
+  /**
+   * The way on the board this reading came off, where it was matched to one.
+   * The three phases of a three-phase device all carry the same slot, which
+   * is how a count of devices is told apart from a count of readings.
+   */
+  slot: string | null;
+  /** The device, named for every way it occupies: "CB-1,3,5,7 (Welder)". */
   label: string;
+  /**
+   * Which phase this record is, on a device that takes three of them. Shown
+   * beside the device rather than written into its name, so all three rows
+   * name the same device.
+   */
+  phase: string | null;
   ratingMa: number | null;
   kindLabel: string;
   half: Reading;
@@ -192,7 +205,9 @@ export async function loadRcdReport(reportId: string): Promise<RcdReport | null>
       boardName: safe(identity.boardName),
       testDate: run.date,
       results: run.results.map((result) => ({
+        slot: result.slot,
         label: safe(result.label),
+        phase: result.phase ? safe(result.phase) : null,
         ratingMa: result.ratingMa,
         kindLabel: result.kind ? tuning.limits[result.kind].kindLabel : "—",
         half: pick(result.halfAt0, result.halfAt180),
@@ -494,9 +509,42 @@ function placement(
 
 /* --- the cover and the contents ------------------------------------------- */
 
-/** Every device on every board, for the counts the cover and contents carry. */
+/** Every reading on every board, for the counts the cover and contents carry. */
 function everyResult(data: RcdReport): RcdResultRow[] {
   return data.boards.flatMap((board) => board.results);
+}
+
+/**
+ * How many devices a set of readings came off.
+ *
+ * A three-phase device is tested on each phase in turn and so puts three
+ * readings on the report, all naming the same device. Counting the rows would
+ * say three devices where there is one, so the ways they sit on are counted
+ * instead. A reading the board could not account for stands on its own.
+ */
+function deviceCount(results: RcdResultRow[]): number {
+  const seen = new Set<string>();
+  let loose = 0;
+  for (const result of results) {
+    if (result.slot) seen.add(result.slot);
+    else loose += 1;
+  }
+  return seen.size + loose;
+}
+
+/** "3 devices", for the narrow count column in the contents. */
+function testedCount(results: RcdResultRow[]): string {
+  const devices = deviceCount(results);
+  return `${devices} ${devices === 1 ? "device" : "devices"}`;
+}
+
+/** The same two numbers, said as a sentence for the cover. */
+function testedSentence(results: RcdResultRow[]): string {
+  const devices = deviceCount(results);
+  const said = `${devices} ${devices === 1 ? "device" : "devices"} tested`;
+  return devices === results.length
+    ? said
+    : `${said} over ${results.length} readings`;
 }
 
 function cover(doc: Doc, data: RcdReport) {
@@ -521,9 +569,7 @@ function cover(doc: Doc, data: RcdReport) {
     scopeLabel: "Tested on this visit",
     scope: `${tested || "—"} — ${boards} ${
       boards === 1 ? "switchboard" : "switchboards"
-    }, ${all.length} ${all.length === 1 ? "device" : "devices"} tested${
-      failed ? `, ${failed} failed` : ""
-    }`,
+    }, ${testedSentence(all)}${failed ? `, ${failed} failed` : ""}`,
     rows: [
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
@@ -567,7 +613,11 @@ function contents(
         boards === 1 ? "switchboard" : "switchboards"
       } at ${where} were tested on ${longDate(earliest)} for ${
         data.clientName
-      }. Each device was tested at half, one and five times its rated residual current, in both polarities.`,
+      }. Each device was tested at half, one and five times its rated residual current, in both polarities.${
+        everyResult(data).some((result) => result.phase)
+          ? " A three-phase device was tested on each of its phases in turn and so is listed once for each, under the same circuit reference."
+          : ""
+      }`,
     ),
     MARGIN,
     MARGIN + 46,
@@ -598,12 +648,18 @@ function contents(
     const concerns = board.results.filter((result) => result.verdict === "CONCERN").length;
     entries.push({
       title: `${board.boardName} — results`,
-      note: failed
-        ? `${failed} failed, ${concerns} raised as a concern.`
-        : concerns
-          ? `Nothing failed; ${concerns} raised as a concern.`
-          : "Every device satisfied the criteria applied.",
-      count: `${board.results.length} ${board.results.length === 1 ? "device" : "devices"}`,
+      note: `${
+        failed
+          ? `${failed} failed, ${concerns} raised as a concern.`
+          : concerns
+            ? `Nothing failed; ${concerns} raised as a concern.`
+            : "Every device satisfied the criteria applied."
+      }${
+        deviceCount(board.results) === board.results.length
+          ? ""
+          : ` ${board.results.length} readings in all.`
+      }`,
+      count: testedCount(board.results),
       page: String(laid.pageOf[boardKey("results", index)] ?? "—"),
       tone: failed
         ? toneFor("FAIL").fill
@@ -912,12 +968,23 @@ function results(doc: Doc, data: RcdReport, board: BoardTest, index: number): Se
           // classification with it wherever the table breaks across a page.
           doc.rect(MARGIN, y, 3, ROW_HEIGHT).fill(tone.fill);
 
+          // The device, and which phase of it. A three-phase device puts the
+          // same name on all three of its rows and separates them by phase, so
+          // the phase is set apart rather than run into the name.
           doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(8.5);
+          const phaseWidth = row.phase ? 20 : 0;
           doc.text(row.label, MARGIN + 10, y + 6, {
-            width: RESULT_COLUMNS[0] - 16,
+            width: RESULT_COLUMNS[0] - 16 - phaseWidth,
             ellipsis: true,
             height: 11,
           });
+          if (row.phase) {
+            doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+            doc.text(row.phase, MARGIN + RESULT_COLUMNS[0] - 26, y + 7, {
+              width: 20,
+              align: "right",
+            });
+          }
 
           doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
           const cells = [

@@ -913,7 +913,9 @@ export function useClientsTree(enabled: boolean) {
                         id: `rcdrun:${run.id}`,
                         label: name,
                         detail: done
-                          ? countLabel(run._count.results, "device", "devices")
+                          ? // Readings, not devices: a three-phase device is
+                            // tested on each phase and so keeps three of them.
+                            countLabel(run._count.results, "reading", "readings")
                           : run.sourceFileId
                             ? "Corrections not finished"
                             : "No export loaded yet",

@@ -538,7 +538,19 @@ model RcdResult {
 
   /** Which position on the board, e.g. "main:cell:12". Null when unmatched. */
   slot  String?
+  /**
+   * The device this result belongs to, named for every way it occupies —
+   * "CB-1,3,5,7 (Welder)". A four-module three-phase RCBO is named for all
+   * four even though it accounts for three tests: the fourth module holds its
+   * test button and is an occupied way, not another test.
+   */
   label String
+  /**
+   * Which phase this result is, on a device that takes three of them. Kept
+   * apart from the label so the device reads the same on all three rows and
+   * the phase is its own fact.
+   */
+  phase String?
 
   /** Rated residual current in mA, off the tester's own parameters. */
   ratingMa Int?
