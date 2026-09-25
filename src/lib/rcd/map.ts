@@ -10,11 +10,11 @@ import {
   isSpanned,
   positionNumber,
   slotKey,
+  strideOf,
   testsFor,
   type Board,
   type BoardSection,
   type CellState,
-  type Numbering,
 } from "@/lib/board";
 import { namesMatch } from "@/lib/rcd/names";
 import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
@@ -35,7 +35,7 @@ import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
  * rows left behind when a way was tested more than once.
  */
 
-/** How the board was worked through. */
+/** How the board was worked through where nothing was said otherwise. */
 export type WalkOrder =
   /** Down the first column, then down the second — 1, 3, 5 … or 1, 2, 3 … */
   | "COLUMNS"
@@ -47,23 +47,35 @@ export type Walk = {
   /** Whether the devices outside the grid were worked before the grid or after. */
   extrasFirst: boolean;
   /**
-   * The additional RCDs in the order they were tested, by slot. Anything not
-   * named here follows in the order it is drawn.
+   * The additional RCDs in the order they were tested, by slot. Kept for runs
+   * saved before the whole board could be ordered; `sequence` supersedes it.
    */
   extraOrder: string[];
+  /**
+   * Every RCD on the board in the order it was tested, by slot — grid ways,
+   * additionals beside the main switch and sub-board ways alike. Anything not
+   * named here follows behind in the order it is drawn.
+   */
+  sequence: string[];
 };
 
-export const DEFAULT_WALK: Walk = { order: "COLUMNS", extrasFirst: true, extraOrder: [] };
+export const DEFAULT_WALK: Walk = {
+  order: "COLUMNS",
+  extrasFirst: true,
+  extraOrder: [],
+  sequence: [],
+};
 
-/** Accepts a walk off an older record, which had no additionals ordering. */
+/** Accepts a walk off an older record, which had no sequence of its own. */
 export function normaliseWalk(value: unknown): Walk {
   const raw = (value ?? {}) as Partial<Walk>;
+  const slots = (given: unknown): string[] =>
+    Array.isArray(given) ? given.filter((slot): slot is string => typeof slot === "string") : [];
   return {
     order: raw.order === "ROWS" ? "ROWS" : "COLUMNS",
     extrasFirst: raw.extrasFirst !== false,
-    extraOrder: Array.isArray(raw.extraOrder)
-      ? raw.extraOrder.filter((slot): slot is string => typeof slot === "string")
-      : [],
+    extraOrder: slots(raw.extraOrder),
+    sequence: slots(raw.sequence),
   };
 }
 
@@ -78,8 +90,71 @@ export type Position = {
   last: boolean;
 };
 
-/** Every RCD on the board that takes a test, in the order it was worked. */
-export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position[] {
+/**
+ * One RCD on the board, wherever it is drawn.
+ *
+ * The operator puts these in the order they worked them, so a device has to
+ * carry enough to be recognised at a glance: what it is, which part of the
+ * board it is on, and every way it occupies.
+ */
+export type Device = {
+  slot: string;
+  /** What it is called on the report: "CB-1,3,5,7 (Aircon)". */
+  label: string;
+  /** What was written on it when the board was drawn, if anything. */
+  written: string;
+  state: CellState;
+  /** Which part of the board it is on. */
+  place: Place;
+  /** The section it belongs to, named as it was drawn. */
+  section: string;
+  /** The ways it occupies, as they are numbered on the board. Empty for an
+   * additional, which sits outside the numbering. */
+  numbers: number[];
+  /** How many of the instrument's records it accounts for: one, or three. */
+  tests: number;
+};
+
+export type Place =
+  /** A way on the rail of the board proper. */
+  | "GRID"
+  /** Beside the main switch, outside the numbering. */
+  | "EXTRA"
+  /** On a sub-board bolted to one end of the enclosure. */
+  | "SUB"
+  /** Drawn freehand, where the board is not a grid at all. */
+  | "FREE";
+
+/**
+ * Every RCD on the board, in the order it was tested.
+ *
+ * The order is the operator's: they click the devices in the order they worked
+ * them, across the grid, the additionals and any sub-board alike, because
+ * nothing about how a board is drawn says which one they started on. Whatever
+ * they did not click follows behind in the order it is drawn, so a board
+ * worked straight down needs no clicking at all.
+ */
+export function boardDevices(board: Board, walk: Walk = DEFAULT_WALK): Device[] {
+  const drawn = devicesAsDrawn(board, walk);
+  if (walk.sequence.length === 0) return drawn;
+
+  const bySlot = new Map(drawn.map((device) => [device.slot, device]));
+  const picked: Device[] = [];
+  const taken = new Set<string>();
+  for (const slot of walk.sequence) {
+    const device = bySlot.get(slot);
+    // A slot naming a device that has since been moved or removed is dropped
+    // rather than shifting everything behind it.
+    if (!device || taken.has(slot)) continue;
+    taken.add(slot);
+    picked.push(device);
+  }
+
+  return [...picked, ...drawn.filter((device) => !taken.has(device.slot))];
+}
+
+/** Every RCD on the board in the order it is drawn, before the operator speaks. */
+function devicesAsDrawn(board: Board, walk: Walk): Device[] {
   // A freehand board has no rows or columns to walk. The operator numbered the
   // RCDs themselves when they drew it, and that numbering is the walk.
   if (isFreeBoard(board)) {
@@ -88,34 +163,35 @@ export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position
     // testing order: RCD-1, RCD-2, and so on.
     return orderedItems(board)
       .filter((item) => isRcd(item.state))
-      .flatMap((item, place) =>
-        phasesOf(
-          item.state,
-          freeSlotKey(item.id),
-          item.label.trim() ? `RCD - ${item.label.trim()}` : `RCD-${place + 1}`,
-          null,
-        ),
-      );
+      .map((item, place) => ({
+        slot: freeSlotKey(item.id),
+        label: item.label.trim() ? `RCD - ${item.label.trim()}` : `RCD-${place + 1}`,
+        written: item.label.trim(),
+        state: item.state,
+        place: "FREE" as const,
+        section: "",
+        numbers: [],
+        tests: testsFor(item.state),
+      }));
   }
 
-  const out: Position[] = [];
-
+  const out: Device[] = [];
   for (const section of board.sections) {
-    const extras = extraPositions(section, walk);
-    const grid = gridPositions(section, board.numbering, walk);
-    out.push(...(walk.extrasFirst ? [...extras, ...grid] : [...grid, ...extras]));
+    const extras = extraDevices(section, board, walk);
+    const ways = wayDevices(section, board, walk);
+    out.push(...(walk.extrasFirst ? [...extras, ...ways] : [...ways, ...extras]));
   }
-
   return out;
 }
 
 /**
- * Devices outside the grid, in the order the operator says they took them.
+ * Devices outside the grid, in the order they are drawn.
  *
- * They have no numbering of their own to follow, so unless the operator points
- * at them one by one they are taken as drawn, left to right.
+ * They have no numbering of their own to follow. `extraOrder` is honoured for
+ * runs saved before the whole board could be sequenced; anything newer says it
+ * in `sequence` instead.
  */
-function extraPositions(section: BoardSection, walk: Walk): Position[] {
+function extraDevices(section: BoardSection, board: Board, walk: Walk): Device[] {
   const drawn = section.extras
     .map((cell, index) => ({ cell, slot: slotKey(section.id, "extra", index), index }))
     .filter((entry) => isRcd(entry.cell.state));
@@ -132,27 +208,30 @@ function extraPositions(section: BoardSection, walk: Walk): Position[] {
   // Devices beside the grid have no way number, so they are named for what
   // they are: "RCD-Kitchen GPOs", or "RCD-Additional" where nothing was
   // written on them.
-  return ranked.flatMap((entry) =>
-    phasesOf(
-      entry.cell.state,
-      entry.slot,
+  return ranked.map((entry) => ({
+    slot: entry.slot,
+    label: prefixed(
+      board,
+      section,
       entry.cell.label.trim() ? `RCD-${entry.cell.label.trim()}` : "RCD-Additional",
-      null,
     ),
-  );
+    written: entry.cell.label.trim(),
+    state: entry.cell.state,
+    place: "EXTRA" as const,
+    section: sectionName(section),
+    numbers: [],
+    tests: testsFor(entry.cell.state),
+  }));
 }
 
-function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk): Position[] {
-  const columns = Array.from({ length: COLUMNS }, (_, column) => column);
-
-  const indexes: number[] =
-    walk.order === "COLUMNS"
-      ? columns.flatMap((column) =>
-          Array.from({ length: section.rows }, (_, row) => row * COLUMNS + column),
-        )
-      : Array.from({ length: section.rows }, (_, row) =>
-          columns.map((column) => row * COLUMNS + column),
-        ).flat();
+/**
+ * The devices standing on a section's rail.
+ *
+ * The board proper is two columns read down or across, as the operator
+ * worked it. A sub-board is a single rail, so it is simply read along.
+ */
+function wayDevices(section: BoardSection, board: Board, walk: Walk): Device[] {
+  const indexes = waysOf(section, walk);
 
   return indexes.flatMap((index) => {
     const cell = section.cells[index];
@@ -162,14 +241,67 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
     // covered way would be walked as well and every test after it would land
     // one device out.
     if (isSpanned(section, index)) return [];
-    const number = positionNumber(section, index, numbering);
-    return phasesOf(
-      cell.state,
-      slotKey(section.id, "cell", index),
-      wayLabel(section, index, numbering, cell),
-      number,
-    );
+
+    const numbers = occupiedWays(section, index, cell.state)
+      .map((at) => positionNumber(section, at, board.numbering))
+      .sort((a, b) => a - b);
+
+    return [
+      {
+        slot: slotKey(section.id, "cell", index),
+        label: prefixed(board, section, wayLabel(numbers, cell.label)),
+        written: cell.label.trim(),
+        state: cell.state,
+        place: (section.side ? "SUB" : "GRID") as Place,
+        section: sectionName(section),
+        numbers,
+        tests: testsFor(cell.state),
+      },
+    ];
   });
+}
+
+/** A section's ways, in the order they were worked. */
+function waysOf(section: BoardSection, walk: Walk): number[] {
+  // A sub-board is one rail of ways standing side by side, so there is only
+  // one way to read it: along.
+  if (section.side) return section.cells.map((_, index) => index);
+
+  const columns = Array.from({ length: COLUMNS }, (_, column) => column);
+  return walk.order === "COLUMNS"
+    ? columns.flatMap((column) =>
+        Array.from({ length: section.rows }, (_, row) => row * COLUMNS + column),
+      )
+    : Array.from({ length: section.rows }, (_, row) =>
+        columns.map((column) => row * COLUMNS + column),
+      ).flat();
+}
+
+/** Every RCD on the board that takes a test, in the order it was worked. */
+export function walkPositions(board: Board, walk: Walk = DEFAULT_WALK): Position[] {
+  return boardDevices(board, walk).flatMap((device) =>
+    phasesOf(device.state, device.slot, device.label, device.numbers[0] ?? null),
+  );
+}
+
+/** What a section is called, for a device that has to say where it lives. */
+function sectionName(section: BoardSection): string {
+  const written = section.name.trim();
+  if (written) return written;
+  return section.side ? "Sub-board" : "Main";
+}
+
+/**
+ * Which section a device is on, said in its name where it could be mistaken.
+ *
+ * A board with one section needs no saying. A board with more than one numbers
+ * its ways from 1 in each of them — and a sub-board on the end of the
+ * enclosure has its own rail of ways as well — so without the section in the
+ * name two different devices both read "CB-3".
+ */
+function prefixed(board: Board, section: BoardSection, name: string): string {
+  if (board.sections.length < 2) return name;
+  return `${sectionName(section)} ${name}`;
 }
 
 /**
@@ -195,18 +327,9 @@ function gridPositions(section: BoardSection, numbering: Numbering, walk: Walk):
  * outside the app — is named for its own way alone rather than for ways no
  * device occupies.
  */
-function wayLabel(
-  section: BoardSection,
-  index: number,
-  numbering: Numbering,
-  cell: { state: CellState; label: string },
-): string {
-  const numbers = occupiedWays(section, index, cell.state).map((at) =>
-    positionNumber(section, at, numbering),
-  );
-
-  const ways = `CB-${numbers.sort((a, b) => a - b).join(",")}`;
-  const written = cell.label.trim();
+function wayLabel(numbers: number[], label: string): string {
+  const ways = `CB-${numbers.join(",")}`;
+  const written = label.trim();
   return written ? `${ways} (${written})` : ways;
 }
 
@@ -217,12 +340,16 @@ function wayLabel(
  * sits: a three-pole breaker or RCD reaches one way each side, a three-phase
  * RCD or RCBO reaches one above and two below, the last of those being the
  * neutral and test-button module.
+ *
+ * Which ways those are depends on the shape of the section: down the same
+ * column on the board proper, along the rail on a sub-board.
  */
 function occupiedWays(section: BoardSection, index: number, state: CellState): number[] {
   if (!fitsAt(section, index, state)) return [index];
   const { above, below } = extentOf(state);
+  const stride = strideOf(section);
   const ways: number[] = [];
-  for (let step = -above; step <= below; step += 1) ways.push(index + step * COLUMNS);
+  for (let step = -above; step <= below; step += 1) ways.push(index + step * stride);
   return ways;
 }
 
@@ -334,7 +461,7 @@ export function mapTests(
  * not a device of its own, however it was drawn before that device went in.
  */
 export function countRcds(board: Board): number {
-  return new Set(walkPositions(board).map((position) => position.slot)).size;
+  return boardDevices(board).length;
 }
 
 /** True when every RCD on a freehand board has been given a place in the run. */

@@ -563,12 +563,20 @@ export function withRows(section: BoardSection, rows: number): BoardSection {
   return { ...section, rows: wanted, cells };
 }
 
-/** The number printed on a position, following the board's own convention. */
+/**
+ * The number printed on a position, following the board's own convention.
+ *
+ * A sub-board is a single rail rather than two columns, so its ways are
+ * numbered straight along it — 1, 2, 3 — whichever way the board proper is
+ * numbered. It carries its own numbering because it is its own little board.
+ */
 export function positionNumber(
   section: BoardSection,
   index: number,
   numbering: Numbering,
 ): number {
+  if (section.side) return index + 1;
+
   const row = Math.floor(index / COLUMNS);
   const column = index % COLUMNS;
   return numbering === "ODD_EVEN"

@@ -293,7 +293,16 @@ function describeWalk(value: unknown): string {
   const extras = walk.extrasFirst
     ? "additional RCDs first"
     : "additional RCDs after the grid";
-  return `${grid}, left to right, ${extras}`;
+  const drawn = `${grid}, left to right, ${extras}`;
+
+  // Where the operator set the run themselves — device by device, across the
+  // grid, the additionals and any sub-board — that is what the records were
+  // dealt onto, and the default above only says where anything they did not
+  // name fell in behind.
+  if (walk.sequence.length === 0) return drawn;
+  return `Set by the tester: ${walk.sequence.length} ${
+    walk.sequence.length === 1 ? "device" : "devices"
+  } in the order worked, the rest ${drawn.toLowerCase()}`;
 }
 
 type Names = { siteName: string; siteLocation: string | null; boardName: string };
@@ -396,7 +405,14 @@ const TABLE_HEAD = 20;
  * here is named for its way and its label — "CB-4 (Kitchen GPOs)" — rather
  * than by the instrument's "S_4".
  */
-const RESULT_COLUMNS = [140, 46, 44, 50, 40, 46, 40, 46];
+/*
+ * The circuit column carries the most: a device on a board of several sections
+ * is named for its section as well as for every way it occupies, which runs to
+ * "Shed DB CB-2,3,4,5 (Pump)". The readings beside it are five characters at
+ * most, so the width they do not need goes here rather than truncating a name
+ * somebody has to match against the board in front of them.
+ */
+const RESULT_COLUMNS = [177, 42, 42, 46, 38, 42, 38, 42];
 const RESULT_TITLES = [
   "Circuit",
   "Rating",

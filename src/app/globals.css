@@ -1989,6 +1989,19 @@ body {
   background: #fff;
 }
 
+/*
+ * A run of ways read along rather than down: the devices beside the main
+ * switch, and a sub-board's single rail. They stand side by side and wrap,
+ * which is how they sit on the board itself — stacked full width they read as
+ * a list of unrelated things.
+ */
+.board-extra-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
 .board-row {
   display: grid;
   grid-template-columns: 1fr 34px 1fr;
@@ -3203,6 +3216,11 @@ body {
   margin-top: 10px;
 }
 
+/* A second question of the same kind, close under the first rather than adrift. */
+.issue-picks.rcd-picks-after {
+  margin-top: 7px;
+}
+
 .issue-pick {
   display: flex;
   align-items: center;
@@ -3802,6 +3820,110 @@ body {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);
+}
+
+/*
+ * The whole board as one run: every RCD in the order it was tested, whether it
+ * stands on the rail, beside the main switch or on a sub-board. Read as a list
+ * rather than drawn as a board, because the run crosses between all three and
+ * no drawing of the board can show that.
+ */
+.rcd-run {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  counter-reset: none;
+}
+
+.rcd-run-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rcd-run-item:hover {
+  border-color: var(--accent);
+}
+
+/* A device the tester put in the run themselves, rather than one left as drawn. */
+.rcd-run-item.is-ranked {
+  border-color: var(--accent);
+  background: var(--accent-wash, #eef7fc);
+}
+
+.rcd-run-no {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--hair);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.rcd-run-item.is-ranked .rcd-run-no {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* The device itself, in its own colour, small enough to sit in a row. */
+.board-cell.is-chip {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  min-width: 74px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: inherit;
+}
+
+.rcd-run-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rcd-run-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rcd-run-where {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.rcd-run-mark {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.rcd-run-item.is-ranked .rcd-run-mark {
+  color: var(--accent-deep, var(--accent));
 }
 
 /*
