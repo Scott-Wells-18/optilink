@@ -5,10 +5,25 @@ import { siteUrl } from "@/lib/siteUrl";
 /** Reachable without signing in. "/" is the sign-in screen itself. */
 const PUBLIC_PATHS = ["/", "/api/auth/login", "/api/auth/logout", "/api/health"];
 
+/**
+ * The door for things that are not people.
+ *
+ * An assistant has no session cookie and no way to get one. It carries a
+ * bearer token instead, which the endpoint itself checks against the tokens
+ * that have been issued — so the cookie gate steps aside here rather than
+ * turning away a caller it has no way to recognise. Nothing behind this path
+ * is reachable without a valid token.
+ */
+const TOKEN_PATHS = ["/api/mcp"];
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (PUBLIC_PATHS.includes(pathname)) {
+    return NextResponse.next();
+  }
+
+  if (TOKEN_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
     return NextResponse.next();
   }
 

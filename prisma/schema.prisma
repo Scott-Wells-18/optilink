@@ -134,6 +134,34 @@ model TestEquipment {
 // Clients
 // ---------------------------------------------------------------------------
 
+/**
+ * A key an outside assistant works through.
+ *
+ * The app itself is behind one shared password, which is fine for a person at
+ * a keyboard and no use at all for a machine: there is no way to tell one
+ * caller from another, and no way to stop one without stopping everybody. A
+ * token is issued to one thing, is named so it is obvious what it is for, and
+ * can be revoked on its own.
+ *
+ * Only the hash is kept. The token itself is shown once when it is made and
+ * is not recoverable, so a copy of this table is not a copy of the keys.
+ */
+model ApiToken {
+  id   String @id @default(cuid())
+  /** What it is for, e.g. "ChatGPT". */
+  name String
+  /** SHA-256 of the token. The token itself is never stored. */
+  hash String @unique
+  /** The first few characters, so a token can be recognised in a list. */
+  prefix String
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([revokedAt])
+}
+
 model Client {
   id           String   @id @default(cuid())
   name         String
