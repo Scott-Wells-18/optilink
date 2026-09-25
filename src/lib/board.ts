@@ -40,6 +40,16 @@ export type BoardCell = { state: CellState; label: string };
  */
 export type Numbering = "SEQUENTIAL" | "ODD_EVEN";
 
+/**
+ * Where a section sits.
+ *
+ * Nothing means it is part of the board proper, behind its own tab. A side is
+ * a sub-board bolted onto the end of the enclosure: its own little run of
+ * ways, fed from this board and with no main switch of its own, drawn beside
+ * the big one rather than hidden behind a tab.
+ */
+export type SectionSide = "LEFT" | "RIGHT";
+
 export type BoardSection = {
   id: string;
   name: string;
@@ -48,6 +58,8 @@ export type BoardSection = {
   cells: BoardCell[];
   /** Devices outside the grid — beside the section, or up by the main switch. */
   extras: BoardCell[];
+  /** Set where this is a sub-board hanging off one end of the enclosure. */
+  side?: SectionSide;
 };
 
 /**
@@ -439,6 +451,13 @@ export function createSection(name = "", rows = DEFAULT_ROWS): BoardSection {
   };
 }
 
+/** A small board bolted onto one end of the enclosure, with no main switch. */
+export const SUB_BOARD_ROWS = 3;
+
+export function createSubBoard(side: SectionSide, name = ""): BoardSection {
+  return { ...createSection(name, SUB_BOARD_ROWS), side };
+}
+
 export function createBoard(): Board {
   return { layout: "GRID", numbering: "SEQUENTIAL", sections: [createSection("Main")] };
 }
@@ -626,6 +645,7 @@ function normaliseSection(value: unknown): BoardSection {
       normaliseCell(Array.isArray(raw.cells) ? raw.cells[index] : undefined),
     ),
     extras: Array.isArray(raw.extras) ? raw.extras.slice(0, 24).map(normaliseCell) : [],
+    ...(raw.side === "LEFT" || raw.side === "RIGHT" ? { side: raw.side } : {}),
   };
 }
 

@@ -1489,6 +1489,125 @@ body {
  * alongside — the little board bolted onto the end of a big one.
  */
 
+/*
+ * The board and whatever is bolted onto its ends, side by side. A sub-board
+ * is fed from the board beside it and has no main switch of its own, so it is
+ * drawn as its own little box against the end of the enclosure rather than as
+ * another run of ways inside it.
+ */
+.board-run {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding: 26px 34px 8px;
+  overflow-x: auto;
+}
+
+.board-run > .board-case {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.board-sub {
+  flex: none;
+  width: 264px;
+  margin-top: 46px;
+  padding: 12px 12px 8px;
+  border: 2px solid var(--ink-2);
+  background: #fff;
+}
+
+/* Butted against the end of the enclosure, sharing its edge. The dashed +
+   that adds it straddles that edge, so the contents start clear of it. */
+.board-sub.is-left {
+  border-right-width: 0;
+  padding-right: 26px;
+}
+
+.board-sub.is-right {
+  border-left-width: 0;
+  padding-left: 26px;
+}
+
+.board-sub-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.board-sub-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-2);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-sub-name {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-app);
+}
+
+.board-sub-remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(11, 42, 68, 0.07);
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.board-sub-remove:hover {
+  background: rgba(194, 65, 12, 0.14);
+  color: #b0400f;
+}
+
+.board-sub-note {
+  margin: 4px 0 10px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--ink-4);
+}
+
+.board-grid.is-sub {
+  padding: 0;
+}
+
+.board-grid.is-sub .board-cell {
+  min-width: 0;
+}
+
+.board-rows-control.is-sub {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.board-rows-control.is-sub .board-row-btn {
+  min-width: 28px;
+  padding: 4px 8px;
+}
+
 .board-case {
   position: relative;
   margin: 26px 34px 8px;

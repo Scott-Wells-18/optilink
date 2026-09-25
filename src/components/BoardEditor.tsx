@@ -9,6 +9,7 @@ import {
   STATE_LABELS,
   createBoard,
   createSection,
+  createSubBoard,
   emptyCell,
   nextFitting,
   nextState,
@@ -76,9 +77,20 @@ export function BoardEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sub-boards bolted onto the ends are always on screen; the tabs are for
+  // the board's own sections.
+  const main = useMemo(
+    () => board.sections.filter((section) => !section.side),
+    [board.sections],
+  );
+  const subs = useMemo(
+    () => board.sections.filter((section) => section.side),
+    [board.sections],
+  );
+
   const active = useMemo(
-    () => board.sections.find((section) => section.id === activeId) ?? board.sections[0],
-    [board.sections, activeId],
+    () => main.find((section) => section.id === activeId) ?? main[0] ?? board.sections[0],
+    [main, board.sections, activeId],
   );
 
   useEffect(() => {
@@ -171,6 +183,31 @@ export function BoardEditor({
     setRenaming(section.id);
   }
 
+  /**
+   * A sub-board on the end of the enclosure.
+   *
+   * Its own little run of ways, fed from this board and with no main switch
+   * of its own — the small board bolted onto the side of a big one. It is
+   * drawn beside the enclosure rather than hidden behind a tab, because that
+   * is where it is.
+   */
+  function addSubBoard(side: "LEFT" | "RIGHT") {
+    if (board.sections.length >= MAX_SECTIONS) return;
+    const section = createSubBoard(side);
+    setBoard((current) => ({ ...current, sections: [...current.sections, section] }));
+    setRenaming(section.id);
+  }
+
+  /** Applies a change to any section, by id. */
+  function editSection(id: string, change: (section: BoardSection) => BoardSection) {
+    setBoard((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === id ? change(section) : section,
+      ),
+    }));
+  }
+
   function removeSection(id: string) {
     if (board.sections.length <= 1) return;
     const section = board.sections.find((entry) => entry.id === id);
@@ -244,7 +281,7 @@ export function BoardEditor({
 
         <div className="board-scroll">
         <nav className="board-tabs" aria-label="Board sections">
-          {board.sections.map((section) => {
+          {main.map((section) => {
             const isActive = section.id === active.id;
             return (
               <div
@@ -288,7 +325,7 @@ export function BoardEditor({
                         </svg>
                       </button>
                     ) : null}
-                    {board.sections.length > 1 ? (
+                    {main.length > 1 ? (
                       <button
                         type="button"
                         className="board-tab-close"
@@ -325,24 +362,56 @@ export function BoardEditor({
             * The dashed squares straddling the sides add a section alongside —
             * the little board bolted onto the end of a big one.
             */}
+          <div className="board-run">
+          {subs
+            .filter((section) => section.side === "LEFT")
+            .map((section) => (
+              <SubBoard
+                key={section.id}
+                section={section}
+                numbering={board.numbering}
+                renaming={renaming === section.id}
+                onRename={(value) => renameSection(section.id, value)}
+                onDoneRenaming={() => setRenaming(null)}
+                onStartRenaming={() => setRenaming(section.id)}
+                onCycle={(index) =>
+                  editSection(section.id, (current) => {
+                    if (spanAt(current, index).part !== "whole") return current;
+                    const cells = [...current.cells];
+                    cells[index] = { ...cells[index], state: nextState(cells[index].state, true) };
+                    return { ...current, cells };
+                  })
+                }
+                onLabel={(index, value) =>
+                  editSection(section.id, (current) => {
+                    const cells = [...current.cells];
+                    cells[index] = { ...cells[index], label: value };
+                    return { ...current, cells };
+                  })
+                }
+                onRows={(rows) => editSection(section.id, (current) => withRows(current, rows))}
+                onRemove={() => removeSection(section.id)}
+              />
+            ))}
+
           <section className="board-case">
             <button
               type="button"
               className="board-side-add is-left"
-              onClick={addSection}
+              onClick={() => addSubBoard("LEFT")}
               disabled={board.sections.length >= MAX_SECTIONS}
-              title="Add a section alongside"
-              aria-label="Add a section alongside"
+              title="Add a sub-board on this end"
+              aria-label="Add a sub-board on this end"
             >
               +
             </button>
             <button
               type="button"
               className="board-side-add is-right"
-              onClick={addSection}
+              onClick={() => addSubBoard("RIGHT")}
               disabled={board.sections.length >= MAX_SECTIONS}
-              title="Add a section alongside"
-              aria-label="Add a section alongside"
+              title="Add a sub-board on this end"
+              aria-label="Add a sub-board on this end"
             >
               +
             </button>
@@ -444,6 +513,38 @@ export function BoardEditor({
             </div>
           </section>
 
+          {subs
+            .filter((section) => section.side === "RIGHT")
+            .map((section) => (
+              <SubBoard
+                key={section.id}
+                section={section}
+                numbering={board.numbering}
+                renaming={renaming === section.id}
+                onRename={(value) => renameSection(section.id, value)}
+                onDoneRenaming={() => setRenaming(null)}
+                onStartRenaming={() => setRenaming(section.id)}
+                onCycle={(index) =>
+                  editSection(section.id, (current) => {
+                    if (spanAt(current, index).part !== "whole") return current;
+                    const cells = [...current.cells];
+                    cells[index] = { ...cells[index], state: nextState(cells[index].state, true) };
+                    return { ...current, cells };
+                  })
+                }
+                onLabel={(index, value) =>
+                  editSection(section.id, (current) => {
+                    const cells = [...current.cells];
+                    cells[index] = { ...cells[index], label: value };
+                    return { ...current, cells };
+                  })
+                }
+                onRows={(rows) => editSection(section.id, (current) => withRows(current, rows))}
+                onRemove={() => removeSection(section.id)}
+              />
+            ))}
+          </div>
+
           <section className="board-supply">
             <SupplyFields supply={supply} siblings={siblings} onChange={setSupply} />
           </section>
@@ -474,6 +575,130 @@ export function BoardEditor({
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * A sub-board bolted onto the end of the enclosure.
+ *
+ * Fed from the board beside it, so it has no main switch of its own — which
+ * is the whole reason it is drawn as its own little box rather than as
+ * another run of ways inside the big one. It takes anything: it is off the
+ * main rail, so an RCD or a contactor is as much at home in it as a breaker.
+ */
+function SubBoard({
+  section,
+  numbering,
+  renaming,
+  onRename,
+  onDoneRenaming,
+  onStartRenaming,
+  onCycle,
+  onLabel,
+  onRows,
+  onRemove,
+}: {
+  section: BoardSection;
+  numbering: Numbering;
+  renaming: boolean;
+  onRename: (value: string) => void;
+  onDoneRenaming: () => void;
+  onStartRenaming: () => void;
+  onCycle: (index: number) => void;
+  onLabel: (index: number, value: string) => void;
+  onRows: (rows: number) => void;
+  onRemove: () => void;
+}) {
+  const rows = Array.from({ length: section.rows }, (_, row) =>
+    Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
+  );
+
+  return (
+    <section className={`board-sub is-${section.side?.toLowerCase()}`}>
+      <header className="board-sub-head">
+        {renaming ? (
+          <input
+            autoFocus
+            className="board-sub-name"
+            value={section.name}
+            placeholder="Sub-board name"
+            aria-label="Sub-board name"
+            onChange={(event) => onRename(event.target.value)}
+            onBlur={onDoneRenaming}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === "Escape") onDoneRenaming();
+            }}
+          />
+        ) : (
+          <button type="button" className="board-sub-title" onClick={onStartRenaming}>
+            {section.name.trim() || "Unnamed sub-board"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="board-sub-remove"
+          aria-label="Remove this sub-board"
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      </header>
+
+      <p className="board-sub-note">No main switch — fed from the board beside it.</p>
+
+      <div className="board-grid is-sub">
+        {rows.map((indexes, row) => (
+          <div className="board-row" key={row}>
+            {indexes.map((index, column) => {
+              const span = spanAt(section, index);
+              const owner = ownerOf(index, span.part);
+              const cell = (
+                <Cell
+                  key={index}
+                  state={span.state}
+                  part={span.part}
+                  label={section.cells[owner].label}
+                  onCycle={() => onCycle(index)}
+                  onLabel={(value) => onLabel(owner, value)}
+                />
+              );
+              if (column === 0) {
+                return (
+                  <Fragment key={index}>
+                    {cell}
+                    <span className="board-gutter">
+                      <span>{positionNumber(section, index, numbering)}</span>
+                      <span>{positionNumber(section, index + 1, numbering)}</span>
+                    </span>
+                  </Fragment>
+                );
+              }
+              return cell;
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div className="board-rows-control is-sub">
+        <button
+          type="button"
+          className="board-row-btn"
+          onClick={() => onRows(section.rows - 1)}
+          disabled={section.rows <= MIN_ROWS}
+        >
+          −
+        </button>
+        <span className="board-rows-count">{section.rows * COLUMNS} ways</span>
+        <button
+          type="button"
+          className="board-row-btn"
+          onClick={() => onRows(section.rows + 1)}
+          disabled={section.rows >= MAX_ROWS}
+        >
+          +
+        </button>
+      </div>
+    </section>
   );
 }
 
