@@ -209,6 +209,8 @@ export type SafetySpec = {
   siteName: string;
   siteLocation: string | null;
   contacts: { name: string; phone: string | null }[];
+  /** The switchboards drawn for the site, for the energised-testing form. */
+  boards: { id: string; name: string; board: unknown }[];
 };
 
 /** Adding one piece of work to a job. */
@@ -1144,6 +1146,7 @@ export function useClientsTree(enabled: boolean) {
           name: contact.name,
           phone: contact.phone ?? null,
         })),
+        boards: switchboardsOf(site),
       });
     },
     [refresh, setSafety],
@@ -1189,6 +1192,7 @@ export function useClientsTree(enabled: boolean) {
                         name: contact.name,
                         phone: contact.phone ?? null,
                       })),
+                      boards: switchboardsOf(site),
                     }),
                   onDownload: doc.codes.length
                     ? () => download(`/api/safety-docs/${doc.id}/download`)
@@ -1471,6 +1475,13 @@ const SITE_FIELDS: DialogField[] = [
 
 function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/** The boards drawn for a site, for anything that has to name one. */
+function switchboardsOf(site: SiteRecord) {
+  return site.equipment
+    .filter((item) => item.kind === "SWITCHBOARD")
+    .map((item) => ({ id: item.id, name: item.name, board: item.board }));
 }
 
 /** Boards and motors get thermal surveys; appliances do not. */

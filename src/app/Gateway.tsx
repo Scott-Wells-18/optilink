@@ -224,6 +224,7 @@ export function Gateway({
           siteName={clients.safety.siteName}
           siteLocation={clients.safety.siteLocation}
           contacts={clients.safety.contacts}
+          boards={clients.safety.boards ?? []}
           onClose={clients.closeSafety}
         />
       ) : null}

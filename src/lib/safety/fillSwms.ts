@@ -38,6 +38,41 @@ export type SwmsValues = {
   scopeOfWorks?: string;
 };
 
+/**
+ * Whether a field has a second line to run onto.
+ *
+ * Only the project name ever needs one — it carries the job number and the
+ * job's own name, which on a real job is longer than the line the form leaves
+ * for it. Whether there is room depends on the document: on the templates
+ * where the client block sits beside a tall scope panel the cell is hundreds
+ * of points deep, and on the ones where it is a plain row the next label is
+ * thirty points below. The map knows where that next label is, so the distance
+ * to it is what decides — a second line that would land on the row beneath, or
+ * across the panel beside it, is worse than a name that visibly runs out.
+ */
+/**
+ * How wide the box really is.
+ *
+ * The maps were read off the pages with OCR, and on eight of the eighteen
+ * templates the project-name cell was measured as running all the way into the
+ * scope-of-works panel beside it — four hundred points wide instead of a
+ * hundred and seventy-five. A short value never noticed. A job number followed
+ * by a real job name prints straight across the scope text. So where the map
+ * knows where the scope panel starts, nothing is written past it.
+ */
+function widthOf(key: string, map: Map[string], box: Box): number {
+  const scope = map.fields.scopeOfWorks;
+  if (key !== "projectName" || !scope) return box.width;
+  return Math.min(box.width, Math.max(60, scope.x - 6 - box.x));
+}
+
+function roomBelow(key: string, map: Map[string]): boolean {
+  if (key !== "projectName") return false;
+  const below = map.fields.projectAddress;
+  if (!below) return false;
+  return map.fields.projectName.y - below.y > 60;
+}
+
 /** Which templates this can fill — anything the mapper has been run over. */
 export function canFill(code: string): boolean {
   return Boolean(FIELDS[code]);
@@ -68,15 +103,34 @@ export async function fillSwms(
 
     // Come down a point at a time rather than let a long client name run
     // across the cell beside it.
+    const width = widthOf(key, map, box);
     let size = 9;
-    while (size > 5.5 && font.widthOfTextAtSize(value, size) > box.width) size -= 0.25;
+    // A field that can wrap stops shrinking sooner; the second line is a
+    // better answer than six-point type.
+    const floor = roomBelow(key, map) ? 7 : 5.5;
+    while (size > floor && font.widthOfTextAtSize(value, size) > width) size -= 0.25;
 
-    page.drawText(clip(value, font, size, box.width), {
-      x: box.x,
-      y: box.y,
-      size,
-      font,
-      color: rgb(0.04, 0.11, 0.18),
+    const ink = rgb(0.04, 0.11, 0.18);
+    let lines = [clip(value, font, size, width)];
+    if (roomBelow(key, map) && font.widthOfTextAtSize(value, size) > width) {
+      const all = wrap(value, font, size, width);
+      lines = all.slice(0, 2);
+      // Two lines is what the cell has room for. Where even that is not
+      // enough, the last one ends visibly rather than stopping mid-sentence as
+      // though the name were that long.
+      if (all.length > lines.length) {
+        lines[1] = clip(`${lines[1]} …`, font, size, width);
+      }
+    }
+
+    lines.forEach((line, index) => {
+      page.drawText(line, {
+        x: box.x,
+        y: box.y - index * (size * 1.25),
+        size,
+        font,
+        color: ink,
+      });
     });
   }
 

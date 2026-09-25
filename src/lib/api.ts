@@ -124,11 +124,16 @@ export function serverError(error: unknown, message: string) {
  * encoded name ends up saved as "Kogarah%20Depot.pdf".
  */
 export function pdfResponse(pdf: Buffer, name: string) {
+  return fileResponse(pdf, name, "application/pdf");
+}
+
+/** Any generated file, handed back as a download under its own name. */
+export function fileResponse(bytes: Buffer, name: string, mimeType: string) {
   const plain = name.replace(/[^\w .\-()]+/g, " ").replace(/\s+/g, " ").trim();
-  return new NextResponse(new Uint8Array(pdf), {
+  return new NextResponse(new Uint8Array(bytes), {
     headers: {
-      "content-type": "application/pdf",
-      "content-length": String(pdf.byteLength),
+      "content-type": mimeType,
+      "content-length": String(bytes.byteLength),
       "content-disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
       "cache-control": "no-store",
     },

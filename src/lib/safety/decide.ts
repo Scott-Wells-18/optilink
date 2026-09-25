@@ -13,6 +13,39 @@ import { QUESTIONS, optionFor, type Option, type Question } from "@/lib/safety/q
 
 export type Answers = Record<string, string>;
 
+/**
+ * Documents the operator has added or thrown out by hand.
+ *
+ * They ride along in the answers under keys no question uses, so a hand-picked
+ * list survives a reload the same way the answers do. The reason is kept: a
+ * document that is here because somebody put it here should say so.
+ */
+const ADDED = "manual:add";
+const DROPPED = "manual:drop";
+
+export function manualCodes(answers: Answers): { added: string[]; dropped: string[] } {
+  const read = (key: string) =>
+    (answers[key] ?? "").split(",").map((code) => code.trim()).filter(Boolean);
+  return { added: read(ADDED), dropped: read(DROPPED) };
+}
+
+/** Adds or removes one code by hand, returning the answers to save. */
+export function withManual(answers: Answers, code: string, keep: boolean): Answers {
+  const { added, dropped } = manualCodes(answers);
+  const without = (list: string[]) => list.filter((entry) => entry !== code);
+  const next = keep
+    ? { added: [...without(added), code], dropped: without(dropped) }
+    : { added: without(added), dropped: [...without(dropped), code] };
+  return { ...answers, [ADDED]: next.added.join(","), [DROPPED]: next.dropped.join(",") };
+}
+
+/** Puts a code back under whatever the answers decide. */
+export function withoutManual(answers: Answers, code: string): Answers {
+  const { added, dropped } = manualCodes(answers);
+  const without = (list: string[]) => list.filter((entry) => entry !== code);
+  return { ...answers, [ADDED]: without(added).join(","), [DROPPED]: without(dropped).join(",") };
+}
+
 /** What the quote's own words already settle. */
 export function readAnswers(text: string): Answers {
   const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
@@ -35,6 +68,21 @@ export function readAnswers(text: string): Answers {
 }
 
 /**
+ * Every question in play, given what has been answered so far.
+ *
+ * Most are always in play. The follow-ups are not: they appear only when two
+ * answers disagree, and they disappear again when the disagreement is settled.
+ */
+export function asked(answers: Answers): Question[] {
+  return QUESTIONS.filter((question) => !question.when || question.when(answers));
+}
+
+/** The ones still waiting for an answer. */
+export function unanswered(answers: Answers): Question[] {
+  return asked(answers).filter((question) => answers[question.key] === undefined);
+}
+
+/**
  * The questions still worth asking.
  *
  * One the quote has answered is left out — that is what reading it was for —
@@ -42,7 +90,7 @@ export function readAnswers(text: string): Answers {
  * site will be occupied and the nature of the job is too important to infer.
  */
 export function openQuestions(answered: Answers): Question[] {
-  return QUESTIONS.filter(
+  return asked(answered).filter(
     (question) => question.always || answered[question.key] === undefined,
   );
 }
@@ -85,7 +133,7 @@ export function decide(
     if (option.describes) sentences.push(option.describes);
   };
 
-  for (const question of QUESTIONS) {
+  for (const question of asked(answers)) {
     const value = answers[question.key];
     if (value === undefined) continue;
     const option = optionFor(question.key, value);
@@ -94,15 +142,36 @@ export function decide(
 
   // Nothing said what kind of job it is, so it is treated as general
   // electrical work rather than issued with nothing.
-  if (!codes.some((code) => BY_CODE.get(code)?.kind === "JSA")) {
-    for (const code of ["SWMS001", "JSA001"]) {
+  if (!codes.some((code) => BY_CODE.get(code)?.kind === "SWMS")) {
+    for (const code of ["SWMS001"]) {
       if (!codes.includes(code)) codes.push(code);
-      reasons[code] ??= "The default risk assessment for general electrical work";
+      reasons[code] ??= "The default statement for general electrical work";
     }
   }
 
+  // Every method statement travels with its own risk assessment. Heights is
+  // the case that matters: a job that goes up a ladder needs SWMS007 *and*
+  // JSA007 on top of whatever its main pair already is, and one without the
+  // other is a statement nobody has assessed or an assessment of nothing.
+  for (const code of [...codes]) {
+    const pair = BY_CODE.get(code)?.pairs;
+    if (!pair || !BY_CODE.has(pair) || codes.includes(pair)) continue;
+    codes.push(pair);
+    reasons[pair] = `The risk assessment that goes with ${code} — ${reasons[code] ?? "selected for this job"}`;
+  }
+
+  // What the operator said, last. A document taken out by hand stays out and a
+  // document put in by hand stays in, and both say which they are.
+  const { added, dropped } = manualCodes(answers);
+  const kept = codes.filter((code) => !dropped.includes(code));
+  for (const code of added) {
+    if (!BY_CODE.has(code) || kept.includes(code)) continue;
+    kept.push(code);
+    reasons[code] = "Added by hand";
+  }
+
   return {
-    codes: sortCodes(codes),
+    codes: sortCodes(kept),
     reasons,
     hazards: hazardsFor(hazardKeys),
     description: describe(quote, sentences),

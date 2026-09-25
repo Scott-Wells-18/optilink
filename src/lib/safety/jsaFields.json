@@ -1,0 +1,450 @@
+{
+ "JSA004": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    176.37,
+    190.12,
+    203.87,
+    217.62
+   ]
+  }
+ },
+ "JSA004A": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 117.32
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    175.07,
+    188.82,
+    202.57,
+    216.32
+   ]
+  }
+ },
+ "JSA004B": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 141.82
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    224.57,
+    238.32,
+    252.07,
+    265.82
+   ]
+  }
+ },
+ "JSA005": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    125.67,
+    139.42,
+    153.17,
+    166.92
+   ]
+  }
+ },
+ "JSA006": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA006A": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 117.32
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    146.22,
+    159.97,
+    173.72,
+    187.47
+   ]
+  }
+ },
+ "JSA007": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA008": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA009": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    125.67,
+    139.42,
+    153.17,
+    166.92
+   ]
+  }
+ },
+ "JSA010": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA011": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA012": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA013": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ },
+ "JSA014": {
+  "pages": 2,
+  "size": {
+   "width": 841.89,
+   "height": 595.3
+  },
+  "jobLine": {
+   "page": 1,
+   "x": 22.6,
+   "top": 96.77
+  },
+  "signatories": {
+   "page": 2,
+   "rowHeight": 13.75,
+   "columns": {
+    "name": 97.9,
+    "date": 347.6,
+    "signature": 511.3,
+    "position": 737.5
+   },
+   "signatureBox": {
+    "x": 509.3,
+    "width": 144.6
+   },
+   "rows": [
+    107.42,
+    121.17,
+    134.92,
+    148.67
+   ]
+  }
+ }
+}

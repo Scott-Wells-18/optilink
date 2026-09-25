@@ -979,6 +979,29 @@ model SafetyDoc {
    */
   workDescription String?
 
+  /**
+   * The job number this paperwork belongs to. It is written into each
+   * document's own project field; the OEC-SWMS00x / OEC-JSA00x identifier
+   * printed on the document is never touched.
+   */
+  jobNumber      String?
+  /**
+   * When the assessment was actually carried out, which is not necessarily
+   * when the record was created and is never assumed to be the day the work
+   * happens.
+   */
+  assessmentDate DateTime? @db.Date
+  /**
+   * Who has read the documents and agreed to be signed onto them, keyed by
+   * person: { scott: { at, name, position } }. A signature is applied to a
+   * document only for a person recorded here.
+   */
+  signOff        Json?
+  /**
+   * The answers to OEC-WHS002, where the work needs one.
+   */
+  energised      Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

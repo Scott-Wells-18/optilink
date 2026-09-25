@@ -1,20 +1,22 @@
+import JSZip from "jszip";
 import { NextResponse } from "next/server";
-import { PDFDocument } from "pdf-lib";
-import { notFound, pdfResponse, serverError } from "@/lib/api";
+import { notFound, fileResponse, serverError } from "@/lib/api";
 import { buildSafetyDocs } from "@/lib/safety/build";
 
 export const runtime = "nodejs";
 
 /**
- * The finished paperwork, as one PDF.
+ * The finished paperwork.
  *
- * A browser will only take one file from one click, and a zip holding a Word
- * document is not what anyone wants to receive on a phone on site. So every
- * document is a PDF and they are bound into a single file, in the order they
- * are meant to be read — the SWMS, then the JSA behind it. One tap, one file,
- * ready to forward.
+ * Every document comes back in the format it was released in, because that is
+ * the document that was approved: a SWMS is a PDF, a JSA is a PDF or a Word
+ * file depending on which one it is, and OEC-WHS002 is Word so it can still be
+ * completed and signed on site. Converting any of them would mean redrawing
+ * it, and a redrawn controlled document is a different document.
  *
- * `?only=SWMS014` fetches one of them on its own.
+ * So a set comes back as a zip, one file per document, named for the job. A
+ * set of one comes back as that file on its own, and `?only=SWMS014` fetches
+ * one out of a set.
  */
 export async function GET(
   request: Request,
@@ -38,20 +40,20 @@ export async function GET(
     if (only) {
       const wanted = built.find((one) => one.name.startsWith(`${only} `));
       if (!wanted) return notFound("That document is not part of this job.");
-      return pdfResponse(wanted.bytes, `${wanted.name}.pdf`);
+      return fileResponse(wanted.bytes, wanted.name, wanted.mimeType);
     }
 
-    if (built.length === 1) return pdfResponse(built[0].bytes, `${built[0].name}.pdf`);
-
-    const merged = await PDFDocument.create();
-    for (const one of built) {
-      const source = await PDFDocument.load(one.bytes);
-      const pages = await merged.copyPages(source, source.getPageIndices());
-      for (const page of pages) merged.addPage(page);
+    if (built.length === 1) {
+      return fileResponse(built[0].bytes, built[0].name, built[0].mimeType);
     }
-    const bytes = Buffer.from(await merged.save());
-    const suffix = built[0].name.split(" - ").slice(1).join(" - ");
-    return pdfResponse(bytes, `Safe work paperwork - ${suffix}.pdf`);
+
+    const zip = new JSZip();
+    for (const one of built) zip.file(one.name, one.bytes);
+    const bytes = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+
+    // "… - Transdev John Holland - 2026-09-25.pdf" → the job's own tail.
+    const tail = built[0].name.replace(/\.[^.]+$/, "").split(" - ").slice(1).join(" - ");
+    return fileResponse(bytes, `Safe work paperwork - ${tail}.zip`, "application/zip");
   } catch (error) {
     return serverError(error, "That paperwork could not be built.");
   }

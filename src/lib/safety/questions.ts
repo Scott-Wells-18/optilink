@@ -32,6 +32,14 @@ export type Question = {
   note?: string;
   /** Asked even when the quote seems to have answered it. */
   always?: boolean;
+  /**
+   * Asked only when the answers so far call for it.
+   *
+   * These are the follow-ups. Where two answers cannot both be true — testing
+   * that needs the supply on, on a job where nothing is live — the app does not
+   * pick one and carry on. It asks.
+   */
+  when?: (answers: Record<string, string>) => boolean;
   options: Option[];
 };
 
@@ -164,10 +172,9 @@ export const QUESTIONS: Question[] = [
       {
         value: "YES",
         label: "Yes — testing or inspection that cannot be done dead",
-        requires: ["WHS002"],
         hazards: ["ENERGISED"],
         describes:
-          "Some testing is carried out energised because isolation would defeat the test; the energised work justification and PCBU authorisation is completed before it starts.",
+          "Some testing is carried out with the supply on, because isolating it would defeat the test.",
         evidence: ["rcd testing", "trip test", "thermal imaging", "thermographic", "thermal survey", "infrared", "live testing", "energised", "energized"],
       },
     ],
@@ -316,6 +323,73 @@ export const QUESTIONS: Question[] = [
         hazards: ["DUCT_REMOVAL"],
         describes: "Ventilation ductwork is removed.",
         evidence: ["duct removal", "ductwork", "remove duct", "exhaust duct", "ventilation duct"],
+      },
+    ],
+  },
+  /**
+   * The question OEC-WHS002 asks, in its own words.
+   *
+   * Choosing RCD testing is not an authorisation to work on anything
+   * energised, and the form does not say it is. What it says is: complete this
+   * before an escutcheon, cover or barrier is removed, or before testing or
+   * thermal imaging puts a person near an exposed energised part. So that is
+   * what is asked, and only that answer brings the form in.
+   *
+   * It is also the question that settles a contradiction. A job that says
+   * nothing is live and then says it is trip testing RCDs has said two things
+   * that cannot both be true; neither is quietly overruled, this decides it.
+   */
+  {
+    key: "exposed",
+    question: "Is anything opened up while the supply is on?",
+    note:
+      "Testing with the supply on is one thing; being near an exposed live part is another. OEC-WHS002 is about the second, and this is the answer that decides whether you need it.",
+    when: (answers) =>
+      answers.energised === "YES" ||
+      answers.testing === "RCD" ||
+      answers.testing === "BOTH" ||
+      answers.thermal === "YES",
+    options: [
+      {
+        value: "CLOSED",
+        label: "Nothing is opened — every cover, escutcheon and barrier stays on",
+        note: "Push-button and instrument testing from the front of a closed board, or imaging through a fitted infrared window",
+        describes:
+          "Testing is carried out with the supply on, with every cover, escutcheon and barrier in place; no person is near an exposed energised part.",
+      },
+      {
+        value: "OPEN",
+        label: "An escutcheon, cover or barrier comes off",
+        note: "Which puts a person near exposed energised parts, whatever the work is called",
+        requires: ["WHS002"],
+        hazards: ["ENERGISED"],
+        describes:
+          "Testing places a person near exposed energised parts, so the energised work justification and PCBU authorisation is completed and authorised before it starts.",
+      },
+    ],
+  },
+  /**
+   * A board is being opened on a job that said it had no switchboard work.
+   */
+  {
+    key: "boardOpened",
+    question: "Which board is being opened?",
+    note:
+      "You have said there is no switchboard work, but the testing needs a board open. One of those has to change.",
+    when: (answers) => answers.board === "NONE" && answers.exposed === "OPEN",
+    options: [
+      {
+        value: "BOARD",
+        label: "A switchboard is opened for the testing after all",
+        requires: ["SWMS004B"],
+        hazards: ["BOARD_ISOLATION"],
+        describes: "A switchboard is opened for inspection and testing.",
+      },
+      {
+        value: "NONE",
+        label: "No switchboard — it is a socket, an appliance or a fitted test point",
+        describes:
+          "The testing is carried out at a socket outlet, an appliance or a fitted test point rather than inside a switchboard.",
       },
     ],
   },

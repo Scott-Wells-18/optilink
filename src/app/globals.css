@@ -4753,6 +4753,157 @@ body {
   color: var(--ink-4);
 }
 
+/* A row that says the work does not go ahead reads as a stop, not a note. */
+.safety-hazards li.is-stop {
+  border-left-color: var(--bad, #c0392b);
+  background: rgba(192, 57, 43, 0.05);
+}
+
+/* A question that only appeared because two answers disagreed. */
+.safety-question.is-follow-up {
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+.safety-from-quote.is-follow {
+  background: rgba(192, 57, 43, 0.1);
+  color: #a33526;
+}
+
+/* --- the energised testing authorisation ---------------------------------- */
+
+.whs-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 0 18px;
+  padding: 11px 14px;
+  border: 1px solid rgba(192, 57, 43, 0.3);
+  border-left: 4px solid #c0392b;
+  border-radius: 0 12px 12px 0;
+  background: rgba(192, 57, 43, 0.05);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.whs-gate span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a33526;
+}
+
+/* A numbered section of the form, so its order is the form's order. */
+.board-section-head.whs-head {
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+}
+
+.whs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.whs-row > * {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.dialog-help {
+  margin-top: 5px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.whs-ratings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.whs-rating-row {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * The rating the assessor chose has to be visible on the page, so it is also
+ * visible here: the chosen letter is filled, the other two stay outlines.
+ */
+.whs-rating {
+  width: 42px;
+  padding: 7px 0;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition:
+    background 200ms var(--ease-soft),
+    color 200ms var(--ease-soft),
+    border-color 200ms var(--ease-soft);
+}
+
+.whs-rating.is-on.is-H {
+  border-color: #c0392b;
+  background: #c0392b;
+  color: #fff;
+}
+
+.whs-rating.is-on.is-M {
+  border-color: #e08a1e;
+  background: #e08a1e;
+  color: #fff;
+}
+
+.whs-rating.is-on.is-L {
+  border-color: #1f8a4c;
+  background: #1f8a4c;
+  color: #fff;
+}
+
+/* A condition that stops the job, offered plainly rather than hidden. */
+.issue-pick.is-stop .issue-pick-label {
+  color: #a33526;
+}
+
+.whs-fill,
+.whs-drop {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: #fff;
+  font-family: var(--font-app);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+
+.whs-drop {
+  margin: 0 0 0 auto;
+  align-self: center;
+  color: var(--ink-4);
+}
+
+.dialog-confirm.is-small {
+  margin-left: auto;
+  padding: 7px 13px;
+  font-size: 12px;
+}
+
 /* --- power analysis peaks ------------------------------------------------- */
 
 .power-peaks {
