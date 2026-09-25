@@ -720,6 +720,56 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startInspection, setInspectionDate, setInfo, setContact],
   );
 
+  /**
+   * A piece of work dragged into a different place in the list.
+   *
+   * The order is the report's: the list on its front page, its summary and the
+   * numbered sections all read off it, and an item's photographs and
+   * descriptions travel with it because they belong to the item rather than to
+   * the place it sat in.
+   *
+   * Moved here first and saved after, so the list follows the hand rather than
+   * the round trip. A save that fails puts the server's order back.
+   */
+  const moveJobItem = useCallback(
+    async (jobId: string, fromId: string, toId: string) => {
+      if (fromId === toId) return;
+
+      let ordered: string[] = [];
+      setClients((current) =>
+        current.map((client) => ({
+          ...client,
+          sites: client.sites.map((site) => ({
+            ...site,
+            jobs: site.jobs.map((job) => {
+              if (job.id !== jobId) return job;
+              const items = [...job.items];
+              const from = items.findIndex((item) => item.id === fromId);
+              const to = items.findIndex((item) => item.id === toId);
+              if (from < 0 || to < 0) return job;
+              const [moved] = items.splice(from, 1);
+              items.splice(to, 0, moved);
+              ordered = items.map((item) => item.id);
+              return { ...job, items };
+            }),
+          })),
+        })),
+      );
+      if (ordered.length === 0) return;
+
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ itemOrder: ordered }),
+      });
+      if (!response.ok) {
+        setError("That order could not be saved.");
+        await refresh();
+      }
+    },
+    [refresh],
+  );
+
   const setJobDate = useCallback(
     async (id: string, date: string) => {
       const response = await fetch(`/api/jobs/${id}`, {
@@ -816,6 +866,16 @@ export function useClientsTree(enabled: boolean) {
                         onActivate: () =>
                           setJobItem({ jobId: job.id, jobTitle: title, itemId: item.id }),
                         onRemove: () => void remove(`/api/job-items/${item.id}`, name),
+                        // Dragged into the order the client should read it in.
+                        drag: {
+                          group: `job:${job.id}`,
+                          onMove: (fromId, toId) =>
+                            void moveJobItem(
+                              job.id,
+                              fromId.replace("jobitem:", ""),
+                              toId.replace("jobitem:", ""),
+                            ),
+                        },
                       };
                     }),
                     {
@@ -854,7 +914,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startJob, setJobDate, setJobItem, setContact],
+    [clients, remove, startJob, setJobDate, setJobItem, setContact, moveJobItem],
   );
 
   const setRcdDate = useCallback(

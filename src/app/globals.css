@@ -945,6 +945,75 @@ body {
   display: none;
 }
 
+/*
+ * The grip on a row that can be dragged into a different place.
+ *
+ * On the left edge of the card rather than inside it: the card is a button,
+ * and anything inside it would take the clicks meant for opening the row. It
+ * is always there rather than appearing on hover — a control you cannot see is
+ * one nobody knows about — but quiet until the pointer is near it.
+ */
+.tree-grip {
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 30px;
+  transform: translateY(-50%);
+  color: var(--ink-4);
+  cursor: grab;
+  opacity: 0.45;
+  transition: opacity 200ms var(--ease-soft), color 200ms var(--ease-soft);
+  touch-action: none;
+}
+
+.tree-grip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tree-card-wrap:hover > .tree-grip {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.tree-card-wrap.is-dimmed > .tree-grip {
+  display: none;
+}
+
+.tree-grip:active {
+  cursor: grabbing;
+}
+
+/* The row in hand, following the finger. */
+.tree-card-wrap.is-held {
+  z-index: 5;
+  transition: none;
+  /* Out of the hit test while it is in hand, so the row found under the
+     finger is the one it is passing over rather than itself. The handle keeps
+     its own events — it is holding the pointer. */
+  pointer-events: none;
+}
+
+.tree-card-wrap.is-held > .tree-grip {
+  pointer-events: auto;
+}
+
+.tree-card-wrap.is-held > .tree-node {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lift);
+  opacity: 0.94;
+}
+
+/* Where it would land. */
+.tree-card-wrap.is-drop > .tree-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(27, 155, 216, 0.35);
+}
+
 .tree-node:focus-visible {
   outline: none;
   box-shadow:
@@ -1132,6 +1201,27 @@ body {
     0 18px 36px -12px rgba(10, 35, 60, 0.22),
     0 48px 80px -40px rgba(10, 35, 60, 0.4);
   animation: dialog-rise 340ms var(--ease-out);
+}
+
+/*
+ * A form taller than the window: the title stays put, the buttons stay put,
+ * and what is between them scrolls. Without this a site with several contacts
+ * pushes Save off the bottom of the screen, where nothing can reach it.
+ */
+.dialog.is-tall {
+  max-height: min(86vh, 900px);
+}
+
+.dialog-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the focus ring on the fields down the edges. */
+  margin: 0 -4px;
+  padding: 2px 4px;
 }
 
 @keyframes dialog-rise {

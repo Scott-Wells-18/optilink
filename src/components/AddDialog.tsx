@@ -79,9 +79,15 @@ export function AddDialog({
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={spec.title}>
       <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
-      <form className="dialog" onSubmit={handleSubmit}>
+      <form className="dialog is-tall" onSubmit={handleSubmit}>
         <h2 className="dialog-title">{spec.title}</h2>
 
+        {/*
+          * Everything but the title and the buttons scrolls. A site with half
+          * a dozen people on it is taller than a phone, and a form you cannot
+          * reach the bottom of is a form you cannot save.
+          */}
+        <div className="dialog-scroll">
         <div className="dialog-fields">
           {spec.fields.map((field, index) => (
             <label className="dialog-field" key={field.name}>
@@ -175,6 +181,7 @@ export function AddDialog({
             )}
           </section>
         ) : null}
+        </div>
 
         {error ? <p className="dialog-error">{error}</p> : null}
 

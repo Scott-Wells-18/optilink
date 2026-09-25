@@ -71,6 +71,11 @@ type TreeContextValue = {
   toggle: (depth: number, id: string) => void;
   register: (id: string, registration: Registration | null) => void;
   scrollerRef: RefObject<HTMLElement | null>;
+  /** The row being dragged, the list it belongs to, and what it is over. */
+  dragging: { id: string; group: string; over: string | null } | null;
+  setDragging: (
+    held: { id: string; group: string; over: string | null } | null,
+  ) => void;
 };
 
 const TreeContext = createContext<TreeContextValue | null>(null);
@@ -90,6 +95,9 @@ export function TreeNav({
 }) {
   const [openPath, setOpenPath] = usePersisted<string[]>("path", []);
   const registry = useRef(new Map<string, Registration>());
+  const [dragging, setDragging] = useState<
+    { id: string; group: string; over: string | null } | null
+  >(null);
   const before = useRef<Map<string, DOMRect> | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -178,7 +186,9 @@ export function TreeNav({
   }, [openPath]);
 
   return (
-    <TreeContext.Provider value={{ openPath, toggle, register, scrollerRef }}>
+    <TreeContext.Provider
+      value={{ openPath, toggle, register, scrollerRef, dragging, setDragging }}
+    >
       <div
         ref={rootRef}
         className={`tree-root ${openPath.length === 0 ? "is-idle" : "is-engaged"}`}
@@ -207,11 +217,48 @@ function Branch({
   /** False once an ancestor was passed over in favour of a sibling. */
   onPath: boolean;
 }) {
-  const { openPath, toggle, register, scrollerRef } = useTree();
+  const { openPath, toggle, register, scrollerRef, dragging, setDragging } = useTree();
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLElement>(null);
   const [editingDate, setEditingDate] = useState(false);
   const kidsRef = useRef<HTMLDivElement>(null);
+  /**
+   * Dragging a row into a different place.
+   *
+   * Done with pointer events rather than the browser's own drag and drop,
+   * which a phone does not have: a touch never raises a dragstart, and this
+   * list is read and reordered on site as often as at a desk. One set of
+   * handlers covers a mouse, a finger and a stylus alike.
+   *
+   * It starts on the handle, never on the card: the card is a button that
+   * opens the piece of work, and a list you cannot open is worse than one you
+   * cannot reorder.
+   */
+  const [lift, setLift] = useState(0);
+  const grab = useRef<{ pointer: number; y: number } | null>(null);
+
+  /** True where this row is a place the row in hand could be dropped. */
+  const takesDrop =
+    Boolean(node.drag) && Boolean(dragging) && dragging!.group === node.drag!.group;
+  const held = Boolean(dragging) && dragging!.id === node.id;
+  const over = takesDrop && dragging!.over === node.id && !held;
+
+  /**
+   * The row under the pointer, if it belongs to the same list.
+   *
+   * Everything under the point rather than just the topmost thing: the row in
+   * hand follows the finger, so it is usually the thing directly under it and
+   * would otherwise hide whatever it is being dragged over.
+   */
+  function rowUnder(x: number, y: number): string | null {
+    for (const element of document.elementsFromPoint(x, y)) {
+      const wrap = element.closest<HTMLElement>("[data-drag-group]");
+      if (!wrap || wrap.dataset.dragGroup !== node.drag?.group) continue;
+      const id = wrap.dataset.nodeId ?? null;
+      if (id && id !== node.id) return id;
+    }
+    return null;
+  }
 
   const isOpen = openPath[depth] === node.id;
   const siblingChosen = Boolean(openPath[depth]) && !isOpen;
@@ -293,7 +340,61 @@ function Branch({
 
   return (
     <div className="tree-branch" ref={rowRef}>
-        <div className={`tree-card-wrap ${state}`}>
+        <div
+          className={`tree-card-wrap ${state} ${node.drag ? "is-draggable" : ""} ${
+            held ? "is-held" : ""
+          } ${over ? "is-drop" : ""}`}
+          data-node-id={node.id}
+          data-drag-group={node.drag?.group}
+          style={held && lift ? { transform: `translateY(${lift}px)` } : undefined}
+        >
+          {node.drag ? (
+            <span
+              className="tree-grip"
+              role="button"
+              tabIndex={-1}
+              aria-label={`Drag ${node.label} into a different place`}
+              title="Drag to reorder"
+              onPointerDown={(event) => {
+                if (!node.drag) return;
+                event.preventDefault();
+                event.stopPropagation();
+                (event.target as HTMLElement).setPointerCapture(event.pointerId);
+                grab.current = { pointer: event.pointerId, y: event.clientY };
+                setLift(0);
+                setDragging({ id: node.id, group: node.drag.group, over: null });
+              }}
+              onPointerMove={(event) => {
+                if (!grab.current || grab.current.pointer !== event.pointerId) return;
+                setLift(event.clientY - grab.current.y);
+                const under = rowUnder(event.clientX, event.clientY);
+                setDragging({ id: node.id, group: node.drag!.group, over: under });
+              }}
+              onPointerUp={(event) => {
+                if (!grab.current || grab.current.pointer !== event.pointerId) return;
+                const target = dragging?.over ?? null;
+                grab.current = null;
+                setLift(0);
+                setDragging(null);
+                if (target) node.drag?.onMove(node.id, target);
+              }}
+              onPointerCancel={() => {
+                grab.current = null;
+                setLift(0);
+                setDragging(null);
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <circle cx="6" cy="4" r="1.3" />
+                <circle cx="10" cy="4" r="1.3" />
+                <circle cx="6" cy="8" r="1.3" />
+                <circle cx="10" cy="8" r="1.3" />
+                <circle cx="6" cy="12" r="1.3" />
+                <circle cx="10" cy="12" r="1.3" />
+              </svg>
+            </span>
+          ) : null}
           {editingDate && node.editDate ? (
             /* A button cannot hold an input, so the card becomes a plain box
                for as long as the date is being changed. */

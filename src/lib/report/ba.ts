@@ -59,9 +59,13 @@ const TILE_GAP = 12;
 const LABEL_HEIGHT = 15;
 /** Clear air under a row of tiles. */
 const ROW_GAP = 7;
-/** The item's heading, and a little air under the last row on a page. */
+/** The least an item's heading takes, and a little air under the last row. */
 const HEAD_HEIGHT = 26;
 const TAIL_PAD = 6;
+/** The heading's own measurements: the bar, the text and the room beside it. */
+const HEAD_SIZE = 11.5;
+const HEAD_INSET = 12;
+const HEAD_ASIDE = 160;
 
 type Photo = { stage: JobPhotoStage; bytes: Buffer };
 
@@ -432,11 +436,36 @@ function pagefuls(grids: Grid[]): Leaf[] {
   return leaves;
 }
 
+/**
+ * How tall an item's heading is.
+ *
+ * A title is not cut off with an ellipsis: "Emergency light battery replaced
+ * and the fitting rewired at the rear of the workshop" is what the work was,
+ * and a client reading the report should get all of it. So the heading is
+ * measured at the size it is drawn and grows to hold however many lines it
+ * takes, which also keeps it from running into the photographs below.
+ */
+function headHeight(doc: Doc, item: Item): number {
+  const text = headText(item);
+  const lines = measureText(doc, text, {
+    width: CONTENT - HEAD_ASIDE,
+    size: HEAD_SIZE,
+    font: "Helvetica-Bold",
+    lineGap: 1,
+  });
+  return Math.max(HEAD_HEIGHT, Math.ceil(lines) + 12);
+}
+
+/** "1.  Meal room GPO replaced" — the number stays with its title. */
+function headText(item: Item): string {
+  return `${item.index}.  ${item.title}`;
+}
+
 /** How tall a leaf is before its tiles: headings, labels and explanations. */
-function furnitureOf(doc: Doc, leaf: Leaf, withHead: boolean): number {
+function furnitureOf(doc: Doc, leaf: Leaf, head: number): number {
   const notes = [leaf.lead, ...leaf.grids.map((grid) => grid.note), leaf.tail];
   return (
-    (withHead ? HEAD_HEIGHT : 0) +
+    head +
     leaf.grids.length * LABEL_HEIGHT +
     notes.reduce((total, note) => total + (note ? noteHeight(doc, note.body) : 0), 0) +
     leaf.rows * ROW_GAP +
@@ -452,11 +481,11 @@ function furnitureOf(doc: Doc, leaf: Leaf, withHead: boolean): number {
  * at one size rather than the reader being shown two. The page with the most
  * rows on it is therefore what decides the size for all of them.
  */
-function tileHeight(doc: Doc, leaves: Leaf[], underBar: boolean): number {
+function tileHeight(doc: Doc, leaves: Leaf[], underBar: boolean, head: number): number {
   let height = TALL;
   leaves.forEach((leaf, at) => {
     if (leaf.rows === 0) return;
-    const room = pageRoom(underBar && at === 0) - furnitureOf(doc, leaf, at === 0);
+    const room = pageRoom(underBar && at === 0) - furnitureOf(doc, leaf, at === 0 ? head : 0);
     height = Math.min(height, Math.floor(room / leaf.rows));
   });
   return Math.max(SHORT, height);
@@ -533,7 +562,8 @@ function work(doc: Doc, data: JobReport): Section {
     if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.found };
     if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.done };
 
-    const height = tileHeight(doc, leaves, at === 0);
+    const head = headHeight(doc, item);
+    const height = tileHeight(doc, leaves, at === 0, head);
 
     leaves.forEach((leaf, page) => {
       const start = pieces.length;
@@ -543,16 +573,17 @@ function work(doc: Doc, data: JobReport): Section {
       // after photographs is what this report is not for.
       if (page === 0) {
         pieces.push({
-          height: HEAD_HEIGHT,
+          height: head,
           keepWith: 2,
           mark: `item:${item.index}`,
           draw: (y) => {
-            doc.rect(MARGIN, y + 1, 3, 15).fill(COLOURS.accent);
-            doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(11.5);
-            doc.text(`${item.index}.  ${item.title}`, MARGIN + 12, y, {
-              width: CONTENT - 160,
-              ellipsis: true,
-              height: 14,
+            // The rule beside the heading runs its whole height, so a title
+            // that takes two lines is marked down both of them.
+            doc.rect(MARGIN, y + 1, 3, head - 10).fill(COLOURS.accent);
+            doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(HEAD_SIZE);
+            doc.text(headText(item), MARGIN + HEAD_INSET, y, {
+              width: CONTENT - HEAD_ASIDE,
+              lineGap: 1,
             });
             doc
               .font("Helvetica")

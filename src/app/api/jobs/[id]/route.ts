@@ -15,6 +15,7 @@ export async function PATCH(
       name?: string;
       recommendations?: string[];
       contactId?: string | null;
+      itemOrder?: string[];
     };
 
     const data: Record<string, unknown> = {};
@@ -32,6 +33,30 @@ export async function PATCH(
         .filter(Boolean)
         .slice(0, 40);
     }
+    // The order the work is written up in, as a list of item ids. It is the
+    // order everywhere: the list on the front of the report, the summary and
+    // the numbered sections, with each item's photographs travelling with it.
+    if (body.itemOrder) {
+      const held = await prisma.jobItem.findMany({
+        where: { jobId: id },
+        select: { id: true },
+        orderBy: { position: "asc" },
+      });
+      const known = new Set(held.map((item) => item.id));
+      const wanted = body.itemOrder.filter((itemId) => known.has(itemId));
+      // Anything the caller did not mention keeps its place behind the rest,
+      // so a list drawn before another piece of work was added still saves.
+      const ordered = [
+        ...wanted,
+        ...held.map((item) => item.id).filter((itemId) => !wanted.includes(itemId)),
+      ];
+      await prisma.$transaction(
+        ordered.map((itemId, position) =>
+          prisma.jobItem.update({ where: { id: itemId }, data: { position } }),
+        ),
+      );
+    }
+
     if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
 
     await prisma.job.update({ where: { id }, data });

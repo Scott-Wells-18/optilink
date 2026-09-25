@@ -27,6 +27,15 @@ export type TreeNode = {
   onEdit?: () => void;
   /** Shows a download button beside the chevron. */
   onDownload?: () => void;
+  /**
+   * Draggable into a different place among its siblings.
+   *
+   * Rows carrying the same `group` can be dropped on one another; `onMove` is
+   * handed the row that was picked up and the row it was dropped on, and it is
+   * for the owner of the list to work out what that means. A row without this
+   * cannot be dragged and cannot be dropped on.
+   */
+  drag?: { group: string; onMove: (fromId: string, toId: string) => void };
 };
 
 export const SECTIONS: TreeNode[] = [
