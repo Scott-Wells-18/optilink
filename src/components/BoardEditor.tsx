@@ -76,6 +76,8 @@ export function BoardEditor({
     (initialBoard ?? createBoard()).sections[0]?.id ?? "",
   );
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** The sub-board being worked on, which opens over the board. */
+  const [openSub, setOpenSub] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,7 +199,7 @@ export function BoardEditor({
     if (board.sections.length >= MAX_SECTIONS) return;
     const section = createSubBoard(side);
     setBoard((current) => ({ ...current, sections: [...current.sections, section] }));
-    setRenaming(section.id);
+    setOpenSub(section.id);
   }
 
   /** Applies a change to any section, by id. */
@@ -364,63 +366,57 @@ export function BoardEditor({
             * The dashed squares straddling the sides add a section alongside —
             * the little board bolted onto the end of a big one.
             */}
-          <div className="board-run">
-          {subs
-            .filter((section) => section.side === "LEFT")
-            .map((section) => (
-              <SubBoard
-                key={section.id}
-                section={section}
-                renaming={renaming === section.id}
-                onRename={(value) => renameSection(section.id, value)}
-                onDoneRenaming={() => setRenaming(null)}
-                onStartRenaming={() => setRenaming(section.id)}
-                onCycle={(index) =>
-                  editSection(section.id, (current) => {
-                    if (spanAt(current, index).part !== "whole") return current;
-                    const cells = [...current.cells];
-                    // A sub-board has a rail of its own, so its ways take what
-                    // any way takes: a breaker or an RCBO. The RCDs and the
-                    // contactors go in the slots by the main switch. The room
-                    // is still checked — a three-phase device on a rail of six
-                    // wants three ways along it, and four for an RCBO.
-                    cells[index] = { ...cells[index], state: nextFitting(current, index) };
-                    return { ...current, cells };
-                  })
-                }
-                onLabel={(index, value) =>
-                  editSection(section.id, (current) => {
-                    const cells = [...current.cells];
-                    cells[index] = { ...cells[index], label: value };
-                    return { ...current, cells };
-                  })
-                }
-                onWays={(ways) => editSection(section.id, (current) => withWays(current, ways))}
-                onRemove={() => removeSection(section.id)}
-              />
-            ))}
-
           <section className="board-case">
-            <button
-              type="button"
-              className="board-side-add is-left"
-              onClick={() => addSubBoard("LEFT")}
-              disabled={board.sections.length >= MAX_SECTIONS}
-              title="Add a sub-board on this end"
-              aria-label="Add a sub-board on this end"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="board-side-add is-right"
-              onClick={() => addSubBoard("RIGHT")}
-              disabled={board.sections.length >= MAX_SECTIONS}
-              title="Add a sub-board on this end"
-              aria-label="Add a sub-board on this end"
-            >
-              +
-            </button>
+            <div className="board-side is-left">
+              {subs
+                .filter((section) => section.side === "LEFT")
+                .map((section) => (
+                  <button
+                    type="button"
+                    key={section.id}
+                    className="board-side-sub"
+                    onClick={() => setOpenSub(section.id)}
+                    title={`Open ${section.name.trim() || "this sub-board"}`}
+                  >
+                    {section.name.trim() || "Sub-board"}
+                  </button>
+                ))}
+              <button
+                type="button"
+                className="board-side-add"
+                onClick={() => addSubBoard("LEFT")}
+                disabled={board.sections.length >= MAX_SECTIONS}
+                title="Add a sub-board on this end"
+                aria-label="Add a sub-board on this end"
+              >
+                +
+              </button>
+            </div>
+            <div className="board-side is-right">
+              {subs
+                .filter((section) => section.side === "RIGHT")
+                .map((section) => (
+                  <button
+                    type="button"
+                    key={section.id}
+                    className="board-side-sub"
+                    onClick={() => setOpenSub(section.id)}
+                    title={`Open ${section.name.trim() || "this sub-board"}`}
+                  >
+                    {section.name.trim() || "Sub-board"}
+                  </button>
+                ))}
+              <button
+                type="button"
+                className="board-side-add"
+                onClick={() => addSubBoard("RIGHT")}
+                disabled={board.sections.length >= MAX_SECTIONS}
+                title="Add a sub-board on this end"
+                aria-label="Add a sub-board on this end"
+              >
+                +
+              </button>
+            </div>
 
             <div className="board-top">
               <div className="board-extra-slot">
@@ -519,47 +515,52 @@ export function BoardEditor({
             </div>
           </section>
 
-          {subs
-            .filter((section) => section.side === "RIGHT")
-            .map((section) => (
-              <SubBoard
-                key={section.id}
-                section={section}
-                renaming={renaming === section.id}
-                onRename={(value) => renameSection(section.id, value)}
-                onDoneRenaming={() => setRenaming(null)}
-                onStartRenaming={() => setRenaming(section.id)}
-                onCycle={(index) =>
-                  editSection(section.id, (current) => {
-                    if (spanAt(current, index).part !== "whole") return current;
-                    const cells = [...current.cells];
-                    // A sub-board has a rail of its own, so its ways take what
-                    // any way takes: a breaker or an RCBO. The RCDs and the
-                    // contactors go in the slots by the main switch. The room
-                    // is still checked — a three-phase device on a rail of six
-                    // wants three ways along it, and four for an RCBO.
-                    cells[index] = { ...cells[index], state: nextFitting(current, index) };
-                    return { ...current, cells };
-                  })
-                }
-                onLabel={(index, value) =>
-                  editSection(section.id, (current) => {
-                    const cells = [...current.cells];
-                    cells[index] = { ...cells[index], label: value };
-                    return { ...current, cells };
-                  })
-                }
-                onWays={(ways) => editSection(section.id, (current) => withWays(current, ways))}
-                onRemove={() => removeSection(section.id)}
-              />
-            ))}
-          </div>
-
           <section className="board-supply">
             <SupplyFields supply={supply} siblings={siblings} onChange={setSupply} />
           </section>
         </div>
         </div>
+
+        {openSub
+          ? (() => {
+              const section = board.sections.find((one) => one.id === openSub);
+              if (!section) return null;
+              return (
+                <SubBoardDialog
+                  section={section}
+                  onClose={() => setOpenSub(null)}
+                  onRename={(value) => renameSection(section.id, value)}
+                  onCycle={(index) =>
+                    editSection(section.id, (current) => {
+                      if (spanAt(current, index).part !== "whole") return current;
+                      const cells = [...current.cells];
+                      // A sub-board has a rail of its own, so its ways take
+                      // what any way takes: a breaker or an RCBO. The RCDs and
+                      // the contactors go in the slots by the main switch. The
+                      // room is still checked — a three-phase device on a rail
+                      // of six wants three ways along it, four for an RCBO.
+                      cells[index] = { ...cells[index], state: nextFitting(current, index) };
+                      return { ...current, cells };
+                    })
+                  }
+                  onLabel={(index, value) =>
+                    editSection(section.id, (current) => {
+                      const cells = [...current.cells];
+                      cells[index] = { ...cells[index], label: value };
+                      return { ...current, cells };
+                    })
+                  }
+                  onWays={(ways) =>
+                    editSection(section.id, (current) => withWays(current, ways))
+                  }
+                  onRemove={() => {
+                    setOpenSub(null);
+                    removeSection(section.id);
+                  }}
+                />
+              );
+            })()
+          : null}
 
         <footer className="board-foot">
           {error ? <p className="dialog-error">{error}</p> : null}
@@ -608,31 +609,52 @@ export function BoardEditor({
  * an RCBO, single or three phase. The RCDs and the contactors belong in the
  * slots beside the main switch, which is what those are for.
  */
-function SubBoard({
+/**
+ * A sub-board, opened over the board it hangs off.
+ *
+ * It is its own little thing — one rail, no main switch, fed from the board
+ * beside it — and it was being drawn alongside the enclosure, which pushed
+ * the whole dialog wider than the screen and took the scrolling with it. So
+ * it opens over the top instead: the end it is bolted to says it is there,
+ * and clicking it brings it up.
+ *
+ * Its ways take what any way takes: a breaker or an RCBO. The RCDs and the
+ * contactors belong in the slots beside the main switch, which is what those
+ * are for.
+ */
+function SubBoardDialog({
   section,
-  renaming,
+  onClose,
   onRename,
-  onDoneRenaming,
-  onStartRenaming,
   onCycle,
   onLabel,
   onWays,
   onRemove,
 }: {
   section: BoardSection;
-  renaming: boolean;
+  onClose: () => void;
   onRename: (value: string) => void;
-  onDoneRenaming: () => void;
-  onStartRenaming: () => void;
   onCycle: (index: number) => void;
   onLabel: (index: number, value: string) => void;
   onWays: (ways: number) => void;
   onRemove: () => void;
 }) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const end = section.side === "LEFT" ? "left-hand" : "right-hand";
+
   return (
-    <section className={`board-sub is-${section.side?.toLowerCase()}`}>
-      <header className="board-sub-head">
-        {renaming ? (
+    <div className="dialog-layer is-over" role="dialog" aria-modal aria-label="Sub-board">
+      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+
+      <div className="dialog is-sub">
+        <header className="board-sub-head">
           <input
             autoFocus
             className="board-sub-name"
@@ -640,73 +662,67 @@ function SubBoard({
             placeholder="Sub-board name"
             aria-label="Sub-board name"
             onChange={(event) => onRename(event.target.value)}
-            onBlur={onDoneRenaming}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === "Escape") onDoneRenaming();
-            }}
           />
-        ) : (
-          <button type="button" className="board-sub-title" onClick={onStartRenaming}>
-            {section.name.trim() || "Unnamed sub-board"}
+        </header>
+
+        <p className="board-sub-note">
+          On the {end} end. No main switch — fed from the board beside it. Breakers
+          and RCBOs.
+        </p>
+
+        <div className="board-sub-rail">
+          {section.cells.map((_, index) => {
+            const span = spanAt(section, index);
+            const owner = ownerOf(section, index, span.part);
+            return (
+              <div className="board-sub-way" key={index}>
+                <span className="board-sub-no">{index + 1}</span>
+                <Cell
+                  upright
+                  state={span.state}
+                  part={span.part}
+                  label={section.cells[owner].label}
+                  onCycle={() => onCycle(index)}
+                  onLabel={(value) => onLabel(owner, value)}
+                />
+              </div>
+            );
+          })}
+
+          <div className="board-sub-way is-controls">
+            <button
+              type="button"
+              className="board-sub-way-btn"
+              onClick={() => onWays(section.cells.length + 1)}
+              disabled={section.cells.length >= MAX_SUB_WAYS}
+              title="Add a way"
+              aria-label="Add a way"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="board-sub-way-btn"
+              onClick={() => onWays(section.cells.length - 1)}
+              disabled={section.cells.length <= 1}
+              title="Take a way off the end"
+              aria-label="Take a way off the end"
+            >
+              −
+            </button>
+          </div>
+        </div>
+
+        <div className="dialog-actions">
+          <button type="button" className="board-sub-delete" onClick={onRemove}>
+            Remove this sub-board
           </button>
-        )}
-        <button
-          type="button"
-          className="board-sub-remove"
-          aria-label="Remove this sub-board"
-          onClick={onRemove}
-        >
-          ×
-        </button>
-      </header>
-
-      <p className="board-sub-note">
-        No main switch — fed from the board beside it. Breakers and RCBOs.
-      </p>
-
-      <div className="board-sub-rail">
-        {section.cells.map((_, index) => {
-          const span = spanAt(section, index);
-          const owner = ownerOf(section, index, span.part);
-          return (
-            <div className="board-sub-way" key={index}>
-              <span className="board-sub-no">{index + 1}</span>
-              <Cell
-                upright
-                state={span.state}
-                part={span.part}
-                label={section.cells[owner].label}
-                onCycle={() => onCycle(index)}
-                onLabel={(value) => onLabel(owner, value)}
-              />
-            </div>
-          );
-        })}
-
-        <div className="board-sub-way is-controls">
-          <button
-            type="button"
-            className="board-sub-way-btn"
-            onClick={() => onWays(section.cells.length + 1)}
-            disabled={section.cells.length >= MAX_SUB_WAYS}
-            title="Add a way"
-            aria-label="Add a way"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="board-sub-way-btn"
-            onClick={() => onWays(section.cells.length - 1)}
-            disabled={section.cells.length <= 1}
-            title="Take a way off the end"
-            aria-label="Take a way off the end"
-          >
-            −
+          <button type="button" className="dialog-confirm" onClick={onClose}>
+            Done
           </button>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 

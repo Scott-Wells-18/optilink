@@ -1490,105 +1490,133 @@ body {
  */
 
 /*
- * The board and whatever is bolted onto its ends, side by side. A sub-board
- * is fed from the board beside it and has no main switch of its own, so it is
- * drawn as its own little box against the end of the enclosure rather than as
- * another run of ways inside it.
+ * Only the header stays put. Everything from the tabs down scrolls, so a long
+ * board does not pin half the panel in place and leave the rest unreachable.
  */
-.board-run {
+.board-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/*
+ * What is bolted onto each end of the enclosure.
+ *
+ * A sub-board is its own little thing, and drawing it alongside pushed the
+ * dialog wider than the screen and took the scrolling with it. So the end
+ * says what is on it, and opening one brings it up over the board.
+ */
+.board-side {
+  position: absolute;
+  top: 26px;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  padding: 26px 34px 8px;
-  overflow-x: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  /* Outside the frame, not over it: the enclosure's own contents come first. */
+  width: 74px;
 }
 
-.board-run > .board-case {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
+.board-side.is-left {
+  left: -78px;
 }
 
-.board-sub {
-  flex: none;
-  max-width: 420px;
-  /* Clear of the dashed + that adds it, which straddles the enclosure edge. */
-  margin-top: 92px;
-  padding: 12px 12px 8px;
-  border: 2px solid var(--ink-2);
+.board-side.is-right {
+  right: -78px;
+}
+
+.board-side-add {
+  height: 32px;
+  border: 1.5px dashed var(--hair-strong);
+  border-radius: 7px;
   background: #fff;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-3);
+  cursor: pointer;
 }
 
-/* Butted against the end of the enclosure, sharing its edge. The dashed +
-   that adds it straddles that edge, so the contents start clear of it. */
-.board-sub.is-left {
-  border-right-width: 0;
-  padding-right: 22px;
+.board-side-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.board-sub.is-right {
-  border-left-width: 0;
-  padding-left: 22px;
+.board-side-add:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* One already bolted on. Clicking it opens it. */
+.board-side-sub {
+  padding: 7px 6px;
+  border: 1.5px solid var(--ink-2);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.board-side-sub:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The sub-board itself, opened over the board. */
+.dialog-layer.is-over {
+  z-index: 60;
+}
+
+.dialog.is-sub {
+  width: min(94vw, 780px);
+  max-width: none;
+  padding: 22px 24px 18px;
 }
 
 .board-sub-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.board-sub-title {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: left;
-  color: var(--ink-2);
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 8px;
 }
 
 .board-sub-name {
   flex: 1;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 8px 11px;
   border: 1px solid var(--hair-strong);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
   font-family: var(--font-app);
 }
 
-.board-sub-remove {
-  flex: none;
-  width: 20px;
-  height: 20px;
+.board-sub-note {
+  margin: 8px 0 16px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.board-sub-delete {
+  margin-right: auto;
+  padding: 8px 12px;
   border: none;
-  border-radius: 50%;
-  background: rgba(11, 42, 68, 0.07);
-  color: var(--ink-3);
-  font-size: 14px;
-  line-height: 1;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #b0400f;
   cursor: pointer;
 }
 
-.board-sub-remove:hover {
-  background: rgba(194, 65, 12, 0.14);
-  color: #b0400f;
-}
-
-.board-sub-note {
-  margin: 4px 0 10px;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--ink-4);
+.board-sub-delete:hover {
+  background: rgba(194, 65, 12, 0.1);
 }
 
 /* One rail of ways read left to right, the modules standing upright on it.
@@ -1729,7 +1757,7 @@ body {
 
 .board-case {
   position: relative;
-  margin: 26px 34px 8px;
+  margin: 26px 82px 8px;
   padding: 26px 26px 18px;
   border: 2px solid var(--ink-2);
   background: #fff;
