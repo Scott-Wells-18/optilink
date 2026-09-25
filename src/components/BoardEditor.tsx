@@ -13,6 +13,7 @@ import {
   MAX_SUB_WAYS,
   withWays,
   emptyCell,
+  isSpanned,
   nextFitting,
   nextState,
   ownerOf,
@@ -139,9 +140,10 @@ export function BoardEditor({
    */
   function cycleCell(index: number) {
     editActive((section) => {
-      // A way taken up by a three-phase device beside it is not its own to
-      // change: the device above or below is what is in it.
-      if (spanAt(section, index).part !== "whole") return section;
+      // A way taken up by a device sitting in another way is not its own to
+      // change — but the way that device sits in very much is, or there would
+      // be no way to click a three-phase one back off again.
+      if (isSpanned(section, index)) return section;
 
       const cells = [...section.cells];
       cells[index] = { ...cells[index], state: nextFitting(section, index) };
@@ -532,7 +534,7 @@ export function BoardEditor({
                   onRename={(value) => renameSection(section.id, value)}
                   onCycle={(index) =>
                     editSection(section.id, (current) => {
-                      if (spanAt(current, index).part !== "whole") return current;
+                      if (isSpanned(current, index)) return current;
                       const cells = [...current.cells];
                       // A sub-board has a rail of its own, so its ways take
                       // what any way takes: a breaker or an RCBO. The RCDs and
