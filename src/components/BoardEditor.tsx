@@ -24,7 +24,6 @@ import {
   type Part,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
-import { DeviceMark } from "@/components/DeviceMark";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
@@ -503,7 +502,9 @@ function Cell({
 
   return (
     <div
-      className={`board-cell is-${state.toLowerCase()} ${spanned ? "is-spanned" : ""}`}
+      className={`board-cell is-${state.toLowerCase()} is-part-${part} ${
+        spanned ? "is-spanned" : ""
+      }`}
       aria-disabled={spanned || undefined}
       onClick={() => {
         if (!editing && !spanned) onCycle();
@@ -523,7 +524,6 @@ function Cell({
         }
       }}
     >
-      <DeviceMark state={state} part={part} />
       {phase ? <span className="board-cell-phase">{phase}</span> : null}
 
       {editing ? (

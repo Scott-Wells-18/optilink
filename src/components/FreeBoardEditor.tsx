@@ -19,7 +19,6 @@ import {
   type CellState,
   type FreeItem,
 } from "@/lib/board";
-import { DeviceMark } from "@/components/DeviceMark";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
@@ -383,9 +382,7 @@ export function FreeBoardEditor({
                     className={`free-add is-${state.toLowerCase()}`}
                     onClick={() => add(state)}
                   >
-                    <span className="free-add-swatch" aria-hidden>
-                      <DeviceMark state={state} />
-                    </span>
+                    <span className="free-add-swatch" aria-hidden />
                     {STATE_SHORT[state]}
                   </button>
                 ))}
@@ -427,7 +424,6 @@ export function FreeBoardEditor({
                       if (sequencing) bumpOrder(item);
                     }}
                   >
-                    <DeviceMark state={item.state} />
                     {item.order !== null ? (
                       <span className="free-item-order">{item.order}</span>
                     ) : null}
@@ -494,9 +490,7 @@ export function FreeBoardEditor({
                       title={STATE_LABELS[state]}
                       aria-label={STATE_LABELS[state]}
                       onClick={() => edit(selected.id, (item) => ({ ...item, state }))}
-                    >
-                      <DeviceMark state={state} />
-                    </button>
+                    />
                   ))}
                 </div>
                 <button
@@ -618,7 +612,6 @@ export function FreeBoardView({
               }
             }}
           >
-            <DeviceMark state={item.state} />
             {showOrder && isRcd(item.state) ? (
               <span className="free-item-order">{rank}</span>
             ) : null}

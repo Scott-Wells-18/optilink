@@ -1444,237 +1444,41 @@ body {
   gap: 6px;
 }
 
-/* --- the device palette ---------------------------------------------------
+/* --- the key -------------------------------------------------------------
  *
- * The devices, drawn, with one of them in hand. It replaced a legend of
- * coloured squares: there is nothing to look up now, because the board draws
- * the devices themselves, so the strip does a better job as the place a
- * device is picked up from.
+ * A way is a plain coloured block, so the key is the same blocks with their
+ * names beside them.
  */
 
-.device-palette {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.device-palette-label {
-  flex: none;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-
-.device-palette-list {
+.board-legend {
   display: flex;
   flex-wrap: wrap;
-  align-items: stretch;
-  gap: 5px;
+  gap: 6px 14px;
   margin: 0;
   padding: 0;
   list-style: none;
+  font-size: 10.5px;
+  color: var(--ink-3);
 }
 
-.device-chip {
+.board-legend li {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  width: 62px;
-  padding: 6px 4px 5px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: none;
-  cursor: pointer;
-  transition:
-    background 200ms var(--ease-soft),
-    border-color 200ms var(--ease-soft);
-}
-
-.device-chip.is-static {
-  cursor: default;
-}
-
-.device-chip:hover:not(.is-static) {
-  background: rgba(27, 155, 216, 0.08);
-}
-
-.device-chip.is-picked {
-  border-color: rgba(27, 155, 216, 0.85);
-  background: rgba(27, 155, 216, 0.12);
-}
-
-/* The picture. A three-phase device shows the three modules it takes up, so
-   picking one is picking something of that size. */
-.device-chip-face {
-  position: relative;
-  display: block;
-  width: 46px;
-  height: 16px;
-}
-
-.device-chip-face.is-tall {
-  display: flex;
-  flex-direction: column;
-  height: 56px;
-}
-
-.device-chip-face.is-tall .device-mark {
-  position: relative;
-  flex: 1;
-  inset: auto;
-}
-
-.device-chip-face.is-empty {
-  height: 16px;
-  border: 1px dashed var(--hair-strong);
-  border-radius: 4px;
-  background: #fbfcfd;
-}
-
-.device-chip-name {
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.15;
-  text-align: center;
-  color: var(--ink-3);
-}
-
-.device-chip.is-picked .device-chip-name {
-  color: var(--accent-deep);
-}
-
-/*
- * Only the header stays put. Everything from the main switch down — tabs
- * included — scrolls, so a long board does not pin half the panel in place.
- */
-.board-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.board-body {
-  padding: 18px 24px 22px;
-}
-
-.board-section-head {
-  margin-bottom: 10px;
-}
-
-/* A new question after a list of answers wants air, or the two read as one. */
-.issue-picks + .board-section-head,
-.supply-grid + .board-section-head,
-.rcd-drop + .board-section-head,
-.dialog-field + .board-section-head,
-.rcd-facts + .board-section-head,
-.issue-empty + .board-section-head {
-  margin-top: 26px;
-}
-
-.board-section-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--ink-2);
-}
-
-.board-section-note {
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--ink-4);
-}
-
-/* A note standing under its own fields rather than under a heading. */
-.board-section-note.is-standalone {
-  margin-top: 6px;
-  margin-bottom: 14px;
-  line-height: 1.5;
-}
-
-.board-extras {
-  padding-bottom: 18px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--hair);
-}
-
-/* What feeds the board — asked under the drawing, since it is about the
-   supply rather than about the layout. */
-.board-supply {
-  padding-top: 20px;
-  margin-top: 22px;
-  border-top: 1px solid var(--hair);
-}
-
-/* Asked mid-dialog on a power analysis, so it needs the same air around it as
-   any other new question. Inside a board editor the panel already has its own
-   rule and padding, and two sets of spacing read as a gap. */
-.supply,
-.supply + .board-section-head {
-  margin-top: 26px;
-}
-
-.board-supply .supply {
-  margin-top: 0;
-}
-
-/* A photograph of an instrument, shown back after it is uploaded. */
-.equipment-photo {
-  display: block;
-  width: 100%;
-  max-width: 240px;
-  height: auto;
-  margin-bottom: 10px;
-  border: 1px solid var(--hair-strong);
-  border-radius: 11px;
-}
-
-.supply-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-}
-
-@media (max-width: 620px) {
-  .supply-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.board-extra-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.board-add-extra {
-  align-self: stretch;
-  min-height: 42px;
-  padding: 0 16px;
-  border: 1px dashed var(--hair-strong);
-  border-radius: 9px;
-  background: #fff;
-  font-family: var(--font-app);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: border-color 240ms var(--ease-soft), color 240ms var(--ease-soft);
-}
-
-.board-add-extra:hover {
-  border-color: rgba(27, 155, 216, 0.5);
-  color: var(--accent);
-}
-
-.board-grid {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
+}
+
+.device-swatch {
+  width: 22px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--dev, #fff);
+  border: 1px solid var(--dev-edge, var(--hair-strong));
+}
+
+.board-legend-ways {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-4);
 }
 
 /* --- the enclosure -------------------------------------------------------
@@ -1790,7 +1594,7 @@ body {
 }
 
 .board-row + .board-row {
-  margin-top: -1px;
+  margin-top: 2px;
 }
 
 /* The pair of way numbers for this row, between the rails. */
@@ -1818,20 +1622,48 @@ body {
   position: relative;
   min-width: 130px;
   height: 30px;
-  border: none;
-  border-radius: 2px;
-  background: none;
+  border: 1px solid var(--dev-edge, var(--hair-strong));
+  border-radius: 3px;
+  background: var(--dev, #fff);
+  color: var(--dev-ink, var(--ink));
   cursor: pointer;
   user-select: none;
-  /* A third of a three-phase device runs past its own way on purpose, so the
-     three meet with no seam. Nothing may clip it. */
-  overflow: visible;
+  overflow: hidden;
+}
+
+/*
+ * The modules of one device butt together, so a three-phase one reads as a
+ * single block standing across its ways rather than as three of them.
+ */
+.board-cell.is-part-top {
+  border-bottom-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.board-cell.is-part-middle {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 0;
+}
+
+.board-cell.is-part-bottom,
+.board-cell.is-part-button {
+  border-top-color: transparent;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.board-cell.is-part-bottom:not(.is-last),
+.board-cell.is-part-middle {
+  border-bottom-color: transparent;
 }
 
 /* An empty way: the bare rail, with nothing clipped onto it. */
 .board-cell.is-empty {
   border: 1px dashed var(--hair-strong);
   background: #fff;
+  color: var(--ink-4);
 }
 
 .board-cell:hover::after {
@@ -1842,89 +1674,102 @@ body {
   pointer-events: none;
 }
 
-.device-mark {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  /* A third of a three-phase device is drawn past the edges of its own way on
-     purpose, so the three meet with no seam. An SVG clips to its viewport
-     unless told not to. */
-  overflow: visible;
-}
-
-/* --- what a device is made of -------------------------------------------
+/* --- what colour each device is ------------------------------------------
  *
- * The body is a light shell with an outline; the parts that are operated by
- * hand carry the colour. Colour is a second cue, not the only one: the shape
- * still says which device it is, so nothing is lost in a black and white
- * print or to anybody who does not separate red from green.
+ * A way is a plain coloured block. Each device has its own colour, and its
+ * three-phase twin is the deep version of the same one, so a board reads at a
+ * glance: blues are breakers, greens are RCDs, oranges are RCBOs, reds are
+ * contactors, and the deep ones are three phase.
  */
 
-.dm-shell {
-  fill: #eef2f6;
-  stroke: #b3c2d0;
-  stroke-width: 1.1;
+.board-cell.is-blank,
+.device-swatch.is-blank,
+.free-item.is-blank,
+.free-type.is-blank,
+.free-add.is-blank .free-add-swatch {
+  --dev: #c3ced9;
+  --dev-edge: #9fafbe;
+  --dev-ink: #1d2e40;
 }
 
-.dm-shell.is-blank {
-  fill: #dde5ec;
+.board-cell.is-breaker,
+.device-swatch.is-breaker,
+.free-item.is-breaker,
+.free-type.is-breaker,
+.free-add.is-breaker .free-add-swatch {
+  --dev: #4bb3e8;
+  --dev-edge: #2b93c9;
+  --dev-ink: #062a42;
 }
 
-.dm-line {
-  fill: none;
-  stroke: #b3c2d0;
-  stroke-width: 1.1;
+.board-cell.is-breaker_3p,
+.device-swatch.is-breaker_3p,
+.free-item.is-breaker_3p,
+.free-type.is-breaker_3p,
+.free-add.is-breaker_3p .free-add-swatch {
+  --dev: #14528f;
+  --dev-edge: #0d3a68;
+  --dev-ink: #ffffff;
 }
 
-/* The lines moulded across the body. The circuit name is written over them,
-   the way a label is stuck on the real thing. */
-.dm-rule {
-  stroke: #cbd7e2;
-  stroke-width: 1.2;
+.board-cell.is-rcd,
+.device-swatch.is-rcd,
+.free-item.is-rcd,
+.free-type.is-rcd,
+.free-add.is-rcd .free-add-swatch {
+  --dev: #2ec08d;
+  --dev-edge: #1e9a6f;
+  --dev-ink: #04301f;
 }
 
-.dm-part {
-  stroke: rgba(9, 32, 53, 0.35);
-  stroke-width: 0.9;
+.board-cell.is-rcd_3p,
+.device-swatch.is-rcd_3p,
+.free-item.is-rcd_3p,
+.free-type.is-rcd_3p,
+.free-add.is-rcd_3p .free-add-swatch {
+  --dev: #0a6b48;
+  --dev-edge: #064a32;
+  --dev-ink: #ffffff;
 }
 
-/* A breaker's toggle. */
-.dm-part.is-breaker {
-  fill: #14528f;
+.board-cell.is-rcbo,
+.device-swatch.is-rcbo,
+.free-item.is-rcbo,
+.free-type.is-rcbo,
+.free-add.is-rcbo .free-add-swatch {
+  --dev: #f0a93c;
+  --dev-edge: #c9851d;
+  --dev-ink: #3a2503;
 }
 
-/* An RCD's or an RCBO's toggle: the same family, its own colour. */
-.dm-part.is-rcd {
-  fill: #0e9f6e;
+.board-cell.is-rcbo_3p,
+.device-swatch.is-rcbo_3p,
+.free-item.is-rcbo_3p,
+.free-type.is-rcbo_3p,
+.free-add.is-rcbo_3p .free-add-swatch {
+  --dev: #b26a0c;
+  --dev-edge: #8a5109;
+  --dev-ink: #ffffff;
 }
 
-/* The push button, in the colour a test button actually is. */
-.dm-part.is-test {
-  fill: #e5a63f;
+.board-cell.is-contactor,
+.device-swatch.is-contactor,
+.free-item.is-contactor,
+.free-type.is-contactor,
+.free-add.is-contactor .free-add-swatch {
+  --dev: #ea7a76;
+  --dev-edge: #c9534f;
+  --dev-ink: #3d0c0a;
 }
 
-/* A contactor has no toggle at all — it is switched by its coil. */
-.dm-part.is-coil {
-  fill: #cf2f36;
-}
-
-.dm-ribs line {
-  stroke: rgba(255, 255, 255, 0.4);
-  stroke-width: 1.1;
-}
-
-.dm-hole {
-  fill: #ffffff;
-  stroke: #8fa2b3;
-  stroke-width: 1.1;
-}
-
-/* A blank stays hatched: there is nothing on it to colour. */
-.dm-hatch-line {
-  stroke: #9db0c1;
-  stroke-width: 1.6;
+.board-cell.is-contactor_3p,
+.device-swatch.is-contactor_3p,
+.free-item.is-contactor_3p,
+.free-type.is-contactor_3p,
+.free-add.is-contactor_3p .free-add-swatch {
+  --dev: #9e1f24;
+  --dev-edge: #77161a;
+  --dev-ink: #ffffff;
 }
 
 .board-cell-no {
@@ -1946,13 +1791,13 @@ body {
 .board-cell-label,
 .board-cell-text {
   position: absolute;
-  left: 22%;
-  right: 40%;
+  left: 10px;
+  right: 30px;
   top: 50%;
   transform: translateY(-50%);
   padding: 0;
   font-family: var(--font-app);
-  font-size: 10.5px;
+  font-size: 11.5px;
   line-height: 1.2;
   color: var(--ink);
   background: none;
@@ -1964,26 +1809,28 @@ body {
 }
 
 .board-cell-label {
-  background: #fff;
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  border-radius: 3px;
+  padding: 2px 4px;
 }
 
 .board-cell-text.is-blank {
-  color: var(--ink-4);
+  opacity: 0.6;
 }
 
 .board-cell-edit {
   position: absolute;
-  right: 3px;
-  top: 3px;
+  right: 4px;
+  top: 4px;
   display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
   border: none;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.55);
+  color: inherit;
   cursor: pointer;
   opacity: 0;
   transition: opacity 200ms var(--ease-soft), background 200ms var(--ease-soft);
@@ -2133,13 +1980,13 @@ body {
 /* The phase this third of a three-phase device switches. */
 .board-cell-phase {
   position: absolute;
-  left: 22%;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.06em;
-  color: #7c8fa1;
+  opacity: 0.6;
   pointer-events: none;
 }
 
@@ -3823,11 +3670,8 @@ body {
   border: 1px solid rgba(10, 29, 46, 0.25);
 }
 
-.free-add.is-blank .free-add-swatch { background: #3fb0e4; }
-.free-add.is-breaker .free-add-swatch { background: #14528f; }
-.free-add.is-rcd .free-add-swatch { background: #0e9f6e; }
-.free-add.is-rcd_3p .free-add-swatch { background: #07724d; }
-.free-add.is-contactor .free-add-swatch { background: #cf2f36; }
+.free-add-swatch { background: var(--dev, #fff); }
+.free-type { background: var(--dev, #fff); border-color: var(--dev-edge, var(--hair-strong)); }
 
 /* The panel itself. A hard border, because that is the edge of the board. */
 .free-frame {
@@ -3877,11 +3721,11 @@ body {
   touch-action: none;
 }
 
-.free-item.is-blank { background: #3fb0e4; border-color: #1b7fae; color: #fff; }
-.free-item.is-breaker { background: #14528f; border-color: #0d3a68; color: #fff; }
-.free-item.is-rcd { background: #0e9f6e; border-color: #0a7350; color: #fff; }
-.free-item.is-rcd_3p { background: #07724d; border-color: #044f35; color: #fff; }
-.free-item.is-contactor { background: #cf2f36; border-color: #9c2026; color: #fff; }
+.free-item {
+  background: var(--dev, #fff);
+  border-color: var(--dev-edge, var(--hair-strong));
+  color: var(--dev-ink, var(--ink));
+}
 
 .free-item.is-on {
   box-shadow:

@@ -20,7 +20,6 @@ import {
   type Part,
 } from "@/lib/board";
 import { BoardLegend } from "@/components/BoardLegend";
-import { DeviceMark } from "@/components/DeviceMark";
 import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { IssueDialog } from "@/components/IssueDialog";
 import { MainSwitchRow } from "@/components/MainSwitchRow";
@@ -459,7 +458,7 @@ function ViewCell({
   const selectable = isDevice(cell.state);
   return (
     <div
-      className={`board-cell is-${cell.state.toLowerCase()} ${
+      className={`board-cell is-${cell.state.toLowerCase()} is-part-${part} ${
         selectable ? "is-selectable" : "is-locked"
       } ${active ? "is-picked" : ""} ${findings ? "is-flagged" : ""}`}
       onClick={() => selectable && onPick(slot)}
@@ -474,7 +473,6 @@ function ViewCell({
         }
       }}
     >
-      <DeviceMark state={cell.state} part={part} />
       <span className="board-cell-no">{number ?? "R"}</span>
       {part === "whole" || part === "top" ? (
         <span className={`board-cell-text ${cell.label ? "" : "is-blank"}`}>
