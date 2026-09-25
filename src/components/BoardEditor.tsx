@@ -144,8 +144,9 @@ export function BoardEditor({
   function cycleExtra(index: number) {
     editActive((section) => {
       const extras = [...section.extras];
-      // Out here nothing is stacked, so every device fits.
-      extras[index] = { ...extras[index], state: nextState(extras[index].state) };
+      // Out here nothing is stacked, so every device fits — and this is where
+      // the RCDs and the contactors go, which a way on the rail will not take.
+      extras[index] = { ...extras[index], state: nextState(extras[index].state, true) };
       return { ...section, extras };
     });
   }
@@ -378,8 +379,9 @@ export function BoardEditor({
             </div>
 
             <p className="board-case-note">
-              Click a way to walk it through the devices. {active.rows * COLUMNS} ways
-              {active.name.trim() ? ` on ${active.name.trim()}` : ""}.
+              Click a way to walk it through breakers and RCBOs. {active.rows * COLUMNS}{" "}
+              ways{active.name.trim() ? ` on ${active.name.trim()}` : ""}. RCDs and
+              contactors go in the slots by the main switch.
             </p>
 
             <div className="board-grid">

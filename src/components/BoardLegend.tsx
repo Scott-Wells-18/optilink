@@ -1,4 +1,4 @@
-import { DEVICES, STATE_LABELS, polesOf, type CellState } from "@/lib/board";
+import { DEVICES, STATE_LABELS, fitsTheGrid, polesOf } from "@/lib/board";
 
 /** What each colour on a board means. Shown wherever a board is. */
 export function BoardLegend() {
@@ -11,6 +11,9 @@ export function BoardLegend() {
           {polesOf(state) > 1 ? (
             <span className="board-legend-ways">{polesOf(state)} ways</span>
           ) : null}
+          {fitsTheGrid(state) ? null : (
+            <span className="board-legend-ways">by the mains</span>
+          )}
         </li>
       ))}
     </ul>

@@ -138,16 +138,38 @@ export const DEVICES: CellState[] = [
 ];
 
 /**
- * Clicking a way walks through these, then starts again.
+ * What can go in a way on the grid.
  *
- * Empty first, then the devices in the order above: each one, then its
- * three-phase twin. A three-phase device that will not fit where it was
- * clicked is stepped straight past rather than offered.
+ * Breakers and RCBOs, and nothing else. A way on the rail is fed off the
+ * busbar and protects one circuit; an RCD protecting a group of circuits, or
+ * a contactor switching a load, does not sit there — it sits up by the mains
+ * or on a board of its own. Offering them in a way would draw boards that
+ * cannot be built.
  */
-const GRID_CYCLE: CellState[] = ["EMPTY", ...DEVICES];
+const GRID_CYCLE: CellState[] = [
+  "EMPTY",
+  "BLANK",
+  "BREAKER",
+  "BREAKER_3P",
+  "RCBO",
+  "RCBO_3P",
+];
+
+/**
+ * What can go beside the main switch, or on a sub-board alongside.
+ *
+ * Everything. That is where the RCDs and the contactors live, along with
+ * anything else that is not fed off the rail.
+ */
+const EXTRA_CYCLE: CellState[] = ["EMPTY", ...DEVICES];
 
 /** Everything a saved board may legitimately hold. */
-const KNOWN: CellState[] = GRID_CYCLE;
+const KNOWN: CellState[] = EXTRA_CYCLE;
+
+/** True where a device can go in a way on the rail rather than only beside it. */
+export function fitsTheGrid(state: CellState): boolean {
+  return GRID_CYCLE.includes(state);
+}
 
 export const STATE_LABELS: Record<CellState, string> = {
   EMPTY: "Nothing there",
@@ -373,8 +395,13 @@ export function fitsThreePhase(section: BoardSection, index: number): boolean {
 /** What the instrument's three records are called, in the order they're taken. */
 export const PHASES = ["L1", "L2", "L3"] as const;
 
-export function nextState(state: CellState): CellState {
-  return GRID_CYCLE[(GRID_CYCLE.indexOf(state) + 1) % GRID_CYCLE.length];
+export function nextState(state: CellState, inExtras = false): CellState {
+  const cycle = inExtras ? EXTRA_CYCLE : GRID_CYCLE;
+  // A way holding something the cycle no longer offers — an RCD drawn into
+  // the grid before that was stopped — starts the cycle again rather than
+  // sticking.
+  const at = cycle.indexOf(state);
+  return cycle[(at + 1) % cycle.length];
 }
 
 /**
