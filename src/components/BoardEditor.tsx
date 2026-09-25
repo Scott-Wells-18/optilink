@@ -500,7 +500,10 @@ function Cell({
    */
   const [editing, setEditing] = useState(false);
   const spanned = part !== "whole" && part !== "middle";
-  const phase = part === "whole" ? null : phaseOf(part);
+  // The first module carries the circuit name, so its phase tag would sit on
+  // top of it. The name says which device this is; the tags on the modules
+  // below say which phase each one switches.
+  const phase = part === "whole" || part === "top" ? null : phaseOf(part);
 
   return (
     <div
