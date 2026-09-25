@@ -13,7 +13,9 @@ import {
   MAX_SUB_WAYS,
   withWays,
   emptyCell,
+  extrasOn,
   isSpanned,
+  MAX_EXTRAS_PER_SIDE,
   nextFitting,
   nextState,
   ownerOf,
@@ -177,8 +179,11 @@ export function BoardEditor({
     });
   }
 
-  function addExtra() {
-    editActive((section) => ({ ...section, extras: [...section.extras, emptyCell()] }));
+  function addExtra(side: "LEFT" | "RIGHT") {
+    editActive((section) => {
+      if (extrasOn(section, side).length >= MAX_EXTRAS_PER_SIDE) return section;
+      return { ...section, extras: [...section.extras, { ...emptyCell(), side }] };
+    });
   }
 
   function addSection() {
@@ -421,34 +426,35 @@ export function BoardEditor({
             </div>
 
             <div className="board-top">
-              <div className="board-extra-slot">
-                {active.extras.map((cell, index) => (
-                  <Cell
-                    key={index}
-                    state={cell.state}
-                    label={cell.label}
-                    onCycle={() => cycleExtra(index)}
-                    onLabel={(value) => labelExtra(index, value)}
-                    onRemove={() =>
-                      editActive((section) => ({
-                        ...section,
-                        extras: section.extras.filter((_, i) => i !== index),
-                      }))
-                    }
-                  />
-                ))}
-                <button type="button" className="board-add-extra" onClick={addExtra}>
-                  +
-                </button>
-              </div>
+              <ExtraSlot
+                side="LEFT"
+                section={active}
+                onCycle={cycleExtra}
+                onLabel={labelExtra}
+                onAdd={() => addExtra("LEFT")}
+                onRemove={(index) =>
+                  editActive((section) => ({
+                    ...section,
+                    extras: section.extras.filter((_, i) => i !== index),
+                  }))
+                }
+              />
 
               <MainSwitchRow />
 
-              <div className="board-extra-slot">
-                <button type="button" className="board-add-extra" onClick={addExtra}>
-                  +
-                </button>
-              </div>
+              <ExtraSlot
+                side="RIGHT"
+                section={active}
+                onCycle={cycleExtra}
+                onLabel={labelExtra}
+                onAdd={() => addExtra("RIGHT")}
+                onRemove={(index) =>
+                  editActive((section) => ({
+                    ...section,
+                    extras: section.extras.filter((_, i) => i !== index),
+                  }))
+                }
+              />
             </div>
 
             <p className="board-case-note">
@@ -624,6 +630,60 @@ export function BoardEditor({
  * contactors belong in the slots beside the main switch, which is what those
  * are for.
  */
+/**
+ * The devices at one end of the main switch.
+ *
+ * Whatever sits up by the mains rather than on the rail: an isolator, a surge
+ * device, a contactor, an RCD feeding a group of circuits. Four to an end,
+ * side by side, because that is about what fits above a board before it stops
+ * looking like the board.
+ */
+function ExtraSlot({
+  side,
+  section,
+  onCycle,
+  onLabel,
+  onAdd,
+  onRemove,
+}: {
+  side: "LEFT" | "RIGHT";
+  section: BoardSection;
+  onCycle: (index: number) => void;
+  onLabel: (index: number, value: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+}) {
+  const held = extrasOn(section, side);
+  const full = held.length >= MAX_EXTRAS_PER_SIDE;
+
+  return (
+    <div className={`board-extra-slot is-${side.toLowerCase()}`}>
+      {held.map(({ cell, index }) => (
+        <Cell
+          key={index}
+          upright
+          state={cell.state}
+          label={cell.label}
+          onCycle={() => onCycle(index)}
+          onLabel={(value) => onLabel(index, value)}
+          onRemove={() => onRemove(index)}
+        />
+      ))}
+      {full ? null : (
+        <button
+          type="button"
+          className="board-add-extra"
+          onClick={onAdd}
+          title="Add a device up by the mains"
+          aria-label="Add a device up by the mains"
+        >
+          +
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SubBoardDialog({
   section,
   onClose,

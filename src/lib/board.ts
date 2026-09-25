@@ -31,7 +31,21 @@ export type CellState =
   | "CONTACTOR"
   | "CONTACTOR_3P";
 
-export type BoardCell = { state: CellState; label: string };
+export type BoardCell = {
+  state: CellState;
+  label: string;
+  /**
+   * Which end of the main switch an additional sits at.
+   *
+   * Only ever set on a section's `extras`: the ways on the rail are placed by
+   * where they are in the list. Anything saved before there were two slots has
+   * none, and lands on the left.
+   */
+  side?: SectionSide;
+};
+
+/** How many devices fit in the slot at one end of the main switch. */
+export const MAX_EXTRAS_PER_SIDE = 4;
 
 /**
  * How positions are numbered, across the whole board:
@@ -719,7 +733,16 @@ function normaliseCell(value: unknown): BoardCell {
   return {
     state: KNOWN.includes(raw.state as CellState) ? (raw.state as CellState) : "EMPTY",
     label: typeof raw.label === "string" ? raw.label.slice(0, 80) : "",
+    ...(raw.side === "RIGHT" ? { side: "RIGHT" as const } : {}),
   };
+}
+
+/** The additionals at one end of the main switch, with where they sit. */
+export function extrasOn(section: BoardSection, side: SectionSide) {
+  return section.extras
+    .map((cell, index) => ({ cell, index }))
+    .filter((entry) => (entry.cell.side ?? "LEFT") === side)
+    .slice(0, MAX_EXTRAS_PER_SIDE);
 }
 
 /** A one-line summary for the tree, e.g. "3 sections · 24 breakers · 4 RCDs". */

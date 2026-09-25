@@ -1853,25 +1853,80 @@ body {
   padding-bottom: 22px;
 }
 
-/* A slot either side of the main switch: whatever else sits up by the mains. */
+/*
+ * A slot either side of the main switch: whatever sits up by the mains rather
+ * than on the rail. Four to an end, side by side — they share the width
+ * evenly, so a slot with one device in it does not look like a mistake.
+ */
 .board-extra-slot {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
   min-height: 46px;
-  padding: 7px;
+  padding: 6px;
   border: 1.5px dashed var(--hair-strong);
 }
 
-.board-extra-slot:last-child {
+/*
+ * Standing upright, the way they sit on the rail above a board — and the only
+ * shape that leaves room for four of them plus somewhere to press.
+ */
+.board-extra-slot .board-cell.is-upright {
+  flex: none;
+  width: 36px;
+  height: 78px;
+  border-radius: 3px;
+}
+
+.board-extra-slot.is-right {
   justify-content: flex-end;
+}
+
+/* The name reads down the module. Nothing else is on it out here — no way
+   number — so it has the whole face. */
+.board-extra-slot .board-cell-text,
+.board-extra-slot .board-cell-label {
+  top: 6px;
+  bottom: 20px;
+  font-size: 9.5px;
+}
+
+/* Both controls sit at the foot, and only while the module is under the
+   pointer: at this size they would otherwise be most of it. */
+.board-extra-slot .board-cell-edit,
+.board-extra-slot .board-cell-remove {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 3px;
+  width: 15px;
+  height: 15px;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.board-extra-slot .board-cell-edit {
+  margin-left: -9px;
+}
+
+.board-extra-slot .board-cell-remove {
+  margin-left: 9px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.board-extra-slot .board-cell:hover .board-cell-edit,
+.board-extra-slot .board-cell:hover .board-cell-remove,
+.board-extra-slot .board-cell:focus-within .board-cell-edit,
+.board-extra-slot .board-cell:focus-within .board-cell-remove {
+  opacity: 1;
 }
 
 .board-add-extra {
   flex: none;
+  align-self: center;
   width: 30px;
-  height: 30px;
+  height: 34px;
   border: 1.5px dashed var(--hair-strong);
   background: #fff;
   font-size: 15px;
