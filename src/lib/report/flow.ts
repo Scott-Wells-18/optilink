@@ -30,6 +30,15 @@ export type Piece = {
    * of a page. The value is how much of what follows has to fit with it.
    */
   keepWith?: number;
+  /**
+   * Start a page here whatever room is left on this one.
+   *
+   * For what has to begin at the top of a page because of what it is rather
+   * than because of how tall it is — a numbered item of work, which reads as
+   * its own thing and should not start halfway down under somebody else's
+   * photographs. Nothing happens where the page is empty already.
+   */
+  breakBefore?: boolean;
   /** Named so a section can recognise its own pieces — see `repeat`. */
   tag?: string;
 };
@@ -50,9 +59,21 @@ export type Section = {
 };
 
 /** The lowest a piece may reach: the footer lives below this. */
-const BOTTOM = PAGE.height - 82;
+export const BOTTOM = PAGE.height - 82;
 /** How far below the section bar the first piece starts. */
-const AFTER_BAR = 34;
+export const AFTER_BAR = 34;
+
+/**
+ * How much room a page has for pieces.
+ *
+ * A section's first page gives up the top of itself to the bar naming the
+ * section; every page after it starts at the margin. Anything sizing itself
+ * to the page — a grid of photographs, which is as tall as it is allowed to
+ * be — has to ask rather than assume.
+ */
+export function pageRoom(underBar: boolean): number {
+  return BOTTOM - MARGIN - (underBar ? AFTER_BAR : 0);
+}
 
 type Placed = { piece: Piece; y: number };
 type Page = { title: string | null; items: Placed[] };
@@ -102,7 +123,7 @@ export function layout(sections: Section[], firstPage: number): Layout {
           .slice(index + 1, index + 1 + (piece.keepWith ?? 0))
           .reduce((total, next) => total + next.height, 0);
 
-      if (page.items.length > 0 && y + needs > BOTTOM) turn(piece);
+      if (page.items.length > 0 && (piece.breakBefore || y + needs > BOTTOM)) turn(piece);
 
       page.items.push({ piece, y });
       if (piece.mark) pageOf[piece.mark] = firstPage + pages.length;
