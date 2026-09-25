@@ -118,6 +118,13 @@ export type Cover = {
   date: Date;
   /** What the report covered, sized to fit however long the list runs. */
   scope: string;
+  /**
+   * The same thing as a list rather than a sentence, where it is one: a run of
+   * job titles reads as a list of work and not as a paragraph with commas in
+   * it. Set both and this wins; `scope` is then what a reader of the file's
+   * text sees, so it is still worth setting.
+   */
+  scopeList?: string[];
   /** The heading over the scope — "Switchboards surveyed", "Works carried out". */
   scopeLabel: string;
   rows: CoverRow[];
@@ -178,20 +185,28 @@ export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
   y += 26;
   doc.font("Helvetica").fontSize(10.5);
   const inset = 18;
-  const scopeHeight =
-    doc.heightOfString(cover.scope, { width: CONTENT - inset - 20, lineGap: 1.5 }) + 46;
+  const listed = (cover.scopeList ?? []).slice(0, COVER_LIST_MAX);
+  const scopeHeight = listed.length
+    ? columnRows(listed.length) * LIST_LINE + 38
+    : doc.heightOfString(cover.scope, { width: CONTENT - inset - 20, lineGap: 1.5 }) + 46;
   doc.rect(MARGIN, y, CONTENT, scopeHeight).fill(COLOURS.soft);
   doc.rect(MARGIN, y, 3, scopeHeight).fill(COLOURS.accent);
   label(doc, cover.scopeLabel, MARGIN + inset, y + 14);
   doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(10.5);
-  doc.text(cover.scope, MARGIN + inset, y + 29, {
-    width: CONTENT - inset - 20,
-    lineGap: 1.5,
-  });
+  if (listed.length) {
+    bulletColumns(doc, listed, MARGIN + inset, y + 28, CONTENT - inset - 20);
+  } else {
+    doc.text(cover.scope, MARGIN + inset, y + 29, {
+      width: CONTENT - inset - 20,
+      lineGap: 1.5,
+    });
+  }
   y += scopeHeight;
 
   /* --- the facts --------------------------------------------------------- */
-  y += 30;
+  // A card holding thirty lines of work leaves less of the page than a
+  // sentence does, so the facts close up behind it.
+  y += listed.length ? 24 : 30;
   const facts: CoverRow[] = [[cover.dateLabel, shortDate(cover.date)], ...cover.rows];
   for (const [name, value] of facts) {
     doc.rect(MARGIN, y, CONTENT, 0.6).fill(COLOURS.hair);
@@ -223,7 +238,7 @@ export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   const noteHeight = doc.heightOfString(cover.note, { width: noteWidth, lineGap: 1.5 });
   const noteY = Math.max(
-    y + 26,
+    y + 12,
     (marks.length ? footY - 86 : footY - 26) - noteHeight,
   );
   doc.text(cover.note, MARGIN, noteY, { width: noteWidth, lineGap: 1.5 });
@@ -238,6 +253,73 @@ export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
     { width: CONTENT - 28, align: "right" },
   );
   doc.fillColor(COLOURS.ink).font("Helvetica");
+}
+
+/* --- a list in columns ---------------------------------------------------- */
+
+/**
+ * How a list of work is set out: down a column of fifteen, then into the one
+ * beside it.
+ *
+ * Fifteen is what a column of this size holds on the cover without pushing the
+ * facts off the bottom of it. A job of more than thirty pieces of work is not
+ * cut short — the cover carries the first thirty and the rest go on a page of
+ * their own, in the same two columns, for as many pages as it takes.
+ */
+export const COVER_LIST_ROWS = 15;
+export const COVER_LIST_COLUMNS = 2;
+export const COVER_LIST_MAX = COVER_LIST_ROWS * COVER_LIST_COLUMNS;
+const LIST_LINE = 12.5;
+const BULLET_INSET = 11;
+
+/**
+ * How deep a column runs for a list of this length.
+ *
+ * The first column fills to fifteen before the second one is started, rather
+ * than the two being balanced against each other: a job of four pieces of work
+ * reads as a list of four, not as two beside two.
+ */
+function columnRows(count: number): number {
+  return Math.min(COVER_LIST_ROWS, Math.max(1, count));
+}
+
+/** How tall a run of `count` entries is, drawn in columns. */
+export function listHeight(count: number): number {
+  return columnRows(count) * LIST_LINE;
+}
+
+/**
+ * The list itself: a bullet, then the line, down one column and into the next.
+ *
+ * A title longer than its column is cut with an ellipsis rather than wrapped,
+ * because a wrapped line would put the two columns out of step with each other
+ * and the summary inside the report carries the whole title anyway.
+ */
+export function bulletColumns(
+  doc: Doc,
+  lines: string[],
+  x: number,
+  y: number,
+  width: number,
+) {
+  const rows = columnRows(lines.length);
+  const columnWidth = (width - 16) / COVER_LIST_COLUMNS;
+
+  lines.forEach((line, at) => {
+    const column = Math.floor(at / rows);
+    const left = x + column * (columnWidth + 16);
+    const top = y + (at % rows) * LIST_LINE;
+    doc.fillColor(COLOURS.accent).font("Helvetica-Bold").fontSize(9);
+    doc.text("•", left, top + 1, { width: 8, lineBreak: false });
+    doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(10);
+    doc.text(line, left + BULLET_INSET, top, {
+      width: columnWidth - BULLET_INSET,
+      height: 12,
+      ellipsis: true,
+      lineBreak: false,
+    });
+  });
+  doc.fillColor(COLOURS.ink);
 }
 
 /** A small letterspaced heading, the one marker of hierarchy on the cover. */

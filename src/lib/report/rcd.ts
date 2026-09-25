@@ -12,6 +12,7 @@ import {
   type Slot,
 } from "@/lib/report/certificate";
 import { prisma } from "@/lib/db";
+import { personName } from "@/lib/contacts";
 import { readUpload } from "@/lib/storage";
 import { COMPANY } from "@/lib/company";
 import { showReading, type Verdict } from "@/lib/rcd/assess";
@@ -155,12 +156,8 @@ export async function loadRcdReport(reportId: string): Promise<RcdReport | null>
     where: { id: reportId },
     include: {
       instrument: { include: { certFile: true, photoFile: true } },
-      site: {
-        include: {
-          client: { select: { name: true } },
-          contacts: { orderBy: { createdAt: "asc" }, take: 1 },
-        },
-      },
+      contact: { select: { name: true } },
+      site: { include: { client: { select: { name: true } } } },
       tests: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -255,7 +252,7 @@ export async function loadRcdReport(reportId: string): Promise<RcdReport | null>
     clientName: safe(report.site.client.name),
     siteName: safe(identity.siteName),
     siteLocation: identity.siteLocation ? safe(identity.siteLocation) : null,
-    contactName: report.site.contacts[0] ? safe(report.site.contacts[0].name) : null,
+    contactName: report.contact ? safe(personName(report.contact.name)) : null,
     reportDate: new Date(),
     instrument: gear?.name ?? named,
     gear,

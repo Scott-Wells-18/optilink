@@ -18,26 +18,26 @@ datasource db {
 model Settings {
   id String @id @default("singleton")
 
-  companyName    String  @default("OptiLink")
-  tradingName    String?
-  abn            String?
-  licenceNumber  String?
-  phone          String?
-  email          String?
-  website        String?
-  addressLine1   String?
-  addressLine2   String?
-  suburb         String?
-  state          String? @default("NSW")
-  postcode       String?
+  companyName   String  @default("OptiLink")
+  tradingName   String?
+  abn           String?
+  licenceNumber String?
+  phone         String?
+  email         String?
+  website       String?
+  addressLine1  String?
+  addressLine2  String?
+  suburb        String?
+  state         String? @default("NSW")
+  postcode      String?
 
   // Branding
-  primaryColour String  @default("#0B3B60")
-  accentColour  String  @default("#F5A623")
-  logoFileId    String?
+  primaryColour  String        @default("#0B3B60")
+  accentColour   String        @default("#F5A623")
+  logoFileId     String?
   logoMarkFileId String?
-  logo          UploadedFile? @relation("SettingsLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
-  logoMark      UploadedFile? @relation("SettingsLogoMark", fields: [logoMarkFileId], references: [id], onDelete: SetNull)
+  logo           UploadedFile? @relation("SettingsLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  logoMark       UploadedFile? @relation("SettingsLogoMark", fields: [logoMarkFileId], references: [id], onDelete: SetNull)
 
   // Report defaults
   defaultTechnicianName    String?
@@ -51,9 +51,11 @@ model Settings {
    * they can be corrected against the current edition of the standard without
    * a deploy.
    */
-  rcdLimits Json?
-  /** A reading at or above this share of its limit is a concern, not a pass. */
-  rcdConcernPercent Int @default(80)
+  rcdLimits         Json?
+  /**
+   * A reading at or above this share of its limit is a concern, not a pass.
+   */
+  rcdConcernPercent Int   @default(80)
 
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -92,7 +94,6 @@ model UploadedFile {
 
 /**
  * A piece of our own test gear, and the certificate that says it reads true.
- *
  * Not equipment at a client's site — that is `Equipment`, which belongs to a
  * Site. This is the instrument in the van: the analyser, the RCD tester, the
  * camera. A report that quotes a measurement names the instrument that took
@@ -105,7 +106,9 @@ model TestEquipment {
   serialNo String?
   modelNo  String?
 
-  /** The calibration certificate, kept byte for byte and bound into reports. */
+  /**
+   * The calibration certificate, kept byte for byte and bound into reports.
+   */
   certFileId String?
   certFile   UploadedFile? @relation("TestEquipmentCert", fields: [certFileId], references: [id], onDelete: SetNull)
 
@@ -119,7 +122,9 @@ model TestEquipment {
   calibratedOn DateTime? @db.Date
   expiresOn    DateTime? @db.Date
 
-  /** A photograph of the instrument. Optional. */
+  /**
+   * A photograph of the instrument. Optional.
+   */
   photoFileId String?
   photoFile   UploadedFile? @relation("TestEquipmentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
 
@@ -136,23 +141,27 @@ model TestEquipment {
 
 /**
  * A key an outside assistant works through.
- *
  * The app itself is behind one shared password, which is fine for a person at
  * a keyboard and no use at all for a machine: there is no way to tell one
  * caller from another, and no way to stop one without stopping everybody. A
  * token is issued to one thing, is named so it is obvious what it is for, and
  * can be revoked on its own.
- *
  * Only the hash is kept. The token itself is shown once when it is made and
  * is not recoverable, so a copy of this table is not a copy of the keys.
  */
 model ApiToken {
-  id   String @id @default(cuid())
-  /** What it is for, e.g. "ChatGPT". */
-  name String
-  /** SHA-256 of the token. The token itself is never stored. */
-  hash String @unique
-  /** The first few characters, so a token can be recognised in a list. */
+  id     String @id @default(cuid())
+  /**
+   * What it is for, e.g. "ChatGPT".
+   */
+  name   String
+  /**
+   * SHA-256 of the token. The token itself is never stored.
+   */
+  hash   String @unique
+  /**
+   * The first few characters, so a token can be recognised in a list.
+   */
   prefix String
 
   createdAt  DateTime  @default(now())
@@ -208,7 +217,9 @@ model Site {
   @@index([clientId])
 }
 
-/** Who to speak to at a site. A site can have several. */
+/**
+ * Who to speak to at a site. A site can have several.
+ */
 model Contact {
   id     String @id @default(cuid())
   siteId String
@@ -219,6 +230,14 @@ model Contact {
   phone String?
 
   createdAt DateTime @default(now())
+
+  /**
+   * The reports addressed to them.
+   */
+  inspections Inspection[]
+  jobs        Job[]
+  rcdReports  RcdReport[]
+  powerRuns   PowerAnalysis[]
 
   @@index([siteId])
 }
@@ -237,10 +256,14 @@ model Equipment {
   kind EquipmentKind @default(APPLIANCE)
   name String
 
-  /** Appliances and motors. Shown when opened, to keep the tree short. */
+  /**
+   * Appliances and motors. Shown when opened, to keep the tree short.
+   */
   description String?
 
-  /** Motors only, and optional even then — e.g. "32 A" or "18.5 kW". */
+  /**
+   * Motors only, and optional even then — e.g. "32 A" or "18.5 kW".
+   */
   circuitLoading String?
 
   /**
@@ -282,28 +305,46 @@ model Inspection {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** Optional — falls back to the date of the survey. */
+  /**
+   * Optional — falls back to the date of the survey.
+   */
   name String?
 
-  /** The day it was carried out. Starts as today; changed by hand after. */
+  /**
+   * The day it was carried out. Starts as today; changed by hand after.
+   */
   date DateTime @default(now()) @db.Date
+
+  /**
+   * Whose name goes on the report as the site contact.
+   * Chosen rather than assumed: a site can have several people on file and the
+   * report is addressed to one of them. Nothing is printed where none has been
+   * chosen.
+   */
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   issues Issue[]
 
   @@index([siteId])
+  @@index([contactId])
 }
 
 enum IssueType {
   DUST_INGRESS
   RISING_TEMPERATURE
-  /** Retired — folded into rising temperature. Kept so old findings read. */
+  /**
+   * Retired — folded into rising temperature. Kept so old findings read.
+   */
   TERMINATION_ISSUE
   REPAIRED
 }
 
-/** What is behind a rising temperature. */
+/**
+ * What is behind a rising temperature.
+ */
 enum IssueCause {
   // Switchboards
   INTERNAL_HEATING
@@ -317,7 +358,9 @@ enum IssueCause {
   WINDING
 }
 
-/** One finding, against one position on one piece of equipment. */
+/**
+ * One finding, against one position on one piece of equipment.
+ */
 model Issue {
   id           String     @id @default(cuid())
   inspectionId String
@@ -326,7 +369,9 @@ model Issue {
   equipmentId String
   equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 
-  /** Which position: "sectionId:cell:12", "sectionId:extra:0", or "motor". */
+  /**
+   * Which position: "sectionId:cell:12", "sectionId:extra:0", or "motor".
+   */
   slot String
 
   type  IssueType
@@ -358,7 +403,9 @@ model Issue {
 }
 
 enum IssuePhotoKind {
-  /** Dust ingress needs nothing but a straight photo. */
+  /**
+   * Dust ingress needs nothing but a straight photo.
+   */
   PLAIN
   THERMAL
   VISUAL
@@ -393,20 +440,36 @@ model Job {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** Optional — falls back to the date the work was done. */
+  /**
+   * Optional — falls back to the date the work was done.
+   */
   name String?
 
-  /** The day the work was carried out. */
+  /**
+   * The day the work was carried out.
+   */
   date DateTime @default(now()) @db.Date
 
-  /** Anything found but not put right, printed at the back of the report. */
+  /**
+   * Anything found but not put right, printed at the back of the report.
+   */
   recommendations String[]
+
+  /**
+   * Whose name goes on the report as the site contact.
+   * Chosen rather than assumed: a site can have several people on file and the
+   * report is addressed to one of them. Nothing is printed where none has been
+   * chosen.
+   */
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   items JobItem[]
 
   @@index([siteId])
+  @@index([contactId])
 }
 
 model JobItem {
@@ -416,12 +479,18 @@ model JobItem {
 
   title    String
   location String
-  /** How it was found. */
-  found String
-  /** What was done about it. */
-  done String
+  /**
+   * How it was found.
+   */
+  found    String
+  /**
+   * What was done about it.
+   */
+  done     String
 
-  /** Hand-ordered within the job. */
+  /**
+   * Hand-ordered within the job.
+   */
   position Int @default(0)
 
   createdAt DateTime @default(now())
@@ -463,7 +532,6 @@ model JobPhoto {
 
 /**
  * One issued RCD report, covering however many switchboards were tested.
- *
  * A visit to a depot is one report and several boards, so the boards hang off
  * a dated report rather than each producing a PDF of its own. Each board keeps
  * its own instrument export, its own walk and its own corrections, because
@@ -477,9 +545,20 @@ model RcdReport {
   name String?
   date DateTime @default(now()) @db.Date
 
-  /** The instrument every board on this visit was tested with. */
+  /**
+   * The instrument every board on this visit was tested with.
+   */
   instrumentId String?
   instrument   TestEquipment? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  /**
+   * Whose name goes on the report as the site contact.
+   * Chosen rather than assumed: a site can have several people on file and the
+   * report is addressed to one of them. Nothing is printed where none has been
+   * chosen.
+   */
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -488,6 +567,7 @@ model RcdReport {
 
   @@index([siteId])
   @@index([instrumentId])
+  @@index([contactId])
 }
 
 model RcdTestRun {
@@ -495,31 +575,45 @@ model RcdTestRun {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** The report this board belongs to. Absent on runs filed before reports. */
+  /**
+   * The report this board belongs to. Absent on runs filed before reports.
+   */
   reportId String?
   report   RcdReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
-  /** The board that was tested. */
+  /**
+   * The board that was tested.
+   */
   equipmentId String?
   equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
 
   name String?
   date DateTime @default(now()) @db.Date
 
-  /** The tester's own export, untouched. */
+  /**
+   * The tester's own export, untouched.
+   */
   sourceFileId String?
   sourceFile   UploadedFile? @relation("RcdSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
 
-  /** The raw parse, so a report can be rebuilt without the file being re-read. */
+  /**
+   * The raw parse, so a report can be rebuilt without the file being re-read.
+   */
   parsed Json?
 
-  /** How the tests were walked, and which positions were tested twice. */
+  /**
+   * How the tests were walked, and which positions were tested twice.
+   */
   corrections Json?
 
-  /** Answers to the checks the instrument cannot record. */
+  /**
+   * Answers to the checks the instrument cannot record.
+   */
   checklist Json?
 
-  /** Disagreements between the file and the site, accepted by the operator. */
+  /**
+   * Disagreements between the file and the site, accepted by the operator.
+   */
   mismatches String[]
 
   createdAt DateTime @default(now())
@@ -536,7 +630,9 @@ model RcdResult {
   runId String
   run   RcdTestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
-  /** Which position on the board, e.g. "main:cell:12". Null when unmatched. */
+  /**
+   * Which position on the board, e.g. "main:cell:12". Null when unmatched.
+   */
   slot  String?
   /**
    * The device this result belongs to, named for every way it occupies —
@@ -552,11 +648,15 @@ model RcdResult {
    */
   phase String?
 
-  /** Rated residual current in mA, off the tester's own parameters. */
+  /**
+   * Rated residual current in mA, off the tester's own parameters.
+   */
   ratingMa Int?
   kind     RcdKind?
 
-  /** Trip times in ms. Null is untested; 2000+ means it did not trip. */
+  /**
+   * Trip times in ms. Null is untested; 2000+ means it did not trip.
+   */
   halfAt0    Float?
   halfAt180  Float?
   ratedAt0   Float?
@@ -566,9 +666,13 @@ model RcdResult {
 
   touchVolts Float?
 
-  /** PASS, CONCERN or FAIL — see lib/rcd/assess. */
+  /**
+   * PASS, CONCERN or FAIL — see lib/rcd/assess.
+   */
   verdict String
-  /** Why, in the words the report prints. */
+  /**
+   * Why, in the words the report prints.
+   */
   reasons String[]
 
   position Int @default(0)
@@ -603,9 +707,9 @@ model Report {
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
-  siteName     String?
-  siteAddress  String?
-  siteContact  String?
+  siteName    String?
+  siteAddress String?
+  siteContact String?
 
   inspectionDate DateTime?
   issuedDate     DateTime?
@@ -614,16 +718,16 @@ model Report {
   technicianLicence String?
 
   // What was covered, in the electrician's words.
-  scopeOfWork  String?
+  scopeOfWork      String?
   // Auto-drafted then editable by the technician.
   executiveSummary String?
   recommendations  String?
   limitations      String?
 
   // Conditions on the day — used to sanity-check thermal readings.
-  ambientTempC   Float?
-  weatherNotes   String?
-  equipmentUsed  String?
+  ambientTempC  Float?
+  weatherNotes  String?
+  equipmentUsed String?
 
   // Overall rating. Computed from findings unless overridden.
   overallRiskOverride RiskLevel?
@@ -653,19 +757,19 @@ model Report {
 
 enum ThermalBasis {
   SIMILAR_COMPONENT // ΔT against an equivalent component under similar load
-  AMBIENT           // ΔT against ambient air temperature
+  AMBIENT // ΔT against ambient air temperature
 }
 
 model ThermalFinding {
-  id       String @id @default(cuid())
-  reportId String
-  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  sortOrder Int   @default(0)
+  id        String @id @default(cuid())
+  reportId  String
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int    @default(0)
 
-  location    String? // e.g. "Main switchboard, Row 2"
-  component   String? // e.g. "Circuit 7 — 32 A HRC fuse, A phase"
-  loadAmps    Float?
-  emissivity  Float?  @default(0.95)
+  location   String? // e.g. "Main switchboard, Row 2"
+  component  String? // e.g. "Circuit 7 — 32 A HRC fuse, A phase"
+  loadAmps   Float?
+  emissivity Float?  @default(0.95)
 
   basis          ThermalBasis @default(SIMILAR_COMPONENT)
   measuredTempC  Float?
@@ -692,17 +796,17 @@ model ThermalFinding {
 // ---------------------------------------------------------------------------
 
 enum RcdKind {
-  TYPE_I   // ≤ 10 mA
-  TYPE_II  // ≤ 30 mA
+  TYPE_I // ≤ 10 mA
+  TYPE_II // ≤ 30 mA
   TYPE_III // > 30 mA
-  DELAYED  // S-type / time-delayed
+  DELAYED // S-type / time-delayed
 }
 
 model RcdTest {
-  id       String @id @default(cuid())
-  reportId String
-  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  sortOrder Int   @default(0)
+  id        String @id @default(cuid())
+  reportId  String
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int    @default(0)
 
   boardName          String?
   circuitDescription String?
@@ -715,7 +819,7 @@ model RcdTest {
   tripTime5xMs    Float? // at 5 × I∆n
   rampTripMa      Float? // current at which it let go
   pushButtonOk    Boolean?
-  notRequired     Boolean @default(false) // e.g. RCD not fitted / not accessible
+  notRequired     Boolean  @default(false) // e.g. RCD not fitted / not accessible
 
   resultOverride Boolean? // force pass (true) / fail (false)
   notes          String?
@@ -728,15 +832,15 @@ model RcdTest {
 // ---------------------------------------------------------------------------
 
 model Observation {
-  id       String @id @default(cuid())
-  reportId String
-  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  sortOrder Int   @default(0)
+  id        String @id @default(cuid())
+  reportId  String
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int    @default(0)
 
   location          String?
   description       String?
   riskLevel         RiskLevel @default(MEDIUM)
-  clauseReference   String?   // e.g. "AS/NZS 3000 Cl 2.3.2"
+  clauseReference   String? // e.g. "AS/NZS 3000 Cl 2.3.2"
   recommendedAction String?
   clientExplanation String?
   rectifiedOnSite   Boolean   @default(false)
@@ -758,10 +862,10 @@ enum PhotoKind {
 }
 
 model Photo {
-  id       String @id @default(cuid())
-  reportId String
-  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  sortOrder Int   @default(0)
+  id        String @id @default(cuid())
+  reportId  String
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sortOrder Int    @default(0)
 
   kind     PhotoKind @default(GENERAL)
   // Before/after shots of the same thing share a pairKey so they sit side by side.
@@ -782,19 +886,22 @@ model Photo {
 
 /**
  * One of the company's blank SWMS, JSA or WHS templates, held as bytes.
- *
  * They live here rather than in the repository because they carry signatures,
  * and because a template that is revised should be replaced without a deploy.
  * The catalogue in src/lib/safety/catalogue.ts says what each one covers; this
  * holds the file itself.
  */
 model SafetyTemplate {
-  /** "SWMS014", "JSA001" — the code printed on the document. */
+  /**
+   * "SWMS014", "JSA001" — the code printed on the document.
+   */
   code String @id
 
   kind     String
   title    String
-  /** "pdf" or "docx". */
+  /**
+   * "pdf" or "docx".
+   */
   format   String
   fileName String
 
@@ -807,13 +914,14 @@ model SafetyTemplate {
 
 /**
  * A signature, kept once and stamped onto whatever needs it.
- *
  * Held as an uploaded file rather than in the repository: a signature is the
  * thing that makes a document binding, and it has no business sitting in
  * source control.
  */
 model Signature {
-  /** "scott", "kye". */
+  /**
+   * "scott", "kye".
+   */
   key      String @id
   name     String
   position String
@@ -826,7 +934,6 @@ model Signature {
 
 /**
  * One set of paperwork, issued for one job at one site.
- *
  * It holds what the operator answered rather than the finished files: the
  * documents are filled on the way out, so a corrected answer or a revised
  * template is picked up without anything having to be regenerated and stored.
@@ -838,24 +945,38 @@ model SafetyDoc {
 
   date DateTime @default(now()) @db.Date
 
-  /** Template codes chosen, e.g. ["SWMS014", "JSA001"]. */
+  /**
+   * Template codes chosen, e.g. ["SWMS014", "JSA001"].
+   */
   codes String[]
 
-  /** The job details every document asks for. */
+  /**
+   * The job details every document asks for.
+   */
   projectName    String?
   projectManager String?
   contactNumber  String?
 
-  /** The quote the job description was read from, where one was given. */
-  sourceFileId String?
-  sourceFile   UploadedFile? @relation("SafetyDocSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
-  /** What was read out of it, so a suggestion can be explained afterwards. */
-  jobDescription String?
-  /** The job's name as the quote gave it. */
-  jobTitle       String?
-  /** What was answered about the work, keyed by question. */
-  answers        Json?
-  /** The quote and the answers written out as one description. */
+  /**
+   * The quote the job description was read from, where one was given.
+   */
+  sourceFileId    String?
+  sourceFile      UploadedFile? @relation("SafetyDocSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
+  /**
+   * What was read out of it, so a suggestion can be explained afterwards.
+   */
+  jobDescription  String?
+  /**
+   * The job's name as the quote gave it.
+   */
+  jobTitle        String?
+  /**
+   * What was answered about the work, keyed by question.
+   */
+  answers         Json?
+  /**
+   * The quote and the answers written out as one description.
+   */
   workDescription String?
 
   createdAt DateTime @default(now())
@@ -866,7 +987,6 @@ model SafetyDoc {
 
 /**
  * A recommendation written on site, kept for next time.
- *
  * The catalogue in src/lib/issues.ts covers what comes up most, but a board
  * always throws something it does not. Rather than make that a free-text box
  * on every finding — which is how a report ends up with the same sentence
@@ -876,9 +996,13 @@ model SafetyDoc {
 model CustomRecommendation {
   id String @id @default(cuid())
 
-  /** The cause it belongs under, e.g. "TERMINAL_CONNECTION". */
+  /**
+   * The cause it belongs under, e.g. "TERMINAL_CONNECTION".
+   */
   cause String
-  /** What it says. Stored as written, not as a key. */
+  /**
+   * What it says. Stored as written, not as a key.
+   */
   text  String
 
   createdAt DateTime @default(now())
@@ -887,10 +1011,8 @@ model CustomRecommendation {
   @@index([cause])
 }
 
-
 /**
  * One power analysis: a logger left on a board and the recording it wrote.
- *
  * The file is kept and re-read when the report is drawn rather than the
  * readings being copied into the database — a fortnight at five-minute
  * intervals is four thousand rows per channel, and the file is the record.
@@ -901,31 +1023,51 @@ model PowerAnalysis {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** The day the recording started, taken from its first timestamp. */
-  date DateTime @default(now()) @db.Date
-  name String?
-  /** Where the logger was fitted — "Main switchboard". */
+  /**
+   * The day the recording started, taken from its first timestamp.
+   */
+  date     DateTime @default(now()) @db.Date
+  name     String?
+  /**
+   * Where the logger was fitted — "Main switchboard".
+   */
   location String?
 
-  /** The board it was fitted to, where that board has been drawn on the site. */
+  /**
+   * The board it was fitted to, where that board has been drawn on the site.
+   */
   equipmentId String?
   equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
 
-  /** Why it was recorded: HEADROOM or DRAW. Prints as the objective. */
+  /**
+   * Why it was recorded: HEADROOM or DRAW. Prints as the objective.
+   */
   brief String?
 
-  /** The instrument that took the readings, named on the report. */
+  /**
+   * The instrument that took the readings, named on the report.
+   */
   instrumentId String?
   instrument   TestEquipment? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
 
-  /** Who asked for it, named in the objective. */
+  /**
+   * Who asked for it, named in the objective and as the site contact.
+   * Normally one of the site's own contacts; the name is kept as well for
+   * somebody who is not on file there.
+   */
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   contactName String?
 
-  /** The logger's own export, kept as it came. */
+  /**
+   * The logger's own export, kept as it came.
+   */
   sourceFileId String?
   sourceFile   UploadedFile? @relation("PowerAnalysisSource", fields: [sourceFileId], references: [id], onDelete: SetNull)
 
-  /** Start, end, interval and the peak on each channel. */
+  /**
+   * Start, end, interval and the peak on each channel.
+   */
   summary Json?
 
   createdAt DateTime @default(now())
@@ -934,4 +1076,5 @@ model PowerAnalysis {
   @@index([siteId])
   @@index([equipmentId])
   @@index([instrumentId])
+  @@index([contactId])
 }

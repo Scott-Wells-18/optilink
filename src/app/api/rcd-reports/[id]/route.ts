@@ -39,10 +39,12 @@ export async function PATCH(
       name?: string;
       date?: string;
       instrumentId?: string | null;
+      contactId?: string | null;
     };
     const data: Record<string, unknown> = {};
     if (body.name !== undefined) data.name = body.name?.slice(0, 200) || null;
     if ("instrumentId" in body) data.instrumentId = body.instrumentId || null;
+    if ("contactId" in body) data.contactId = body.contactId || null;
     if (body.date) {
       const when = new Date(`${body.date}T00:00:00Z`);
       if (!Number.isNaN(when.getTime())) data.date = when;

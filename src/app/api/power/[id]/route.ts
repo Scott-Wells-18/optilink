@@ -26,7 +26,7 @@ export async function GET(
             orderBy: { createdAt: "asc" },
             select: { id: true, name: true, supply: true },
           },
-          contacts: { orderBy: { createdAt: "asc" }, select: { name: true } },
+          contacts: { orderBy: { createdAt: "asc" }, select: { id: true, name: true } },
         },
       },
     },
@@ -49,12 +49,14 @@ export async function PATCH(
       instrumentId?: string | null;
       brief?: string | null;
       contactName?: string | null;
+      contactId?: string | null;
     };
     const data: Record<string, unknown> = {};
     for (const key of ["name", "location", "contactName"] as const) {
       if (body[key] !== undefined) data[key] = body[key]?.slice(0, 200) || null;
     }
     if ("equipmentId" in body) data.equipmentId = body.equipmentId || null;
+    if ("contactId" in body) data.contactId = body.contactId || null;
     if ("instrumentId" in body) data.instrumentId = body.instrumentId || null;
     if ("brief" in body) data.brief = isBrief(body.brief) ? body.brief : null;
     if (body.date) {

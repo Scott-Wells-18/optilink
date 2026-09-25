@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
+import { personName } from "@/lib/contacts";
 import { readUpload } from "@/lib/storage";
 import {
   freeItemFor,
@@ -76,10 +77,10 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
   const inspection = await prisma.inspection.findUnique({
     where: { id: inspectionId },
     include: {
+      contact: { select: { name: true } },
       site: {
         include: {
           client: { select: { name: true } },
-          contacts: { orderBy: { createdAt: "asc" }, take: 1 },
           equipment: { orderBy: { createdAt: "asc" } },
         },
       },
@@ -146,7 +147,7 @@ export async function loadReport(inspectionId: string): Promise<ReportData | nul
     clientName: safe(site.client.name),
     siteName: safe(site.name),
     siteLocation: site.location ? safe(site.location) : null,
-    contactName: site.contacts[0] ? safe(site.contacts[0].name) : null,
+    contactName: inspection.contact ? safe(personName(inspection.contact.name)) : null,
     inspectionDate: inspection.date,
     reportDate: new Date(),
     nextSurveyDue: yearAfter(inspection.date),

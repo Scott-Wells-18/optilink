@@ -41,6 +41,7 @@ export async function GET() {
               id: true,
               name: true,
               date: true,
+              contact: { select: { id: true, name: true } },
               items: {
                 orderBy: { position: "asc" },
                 select: {
@@ -63,6 +64,7 @@ export async function GET() {
               id: true,
               name: true,
               date: true,
+              contact: { select: { id: true, name: true } },
               instrument: { select: { id: true, name: true } },
               tests: {
                 orderBy: { createdAt: "asc" },
@@ -84,6 +86,7 @@ export async function GET() {
               name: true,
               date: true,
               location: true,
+              contact: { select: { id: true, name: true } },
               sourceFileId: true,
               summary: true,
             },
@@ -107,6 +110,7 @@ export async function GET() {
               id: true,
               name: true,
               date: true,
+              contact: { select: { id: true, name: true } },
               issues: { select: { id: true, equipmentId: true, slot: true, type: true } },
             },
           },

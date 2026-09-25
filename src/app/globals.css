@@ -1608,13 +1608,16 @@ body {
   right: -78px;
 }
 
+/* Says what it bolts on: the little board on the end of a big one. */
 .board-side-add {
-  height: 32px;
+  padding: 7px 4px;
   border: 1.5px dashed var(--hair-strong);
   border-radius: 7px;
   background: #fff;
-  font-size: 15px;
-  line-height: 1;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
   color: var(--ink-3);
   cursor: pointer;
 }
@@ -2425,6 +2428,98 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * The board, drawn to be clicked on rather than edited: the RCD wizard's
+ * duplicates and test-order steps. It is the enclosure from the editor, so
+ * nearly everything is already styled — what follows is only the differences.
+ */
+.board-case.is-picker {
+  margin: 0 0 6px;
+  padding: 18px 18px 12px;
+}
+
+.board-case.is-picker .board-top {
+  padding-bottom: 14px;
+}
+
+/* A way and the numbers beside it, kept together in the two-column row. */
+.board-pick-pair {
+  display: contents;
+}
+
+/*
+ * What a device is marked with on a picking board: how many times over it was
+ * tested, or where it falls in the run. It sits on the end of the module the
+ * device was drawn into, so one device carries one mark however many ways it
+ * stands across.
+ */
+.board-pick-mark {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Standing on end, it sits at the foot rather than the side. */
+.board-cell.is-upright .board-pick-mark {
+  right: 50%;
+  top: auto;
+  bottom: 4px;
+  transform: translateX(50%);
+}
+
+.board-cell.is-faded .board-pick-mark {
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* Chosen rather than assumed: ringed so it reads across the board. */
+.board-cell.is-marked:not(.is-faded) {
+  box-shadow: 0 0 0 2px #fff inset, 0 0 0 3px var(--accent);
+}
+
+/* An end of the main switch with nothing on it still says so. */
+.board-pick-empty {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* A sub-board, drawn under the ways rather than behind a chip on the end. */
+.board-pick-sub {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--hair-strong);
+}
+
+.board-pick-sub .board-sub-rail.is-picker {
+  margin-top: 6px;
+}
+
+.board-pick-where {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-4);
+}
+
 .board-cell-count {
   flex: none;
   display: grid;
@@ -2558,14 +2653,20 @@ body {
 
 /* --- section tabs, Chrome style ------------------------------------------- */
 
+/*
+ * The sections, inside the enclosure: under the main switch and over the ways,
+ * which is where a board divides. Compact, because it is furniture inside the
+ * drawing rather than a bar across the dialog — the ways below it are what the
+ * eye is meant to land on.
+ */
 .board-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  min-height: 46px;
-  padding: 6px 24px 0;
+  gap: 3px;
+  min-height: 30px;
+  margin: 0 0 10px;
+  padding: 0;
   border-bottom: 1px solid var(--hair);
-  background: #f7fafc;
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -2576,8 +2677,8 @@ body {
   align-items: center;
   gap: 2px;
   flex: none;
-  max-width: 220px;
-  padding: 0 4px 0 12px;
+  max-width: 200px;
+  padding: 0 3px 0 9px;
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: 10px 10px 0 0;
@@ -2673,15 +2774,18 @@ body {
   color: var(--ink);
 }
 
+/* Says what it adds: a "+" on its own reads as another way, not a section. */
 .board-tab-add {
   flex: none;
-  width: 28px;
-  height: 28px;
-  margin: 0 0 5px 4px;
+  height: 24px;
+  margin: 0 0 4px 6px;
+  padding: 0 10px;
   border: 1px dashed var(--hair-strong);
   border-radius: 8px;
   background: #fff;
-  font-size: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
   line-height: 1;
   color: var(--ink-3);
   cursor: pointer;

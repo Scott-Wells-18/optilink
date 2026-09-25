@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "@/lib/db";
+import { personName } from "@/lib/contacts";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { readUpload } from "@/lib/storage";
 import { reportSignature } from "@/lib/signatures";
@@ -128,6 +129,7 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
       sourceFile: true,
       equipment: { select: { id: true, name: true, supply: true } },
       instrument: { include: { certFile: true, photoFile: true } },
+      contact: { select: { name: true } },
       site: {
         include: {
           client: { select: { name: true } },
@@ -201,7 +203,14 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
       supply,
       feed: feed ? safe(feed) : null,
       brief: run.brief,
-      contactName: run.contactName ? safe(run.contactName) : null,
+      // One of the site's own contacts where one was picked — read off the
+      // contact rather than the name saved beside it, so renaming them at the
+      // site renames them here. A name typed in by hand stands on its own.
+      contactName: run.contact
+        ? safe(personName(run.contact.name))
+        : run.contactName
+          ? safe(run.contactName)
+          : null,
       instrument: await readInstrument(run.instrument),
       reportDate: new Date(),
       recording,

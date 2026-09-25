@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
+import { personName } from "@/lib/contacts";
 import { readUpload } from "@/lib/storage";
 import {
   JOB_STAGES,
@@ -8,9 +9,11 @@ import {
   isComplete,
   type JobPhotoStage,
 } from "@/lib/jobs";
-import { COMPANY } from "@/lib/company";
+import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { tidy, titleCase } from "@/lib/writing";
 import {
+  COVER_LIST_MAX,
+  bulletColumns,
   coverPage,
   footer,
   newDocument,
@@ -88,12 +91,8 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
-      site: {
-        include: {
-          client: { select: { name: true } },
-          contacts: { orderBy: { createdAt: "asc" }, take: 1 },
-        },
-      },
+      contact: { select: { name: true } },
+      site: { include: { client: { select: { name: true } } } },
       items: {
         orderBy: { position: "asc" },
         include: { photos: { orderBy: [{ stage: "asc" }, { position: "asc" }] } },
@@ -131,7 +130,7 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     clientName: safe(job.site.client.name),
     siteName: safe(job.site.name),
     siteLocation: job.site.location ? safe(job.site.location) : null,
-    contactName: job.site.contacts[0] ? safe(job.site.contacts[0].name) : null,
+    contactName: job.contact ? safe(personName(job.contact.name)) : null,
     jobTitle: safe(job.name?.trim() || shortDate(job.date)),
     jobDate: job.date,
     reportDate: new Date(),
@@ -168,17 +167,19 @@ async function brandBytes(name: string): Promise<Buffer | null> {
 
 /* --- drawing -------------------------------------------------------------- */
 
-/** Cover and summary are drawn by hand; the work follows. */
-const FIRST_SECTION_PAGE = 3;
-
 export function buildJobReport(data: JobReport): Promise<Buffer> {
   const { doc, done } = newDocument();
 
+  // Cover, then any page of work the cover's two columns could not hold, then
+  // the summary — so the first section starts after all of them.
+  const firstSection = 3 + overflowPages(data);
+
   // Measured and packed before anything is drawn, because the summary cites
   // page numbers and an item is as tall as what was written and shot for it.
-  const laid = layout([work(doc, data), closing(doc, data)], FIRST_SECTION_PAGE);
+  const laid = layout([work(doc, data), closing(doc, data)], firstSection);
 
   cover(doc, data);
+  restOfTheList(doc, data);
   summary(doc, data, laid);
   render(doc, data, laid);
 
@@ -187,7 +188,18 @@ export function buildJobReport(data: JobReport): Promise<Buffer> {
   return done;
 }
 
+/** Every piece of work, in the order it is written up. */
+function titles(data: JobReport): string[] {
+  return data.items.map((item) => item.title);
+}
+
+/** How many pages of work the cover's own two columns could not take. */
+function overflowPages(data: JobReport): number {
+  return Math.ceil(Math.max(0, titles(data).length - COVER_LIST_MAX) / COVER_LIST_MAX);
+}
+
 function cover(doc: Doc, data: JobReport) {
+  const listed = titles(data);
   coverPage(doc, data, {
     title: "Works Completed Report",
     eyebrow: "Before and after record",
@@ -195,14 +207,15 @@ function cover(doc: Doc, data: JobReport) {
     dateLabel: "Work carried out",
     date: data.jobDate,
     scopeLabel: "Work carried out",
-    scope: data.items.length
-      ? data.items.map((item) => item.title).join(", ")
-      : "Electrical maintenance works",
+    scopeList: listed,
+    // What a reader pulling the text out of the file gets, and what is drawn
+    // where there is no work on the report to list.
+    scope: listed.length ? listed.join(", ") : "Electrical maintenance works",
     rows: [
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
-      ["Items of work", `${data.items.length}`],
-      ["Works carried out by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
+      ["Items of work", `${listed.length}`],
+      ["Works carried out by", `${THERMOGRAPHER.name} · Lic ${COMPANY.licence}`],
     ],
     note:
       "This report is issued to the addressee named above and relates only to the site and the work listed on it. " +
@@ -210,6 +223,26 @@ function cover(doc: Doc, data: JobReport) {
       "was found and as it was left.",
     marks: [],
   });
+}
+
+/**
+ * The work the cover's two columns could not hold.
+ *
+ * A day of forty pieces of work is a real day, and cutting the list at thirty
+ * would leave the cover saying less than was done. So it carries on here, in
+ * the same two columns, for as many pages as it takes.
+ */
+function restOfTheList(doc: Doc, data: JobReport) {
+  const rest = titles(data).slice(COVER_LIST_MAX);
+  if (rest.length === 0) return;
+
+  for (let at = 0; at < rest.length; at += COVER_LIST_MAX) {
+    const page = rest.slice(at, at + COVER_LIST_MAX);
+    doc.addPage();
+    sectionBar(doc, "Work Carried Out (continued)", MARGIN);
+    bulletColumns(doc, page, MARGIN + 4, MARGIN + 46, CONTENT - 8);
+    footer(doc, data);
+  }
 }
 
 function summary(doc: Doc, data: JobReport, laid: Layout) {

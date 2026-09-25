@@ -14,6 +14,7 @@ export async function PATCH(
       date?: string;
       name?: string;
       recommendations?: string[];
+      contactId?: string | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -24,6 +25,7 @@ export async function PATCH(
       data.date = date;
     }
     if ("name" in body) data.name = body.name?.trim().slice(0, 180) || null;
+    if ("contactId" in body) data.contactId = body.contactId || null;
     if (body.recommendations) {
       data.recommendations = body.recommendations
         .map((line) => line.trim().slice(0, 400))

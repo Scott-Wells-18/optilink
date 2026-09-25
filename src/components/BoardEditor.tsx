@@ -207,6 +207,9 @@ export function BoardEditor({
     const section = createSubBoard(side);
     setBoard((current) => ({ ...current, sections: [...current.sections, section] }));
     setOpenSub(section.id);
+    // Named straight away, the way a new section is: it cannot be saved
+    // without one, and the name is what the tab says.
+    setRenaming(section.id);
   }
 
   /** Applies a change to any section, by id. */
@@ -291,80 +294,6 @@ export function BoardEditor({
         </header>
 
         <div className="board-scroll">
-        <nav className="board-tabs" aria-label="Board sections">
-          {main.map((section) => {
-            const isActive = section.id === active.id;
-            return (
-              <div
-                key={section.id}
-                className={`board-tab ${isActive ? "is-active" : ""} ${
-                  section.name.trim() ? "" : "is-unnamed"
-                }`}
-              >
-                {renaming === section.id ? (
-                  <input
-                    autoFocus
-                    className="board-tab-input"
-                    value={section.name}
-                    placeholder="Section name"
-                    aria-label="Section name"
-                    onChange={(event) => renameSection(section.id, event.target.value)}
-                    onBlur={() => setRenaming(null)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === "Escape") setRenaming(null);
-                    }}
-                  />
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="board-tab-name"
-                      onClick={() => setActiveId(section.id)}
-                      onDoubleClick={() => setRenaming(section.id)}
-                    >
-                      {section.name.trim() || "Unnamed section"}
-                    </button>
-                    {isActive ? (
-                      <button
-                        type="button"
-                        className="board-tab-rename"
-                        aria-label="Rename section"
-                        onClick={() => setRenaming(section.id)}
-                      >
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                          <path d="M11 2.5 13.5 5 6 12.5l-3 .5.5-3z" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    ) : null}
-                    {main.length > 1 ? (
-                      <button
-                        type="button"
-                        className="board-tab-close"
-                        aria-label="Remove section"
-                        onClick={() => removeSection(section.id)}
-                      >
-                        ×
-                      </button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            );
-          })}
-
-          {board.sections.length < MAX_SECTIONS ? (
-            <button
-              type="button"
-              className="board-tab-add"
-              onClick={addSection}
-              aria-label="Add a section"
-              title="Add a section"
-            >
-              +
-            </button>
-          ) : null}
-        </nav>
-
         <div className="board-body">
           {/*
             * The board itself: an enclosure with the main switch across the
@@ -396,7 +325,7 @@ export function BoardEditor({
                 title="Add a sub-board on this end"
                 aria-label="Add a sub-board on this end"
               >
-                +
+                + Sub-board
               </button>
             </div>
             <div className="board-side is-right">
@@ -421,7 +350,7 @@ export function BoardEditor({
                 title="Add a sub-board on this end"
                 aria-label="Add a sub-board on this end"
               >
-                +
+                + Sub-board
               </button>
             </div>
 
@@ -456,6 +385,26 @@ export function BoardEditor({
                 }
               />
             </div>
+
+            {/*
+              * The sections, where the board itself divides: under the main
+              * switch and over the ways, because everything below a tab
+              * belongs to the section named on it.
+              */}
+            <SectionTabs
+              sections={main}
+              activeId={active.id}
+              renaming={renaming}
+              canAdd={board.sections.length < MAX_SECTIONS}
+              addLabel="Add a section"
+              addText="Section"
+              onPick={setActiveId}
+              onRename={renameSection}
+              onStartRename={setRenaming}
+              onStopRename={() => setRenaming(null)}
+              onAdd={addSection}
+              onRemove={removeSection}
+            />
 
             <p className="board-case-note">
               Click a way to walk it through breakers and RCBOs. {active.rows * COLUMNS}{" "}
@@ -536,6 +485,19 @@ export function BoardEditor({
               return (
                 <SubBoardDialog
                   section={section}
+                  siblings={subs}
+                  canAdd={board.sections.length < MAX_SECTIONS}
+                  renaming={renaming}
+                  onPick={setOpenSub}
+                  onAdd={() => addSubBoard(section.side ?? "RIGHT")}
+                  onRenameSection={renameSection}
+                  onStartRename={setRenaming}
+                  onStopRename={() => setRenaming(null)}
+                  onRemoveSection={(id) => {
+                    const left = subs.filter((one) => one.id !== id);
+                    setOpenSub(id === section.id ? (left[0]?.id ?? null) : openSub);
+                    removeSection(id);
+                  }}
                   onClose={() => setOpenSub(null)}
                   onRename={(value) => renameSection(section.id, value)}
                   onCycle={(index) =>
@@ -631,6 +593,127 @@ export function BoardEditor({
  * are for.
  */
 /**
+ * The sections of a board, as tabs.
+ *
+ * A switchboard of any size is drawn in sections — lighting, power, the
+ * mechanical services rail — each its own run of ways, numbered from one. The
+ * tabs sit under the main switch and over the ways, which is where the
+ * divisions are on the board itself: everything below the tab belongs to the
+ * section named on it.
+ *
+ * A section has to be named before the board can be saved. An unnamed one is
+ * marked here rather than only at the foot, so it is obvious which.
+ */
+function SectionTabs({
+  sections,
+  activeId,
+  renaming,
+  canAdd,
+  addLabel,
+  addText,
+  onPick,
+  onRename,
+  onStartRename,
+  onStopRename,
+  onAdd,
+  onRemove,
+}: {
+  sections: BoardSection[];
+  activeId: string;
+  renaming: string | null;
+  canAdd: boolean;
+  addLabel: string;
+  /** What the add button says: a board adds sections, a sub-board adds boards. */
+  addText: string;
+  onPick: (id: string) => void;
+  onRename: (id: string, value: string) => void;
+  onStartRename: (id: string) => void;
+  onStopRename: () => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <nav className="board-tabs" aria-label="Board sections">
+      {sections.map((section) => {
+        const isActive = section.id === activeId;
+        return (
+          <div
+            key={section.id}
+            className={`board-tab ${isActive ? "is-active" : ""} ${
+              section.name.trim() ? "" : "is-unnamed"
+            }`}
+          >
+            {renaming === section.id ? (
+              <input
+                autoFocus
+                className="board-tab-input"
+                value={section.name}
+                placeholder="Section name"
+                aria-label="Section name"
+                onChange={(event) => onRename(section.id, event.target.value)}
+                onBlur={onStopRename}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== "Escape") return;
+                  // Escape here means "done naming", not "throw the board
+                  // away" — the editor is listening for it as well.
+                  event.stopPropagation();
+                  onStopRename();
+                }}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="board-tab-name"
+                  onClick={() => onPick(section.id)}
+                  onDoubleClick={() => onStartRename(section.id)}
+                >
+                  {section.name.trim() || "Unnamed section"}
+                </button>
+                {isActive ? (
+                  <button
+                    type="button"
+                    className="board-tab-rename"
+                    aria-label="Rename section"
+                    onClick={() => onStartRename(section.id)}
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                      <path d="M11 2.5 13.5 5 6 12.5l-3 .5.5-3z" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                ) : null}
+                {sections.length > 1 ? (
+                  <button
+                    type="button"
+                    className="board-tab-close"
+                    aria-label="Remove section"
+                    onClick={() => onRemove(section.id)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        );
+      })}
+
+      {canAdd ? (
+        <button
+          type="button"
+          className="board-tab-add"
+          onClick={onAdd}
+          aria-label={addLabel}
+          title={addLabel}
+        >
+          + {addText}
+        </button>
+      ) : null}
+    </nav>
+  );
+}
+
+/**
  * The devices at one end of the main switch.
  *
  * Whatever sits up by the mains rather than on the rail: an isolator, a surge
@@ -686,6 +769,15 @@ function ExtraSlot({
 
 function SubBoardDialog({
   section,
+  siblings,
+  canAdd,
+  renaming,
+  onPick,
+  onAdd,
+  onRenameSection,
+  onStartRename,
+  onStopRename,
+  onRemoveSection,
   onClose,
   onRename,
   onCycle,
@@ -694,6 +786,16 @@ function SubBoardDialog({
   onRemove,
 }: {
   section: BoardSection;
+  /** Every sub-board on this board, so one can be switched to from another. */
+  siblings: BoardSection[];
+  canAdd: boolean;
+  renaming: string | null;
+  onPick: (id: string) => void;
+  onAdd: () => void;
+  onRenameSection: (id: string, value: string) => void;
+  onStartRename: (id: string) => void;
+  onStopRename: () => void;
+  onRemoveSection: (id: string) => void;
   onClose: () => void;
   onRename: (value: string) => void;
   onCycle: (index: number) => void;
@@ -726,6 +828,26 @@ function SubBoardDialog({
             onChange={(event) => onRename(event.target.value)}
           />
         </header>
+
+        {/*
+          * The other sub-boards on this enclosure, as tabs: each is its own
+          * rail with its own ways, and this is how you get from one to the
+          * next without going back out to the board.
+          */}
+        <SectionTabs
+          sections={siblings}
+          activeId={section.id}
+          renaming={renaming}
+          canAdd={canAdd}
+          addLabel="Add another sub-board"
+          addText="Sub-board"
+          onPick={onPick}
+          onRename={onRenameSection}
+          onStartRename={onStartRename}
+          onStopRename={onStopRename}
+          onAdd={onAdd}
+          onRemove={onRemoveSection}
+        />
 
         <p className="board-sub-note">
           On the {end} end. No main switch — fed from the board beside it. Breakers

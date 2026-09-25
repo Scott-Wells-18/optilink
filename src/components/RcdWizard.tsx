@@ -2,16 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  COLUMNS,
   STATE_SHORT,
   freeSlotKey,
   isFreeBoard,
   isRcd,
   normaliseBoard,
-  positionNumber,
-  slotKey,
   type Board,
 } from "@/lib/board";
+import { BoardPicker } from "@/components/BoardPicker";
 import { FreeBoardView } from "@/components/FreeBoardEditor";
 import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
 import {
@@ -26,6 +24,7 @@ import {
 import type { RcdRow } from "@/lib/rcd/parse";
 import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
+import { personName } from "@/lib/contacts";
 
 /**
  * Turning an instrument's export into a report.
@@ -58,7 +57,13 @@ type Run = {
   id: string;
   sourceFileId: string | null;
   equipment: { id: string; name: string; board: unknown } | null;
-  site: { name: string; equipment: { id: string; name: string; board: unknown }[] };
+  /** The visit this board belongs to, which is what carries the contact. */
+  report: { id: string; contactId: string | null } | null;
+  site: {
+    name: string;
+    contacts: { id: string; name: string }[];
+    equipment: { id: string; name: string; board: unknown }[];
+  };
   parsed: Parsed | null;
   mismatches: string[];
 };
@@ -84,6 +89,7 @@ export function RcdWizard({
     {},
   );
   const [mismatches, setMismatches] = useState<string[]>([]);
+  const [contactId, setContactId] = useState<string | null>(null);
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +102,7 @@ export function RcdWizard({
     if (data.parsed) setParsed(data.parsed);
     if (data.mismatches?.length) setMismatches(data.mismatches);
     if (data.equipment?.id) setEquipmentId((current) => current || data.equipment!.id);
+    setContactId(data.report?.contactId ?? null);
   }, [runId, setEquipmentId]);
 
   useEffect(() => {
@@ -166,6 +173,18 @@ export function RcdWizard({
     const result = (await response.json()) as { parsed: Parsed; mismatches: string[] };
     setParsed(result.parsed);
     setMismatches(result.mismatches);
+  }
+
+  /** Saves the chosen person onto the visit this board belongs to. */
+  async function chooseContact(value: string | null) {
+    const reportId = run?.report?.id;
+    if (!reportId) return;
+    setContactId(value);
+    await fetch(`/api/rcd-reports/${reportId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contactId: value }),
+    }).catch(() => setError("That contact could not be saved."));
   }
 
   async function finalise() {
@@ -435,11 +454,49 @@ export function RcdWizard({
                   </>
                 ) : null}
 
-                <TestOrder
-                  devices={devices}
-                  picked={sequence}
-                  onChange={setSequence}
-                />
+                {/*
+                  * Clicked on the board rather than off a list: the run moves
+                  * between the grid, the additionals by the main switch and a
+                  * sub-board on the end, and only the board itself shows all
+                  * three in one picture.
+                  */}
+                <div className="board-section-head rcd-subhead">
+                  <h3 className="board-section-title">The order you tested them</h3>
+                  <p className="board-section-note rcd-order-note">
+                    Click the RCDs on the board in the order you worked them —
+                    the grid, the additionals and any sub-board in one run. The
+                    number on a device is where it falls; a faded one is where
+                    it would fall if you left it as drawn.
+                    {sequence.length > 0 ? (
+                      <button
+                        type="button"
+                        className="rcd-order-clear"
+                        onClick={() => setSequence([])}
+                      >
+                        Start again
+                      </button>
+                    ) : null}
+                  </p>
+                </div>
+
+                {board ? (
+                  <BoardPicker
+                    board={board}
+                    marks={Object.fromEntries(
+                      devices.map((device, at) => [device.slot, String(at + 1)]),
+                    )}
+                    dim={(slot) => !sequence.includes(slot)}
+                    onPick={(pick) =>
+                      setSequence((current) =>
+                        current.includes(pick.slot)
+                          ? current.filter((slot) => slot !== pick.slot)
+                          : [...current, pick.slot],
+                      )
+                    }
+                  />
+                ) : null}
+
+                <TestOrder devices={devices} picked={sequence} onChange={setSequence} />
                 </>
                 )}
               </section>
@@ -478,7 +535,26 @@ export function RcdWizard({
                       }
                     />
                   ) : (
-                    <DuplicatePicker board={board} extras={extras} onChange={setExtras} />
+                    // The board as it is drawn: the same enclosure, the same
+                    // names, the same numbers. The RCD tested twice has to be
+                    // findable on it.
+                    <BoardPicker
+                      board={board}
+                      marks={Object.fromEntries(
+                        Object.entries(extras)
+                          .filter(([, count]) => count > 0)
+                          .map(([slot, count]) => [slot, `×${count}`]),
+                      )}
+                      onPick={(pick) =>
+                        setExtras((current) => {
+                          const next = { ...current };
+                          const value = (next[pick.slot] ?? 0) + 1;
+                          if (value > 3) delete next[pick.slot];
+                          else next[pick.slot] = value;
+                          return next;
+                        })
+                      }
+                    />
                   )
                 ) : (
                   <p className="issue-empty">Choose a board first.</p>
@@ -558,7 +634,40 @@ export function RcdWizard({
 
             {step === "checks" ? (
               <section>
+                {/*
+                  * Who the report is addressed to. Asked here because this is
+                  * where the visit is finished off, and taking whichever
+                  * contact happened to be added first is not a choice anybody
+                  * made. It is kept on the visit, so every board tested on it
+                  * carries the same name.
+                  */}
                 <div className="board-section-head">
+                  <h3 className="board-section-title">Who the report is for</h3>
+                  <p className="board-section-note">
+                    {run?.site.contacts.length
+                      ? "The person named on the front of this RCD report."
+                      : "Nobody is on file for this site yet. Add a contact under Clients and they will appear here."}
+                  </p>
+                </div>
+                {run?.site.contacts.length ? (
+                  <div className="issue-picks">
+                    {run.site.contacts.map((person) => (
+                      <button
+                        key={person.id}
+                        type="button"
+                        className={`issue-pick ${contactId === person.id ? "is-on" : ""}`}
+                        onClick={() => void chooseContact(contactId === person.id ? null : person.id)}
+                      >
+                        <span className="issue-pick-mark is-one" aria-hidden />
+                        <span className="issue-pick-body">
+                          <span className="issue-pick-label">{personName(person.name)}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="board-section-head rcd-subhead">
                   <h3 className="board-section-title">Before the report goes out</h3>
                   <p className="board-section-note">
                     The instrument cannot record these, so they are asked once and
@@ -743,141 +852,5 @@ function TestOrder({
         })}
       </ol>
     </>
-  );
-}
-
-/** The board, read-only, with a tally on any way that was tested more than once. */
-function DuplicatePicker({
-  board,
-  extras,
-  onChange,
-}: {
-  board: Board;
-  extras: Record<string, number>;
-  onChange: (next: (current: Record<string, number>) => Record<string, number>) => void;
-}) {
-  const bump = (slot: string) =>
-    onChange((current) => {
-      const next = { ...current };
-      const value = (next[slot] ?? 0) + 1;
-      if (value > 3) delete next[slot];
-      else next[slot] = value;
-      return next;
-    });
-
-  return (
-    <>
-      {board.sections.map((section) => (
-        <div key={section.id}>
-          {board.sections.length > 1 ? (
-            <div className="board-section-head">
-              <h3 className="board-section-title">
-                {section.name || (section.side ? "Sub-board" : "Section")}
-              </h3>
-              {section.side ? (
-                <p className="board-section-note">
-                  A sub-board on the {section.side === "LEFT" ? "left" : "right"} of
-                  the enclosure, numbered along its own rail.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
-          {section.extras.some((cell) => isRcd(cell.state)) ? (
-            <div className="rcd-extras">
-              <p className="rcd-extras-title">Additional RCDs</p>
-              <div className="board-extra-row">
-                {section.extras.map((cell, index) =>
-                  isRcd(cell.state) ? (
-                    <DuplicateCell
-                      key={index}
-                      label={cell.label || "Unnamed"}
-                      state={cell.state}
-                      number={null}
-                      count={extras[slotKey(section.id, "extra", index)] ?? 0}
-                      onClick={() => bump(slotKey(section.id, "extra", index))}
-                    />
-                  ) : null,
-                )}
-              </div>
-            </div>
-          ) : null}
-
-          {/* A sub-board is one rail read along, not two columns read down. */}
-          <div className={section.side ? "board-extra-row" : "board-grid"}>
-            {section.side
-              ? section.cells.map((cell, index) => {
-                  const slot = slotKey(section.id, "cell", index);
-                  return (
-                    <DuplicateCell
-                      key={index}
-                      label={cell.label || (isRcd(cell.state) ? "Unnamed" : "")}
-                      state={cell.state}
-                      number={positionNumber(section, index, board.numbering)}
-                      count={extras[slot] ?? 0}
-                      onClick={() => isRcd(cell.state) && bump(slot)}
-                    />
-                  );
-                })
-              : Array.from({ length: section.rows }, (_, row) => (
-                  <div className="board-row" key={row}>
-                    {Array.from({ length: COLUMNS }, (_, column) => {
-                      const index = row * COLUMNS + column;
-                      const cell = section.cells[index];
-                      const slot = slotKey(section.id, "cell", index);
-                      const state = cell?.state ?? "EMPTY";
-                      return (
-                        <DuplicateCell
-                          key={index}
-                          label={cell?.label || (isRcd(state) ? "Unnamed" : "")}
-                          state={state}
-                          number={positionNumber(section, index, board.numbering)}
-                          count={extras[slot] ?? 0}
-                          onClick={() => isRcd(state) && bump(slot)}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function DuplicateCell({
-  label,
-  state,
-  number,
-  count,
-  onClick,
-}: {
-  label: string;
-  state: string;
-  number: number | null;
-  count: number;
-  onClick: () => void;
-}) {
-  const selectable = isRcd(state as never);
-  return (
-    <div
-      className={`board-cell is-${state.toLowerCase()} ${
-        selectable ? "is-selectable" : "is-locked"
-      } ${count ? "is-flagged" : ""}`}
-      onClick={onClick}
-      role={selectable ? "button" : undefined}
-      tabIndex={selectable ? 0 : -1}
-      onKeyDown={(event) => {
-        if (selectable && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          onClick();
-        }
-      }}
-    >
-      <span className="board-cell-no">{number ?? "R"}</span>
-      <span className={`board-cell-text ${label ? "" : "is-blank"}`}>{label}</span>
-      {count > 0 ? <span className="board-cell-count">×{count}</span> : null}
-    </div>
   );
 }

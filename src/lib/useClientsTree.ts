@@ -12,8 +12,9 @@ import {
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
 import { missingReads, whatIsMissing, type JobPhotoStage } from "@/lib/jobs";
 import { usePersisted } from "@/lib/session";
-import type { Contact, ContactInput } from "@/lib/contacts";
+import { personName, type Contact, type ContactInput } from "@/lib/contacts";
 import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDialog";
+import type { ContactChoice } from "@/components/ReportContactDialog";
 import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 
 /**
@@ -48,11 +49,15 @@ type IssueRecord = {
   type: IssueType;
 };
 
+/** Whoever the report is addressed to, where one has been picked. */
+type NamedContact = { id: string; name: string } | null;
+
 type InspectionRecord = {
   id: string;
   name: string | null;
   /** The day it was carried out, as an ISO date. */
   date: string;
+  contact: NamedContact;
   issues: IssueRecord[];
 };
 
@@ -72,6 +77,7 @@ type JobRecord = {
   name: string | null;
   /** The day the work was done, as an ISO date. */
   date: string;
+  contact: NamedContact;
   items: JobItemRecord[];
 };
 
@@ -89,6 +95,7 @@ type RcdReportRecord = {
   id: string;
   name: string | null;
   date: string;
+  contact: NamedContact;
   instrument: { id: string; name: string } | null;
   tests: RcdRunRecord[];
 };
@@ -98,6 +105,7 @@ type PowerRunRecord = {
   name: string | null;
   date: string;
   location: string | null;
+  contact: NamedContact;
   sourceFileId: string | null;
   summary: {
     from: number;
@@ -232,6 +240,36 @@ export type BoardSpec = {
   siteId: string;
 };
 
+/**
+ * The row under a report that says who it is addressed to.
+ *
+ * Kept as a row of the report rather than asked once for the site, because a
+ * thermal survey and the works that followed it can perfectly well be for two
+ * different people at the same depot.
+ */
+function contactRow(
+  key: string,
+  path: string,
+  what: string,
+  contact: NamedContact,
+  contacts: Contact[],
+  open: (choice: ContactChoice) => void,
+): TreeNode {
+  return {
+    id: `contact:${key}`,
+    label: contact ? personName(contact.name) : "Report contact",
+    detail: contact ? "Change who the report is for" : "Not chosen yet",
+    variant: "info",
+    onActivate: () =>
+      open({
+        path,
+        what,
+        contacts: contacts.map((entry) => ({ id: entry.id, name: entry.name })),
+        contactId: contact?.id ?? null,
+      }),
+  };
+}
+
 export function useClientsTree(enabled: boolean) {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [dialog, setDialog] = usePersisted<DialogSpec | null>("dialog", null);
@@ -249,6 +287,7 @@ export function useClientsTree(enabled: boolean) {
     "rcdgear",
     null,
   );
+  const [contact, setContact] = usePersisted<ContactChoice | null>("contact", null);
   const [testGear, setTestGear] = useState<TestEquipmentRecord[]>([]);
   const [gearDialog, setGearDialog] = usePersisted<EquipmentDraft | null>("gear", null);
   const [error, setError] = useState<string | null>(null);
@@ -596,8 +635,8 @@ export function useClientsTree(enabled: boolean) {
                     onRemove: () =>
                       void remove(`/api/inspections/${inspection.id}`, title),
                     onDownload: () => downloadReport(inspection.id),
-                    children:
-                      surveyable.length > 0
+                    children: [
+                      ...(surveyable.length > 0
                         ? surveyable.map<TreeNode>((item) => {
                             const found = inspection.issues.filter(
                               (issue) => issue.equipmentId === item.id,
@@ -632,7 +671,7 @@ export function useClientsTree(enabled: boolean) {
                         : // An inspection can be started anywhere; there is just
                           // nothing to point the camera at until the site has a
                           // board or a motor drawn up under Clients.
-                          [
+                          ([
                             {
                               id: `inspection:${inspection.id}:nothing`,
                               label: "Nothing to survey yet",
@@ -644,7 +683,16 @@ export function useClientsTree(enabled: boolean) {
                                   body: "This site has no switchboards or motors on it yet, so there is nothing an inspection can be filed against.\n\nAdd them under Clients, then come back — they will appear under every inspection at this site.",
                                 }),
                             },
-                          ],
+                          ] as TreeNode[])),
+                      contactRow(
+                        `inspection:${inspection.id}`,
+                        `/api/inspections/${inspection.id}`,
+                        "thermal report",
+                        inspection.contact,
+                        site.contacts,
+                        setContact,
+                      ),
+                    ],
                   };
                 }),
                 {
@@ -669,7 +717,7 @@ export function useClientsTree(enabled: boolean) {
         // else in the app. Every site they do have is shown, whether or not
         // anything on it has been drawn up yet.
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startInspection, setInspectionDate, setInfo],
+    [clients, remove, startInspection, setInspectionDate, setInfo, setContact],
   );
 
   const setJobDate = useCallback(
@@ -761,13 +809,12 @@ export function useClientsTree(enabled: boolean) {
                                 "photos",
                               )}`,
                         variant: "info" as const,
+                        // Finished or not, opening it opens it for editing:
+                        // a photograph of the wrong board or a sentence that
+                        // reads badly is found after the work is written up
+                        // as often as before it.
                         onActivate: () =>
-                          missing.length > 0
-                            ? setJobItem({ jobId: job.id, jobTitle: title, itemId: item.id })
-                            : setInfo({
-                                title: name,
-                                body: `${item.location}\n\nFound\n${item.found}\n\nDone\n${item.done}`,
-                              }),
+                          setJobItem({ jobId: job.id, jobTitle: title, itemId: item.id }),
                         onRemove: () => void remove(`/api/job-items/${item.id}`, name),
                       };
                     }),
@@ -778,6 +825,14 @@ export function useClientsTree(enabled: boolean) {
                       variant: "add",
                       onActivate: () => setJobItem({ jobId: job.id, jobTitle: title }),
                     },
+                    contactRow(
+                      `job:${job.id}`,
+                      `/api/jobs/${job.id}`,
+                      "works report",
+                      job.contact,
+                      site.contacts,
+                      setContact,
+                    ),
                   ],
                 };
               }),
@@ -799,7 +854,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startJob, setJobDate, setJobItem, setInfo],
+    [clients, remove, startJob, setJobDate, setJobItem, setContact],
   );
 
   const setRcdDate = useCallback(
@@ -931,6 +986,14 @@ export function useClientsTree(enabled: boolean) {
                       variant: "add",
                       onActivate: () => void startRcdTest(site.id, report.id),
                     },
+                    contactRow(
+                      `rcdreport:${report.id}`,
+                      `/api/rcd-reports/${report.id}`,
+                      "RCD report",
+                      report.contact,
+                      site.contacts,
+                      setContact,
+                    ),
                     {
                       id: `rcdgear:${report.id}`,
                       label: report.instrument?.name ?? "Instrument used",
@@ -975,7 +1038,7 @@ export function useClientsTree(enabled: boolean) {
         onActivate: () => setRcdLimits(true),
       },
     ],
-    [clients, remove, startRcdTest, setRcdDate, setRcd, setRcdLimits],
+    [clients, remove, startRcdTest, setRcdDate, setRcd, setRcdLimits, setContact, setRcdInstrument],
   );
 
   const setSafetyDate = useCallback(
@@ -1276,6 +1339,16 @@ export function useClientsTree(enabled: boolean) {
     rcdInstrument,
     closeRcdInstrument: () => {
       setRcdInstrument(null);
+      void refresh();
+    },
+    contact,
+    /** Picked somebody: the tree redraws, the dialog stays open. */
+    contactPicked: (contactId: string | null) => {
+      setContact((current) => (current ? { ...current, contactId } : current));
+      void refresh();
+    },
+    closeContact: () => {
+      setContact(null);
       void refresh();
     },
     rcd,

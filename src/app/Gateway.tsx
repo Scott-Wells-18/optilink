@@ -17,6 +17,7 @@ import { IssueDialog } from "@/components/IssueDialog";
 import { JobItemDialog } from "@/components/JobItemDialog";
 import { RcdWizard } from "@/components/RcdWizard";
 import { RcdInstrumentDialog } from "@/components/RcdInstrumentDialog";
+import { ReportContactDialog } from "@/components/ReportContactDialog";
 import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { PowerDialog } from "@/components/PowerDialog";
@@ -185,6 +186,14 @@ export function Gateway({
           reportId={clients.rcdInstrument.reportId}
           instrumentId={clients.rcdInstrument.instrumentId}
           onClose={clients.closeRcdInstrument}
+        />
+      ) : null}
+
+      {open && clients.contact ? (
+        <ReportContactDialog
+          choice={clients.contact}
+          onClose={clients.closeContact}
+          onSaved={clients.contactPicked}
         />
       ) : null}
 

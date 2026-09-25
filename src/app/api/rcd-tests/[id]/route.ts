@@ -45,10 +45,17 @@ export async function GET(
     where: { id },
     include: {
       equipment: { select: { id: true, name: true, board: true } },
+      // The report this board belongs to, and its people: the wizard asks who
+      // the report is for while the tester is still standing at the board.
+      report: { select: { id: true, contactId: true } },
       site: {
         select: {
           id: true,
           name: true,
+          contacts: {
+            orderBy: { createdAt: "asc" },
+            select: { id: true, name: true },
+          },
           equipment: {
             where: { kind: "SWITCHBOARD" },
             orderBy: { createdAt: "asc" },

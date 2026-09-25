@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { personName } from "@/lib/contacts";
 import { CHANNEL_LABELS, SERIES, type Channel, type Summary } from "@/lib/power/channels";
 import { BRIEFS, BRIEF_LABELS, BRIEF_NOTES, type Brief } from "@/lib/power/brief";
 import { SupplyFields } from "@/components/SupplyFields";
@@ -33,6 +34,7 @@ type Run = {
   equipmentId: string | null;
   instrumentId: string | null;
   brief: string | null;
+  contactId: string | null;
   contactName: string | null;
   sourceFile: { id: string; originalName: string } | null;
   summary: Summary | null;
@@ -40,7 +42,7 @@ type Run = {
     name: string;
     location: string | null;
     equipment: BoardRecord[];
-    contacts: { name: string }[];
+    contacts: { id: string; name: string }[];
   };
 };
 
@@ -246,22 +248,24 @@ export function PowerDialog({
             <div className="issue-picks">
               {contacts.map((contact) => (
                 <button
-                  key={contact.name}
+                  key={contact.id}
                   type="button"
-                  className={`issue-pick ${
-                    run?.contactName === contact.name ? "is-on" : ""
-                  }`}
+                  className={`issue-pick ${run?.contactId === contact.id ? "is-on" : ""}`}
                   onClick={() => {
                     setNamingContact(false);
+                    // The person is held by who they are rather than by the
+                    // spelling of their name, so renaming them on the site
+                    // renames them on the report.
+                    const off = run?.contactId === contact.id;
                     void patch({
-                      contactName:
-                        run?.contactName === contact.name ? null : contact.name,
+                      contactId: off ? null : contact.id,
+                      contactName: off ? null : contact.name,
                     });
                   }}
                 >
                   <span className="issue-pick-mark is-one" aria-hidden />
                   <span className="issue-pick-body">
-                    <span className="issue-pick-label">{contact.name}</span>
+                    <span className="issue-pick-label">{personName(contact.name)}</span>
                   </span>
                 </button>
               ))}
@@ -270,7 +274,7 @@ export function PowerDialog({
                 className={`issue-pick ${namingContact ? "is-on" : ""}`}
                 onClick={() => {
                   setNamingContact(true);
-                  void patch({ contactName: null });
+                  void patch({ contactId: null, contactName: null });
                 }}
               >
                 <span className="issue-pick-mark is-one" aria-hidden />
@@ -287,7 +291,9 @@ export function PowerDialog({
                   autoFocus
                   placeholder="e.g. Dave Mitchell, site manager"
                   defaultValue={run?.contactName ?? ""}
-                  onBlur={(event) => void patch({ contactName: event.target.value || null })}
+                  onBlur={(event) =>
+                    void patch({ contactId: null, contactName: event.target.value || null })
+                  }
                 />
               </label>
             ) : null}

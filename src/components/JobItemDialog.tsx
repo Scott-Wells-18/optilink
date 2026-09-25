@@ -295,7 +295,15 @@ export function JobItemDialog({
 
       <div className="dialog is-issue">
         <div className="issue-head">
-          <h2 className="dialog-title">{itemId ? "Finish this work" : "Add work"}</h2>
+          <h2 className="dialog-title">
+            {/* Work saved half-done is being finished; work already written
+                up is being corrected. Both open the same way. */}
+            {itemId
+              ? missing.length > 0
+                ? "Finish this work"
+                : "Edit this work"
+              : "Add work"}
+          </h2>
           <p className="board-section-note">
             {busy === "load" ? "Opening\u2026" : jobTitle}
           </p>
