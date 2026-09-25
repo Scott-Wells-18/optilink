@@ -310,6 +310,24 @@ export type Span = { state: CellState; part: Part };
  */
 const PARTS: Record<number, Part> = { [-1]: "top", 0: "middle", 1: "bottom", 2: "button" };
 
+/**
+ * How far apart two ways next to each other are in the cell list.
+ *
+ * The board proper is two rails read across, so the way under any given one is
+ * two along. A sub-board is a single row read left to right, so the next way
+ * is the next cell. Everything that reasons about a device standing across
+ * several ways works in these steps, which is the only difference between the
+ * two shapes.
+ */
+export function strideOf(section: BoardSection): number {
+  return section.side ? 1 : COLUMNS;
+}
+
+/** How many ways a section holds. */
+export function waysIn(section: BoardSection): number {
+  return section.side ? section.cells.length : section.rows * COLUMNS;
+}
+
 /** How far from the way a device was clicked into each of its parts sits. */
 const STEPS: Record<Part, number> = { whole: 0, top: -1, middle: 0, bottom: 1, button: 2 };
 
@@ -320,8 +338,8 @@ const STEPS: Record<Part, number> = { whole: 0, top: -1, middle: 0, bottom: 1, b
  * taken against it — belongs to that one way, whichever of its modules is
  * being looked at.
  */
-export function ownerOf(index: number, part: Part): number {
-  return index - STEPS[part] * COLUMNS;
+export function ownerOf(section: BoardSection, index: number, part: Part): number {
+  return index - STEPS[part] * strideOf(section);
 }
 
 /** Which phase a module switches, or null for the neutral and test module. */
@@ -333,11 +351,12 @@ export function phaseOf(part: Part): string | null {
 }
 
 export function spanAt(section: BoardSection, index: number): Span {
+  const stride = strideOf(section);
   // Which way is the device that covers this one clicked into? Anything from
-  // two ways above (a four-module RCBO whose button module this is) to one
-  // way below (whose first pole this is).
+  // two ways before it (a four-module RCBO whose button module this is) to one
+  // way after (whose first pole this is).
   for (let offset = -2; offset <= 1; offset += 1) {
-    const at = index + offset * COLUMNS;
+    const at = index + offset * stride;
     const state = section.cells[at]?.state ?? "EMPTY";
     if (!isThreePhase(state)) continue;
 
@@ -372,13 +391,14 @@ export function fitsAt(section: BoardSection, index: number, state: CellState): 
   const { above, below } = extentOf(state);
   if (above === 0 && below === 0) return true;
 
-  const column = index % COLUMNS;
-  const last = section.rows * COLUMNS;
+  const stride = strideOf(section);
+  const column = index % stride;
+  const last = waysIn(section);
 
-  // Every way it needs has to exist, in this same column.
+  // Every way it needs has to exist, on this same rail.
   for (let step = -above; step <= below; step += 1) {
-    const at = index + step * COLUMNS;
-    if (at < 0 || at >= last || at % COLUMNS !== column) return false;
+    const at = index + step * stride;
+    if (at < 0 || at >= last || at % stride !== column) return false;
   }
 
   // And none of them may be spoken for by another multi-module device. Written
@@ -386,9 +406,9 @@ export function fitsAt(section: BoardSection, index: number, state: CellState): 
   // asked about: for each way it wants, look at every way a device could sit
   // in and still reach it, and this way itself never counts against it.
   for (let step = -above; step <= below; step += 1) {
-    const wanted = index + step * COLUMNS;
+    const wanted = index + step * stride;
     for (let offset = -2; offset <= 1; offset += 1) {
-      const at = wanted + offset * COLUMNS;
+      const at = wanted + offset * stride;
       if (at === index) continue;
       const other = section.cells[at]?.state ?? "EMPTY";
       if (!isThreePhase(other)) continue;
@@ -423,11 +443,16 @@ export function nextState(state: CellState, inExtras = false): CellState {
  * the bottom of a column, or beside another one, the cycle steps over it
  * rather than stopping on something that could not physically be there.
  */
-export function nextFitting(section: BoardSection, index: number): CellState {
-  let next = nextState(section.cells[index].state);
-  for (let guard = 0; guard < GRID_CYCLE.length; guard += 1) {
+export function nextFitting(
+  section: BoardSection,
+  index: number,
+  inExtras = false,
+): CellState {
+  const cycle = inExtras ? EXTRA_CYCLE : GRID_CYCLE;
+  let next = nextState(section.cells[index].state, inExtras);
+  for (let guard = 0; guard < cycle.length; guard += 1) {
     if (fitsAt(section, index, next)) return next;
-    next = nextState(next);
+    next = nextState(next, inExtras);
   }
   return "EMPTY";
 }
@@ -451,11 +476,34 @@ export function createSection(name = "", rows = DEFAULT_ROWS): BoardSection {
   };
 }
 
-/** A small board bolted onto one end of the enclosure, with no main switch. */
-export const SUB_BOARD_ROWS = 3;
+/**
+ * A small board bolted onto one end of the enclosure, with no main switch.
+ *
+ * One row of ways read left to right, which is what a little DB is: a single
+ * rail with the modules standing side by side on it.
+ */
+export const SUB_BOARD_WAYS = 6;
+export const MAX_SUB_WAYS = 24;
 
 export function createSubBoard(side: SectionSide, name = ""): BoardSection {
-  return { ...createSection(name, SUB_BOARD_ROWS), side };
+  return {
+    id: newId(),
+    name,
+    rows: 1,
+    cells: Array.from({ length: SUB_BOARD_WAYS }, emptyCell),
+    extras: [],
+    side,
+  };
+}
+
+/** Grows or trims a sub-board's single rail, keeping what is on it. */
+export function withWays(section: BoardSection, ways: number): BoardSection {
+  const wanted = Math.min(Math.max(ways, 1), MAX_SUB_WAYS);
+  return {
+    ...section,
+    rows: 1,
+    cells: Array.from({ length: wanted }, (_, index) => section.cells[index] ?? emptyCell()),
+  };
 }
 
 export function createBoard(): Board {
@@ -632,6 +680,23 @@ function normaliseItem(value: unknown): FreeItem | null {
 
 function normaliseSection(value: unknown): BoardSection {
   const raw = (value ?? {}) as Partial<BoardSection>;
+
+  // A sub-board is one rail of ways rather than rows of two, so its cells are
+  // taken as they come rather than squared off against a row count.
+  if (raw.side === "LEFT" || raw.side === "RIGHT") {
+    const cells = Array.isArray(raw.cells) ? raw.cells.slice(0, MAX_SUB_WAYS) : [];
+    return {
+      id: typeof raw.id === "string" && raw.id ? raw.id : newId(),
+      name: typeof raw.name === "string" ? raw.name.slice(0, 80) : "",
+      rows: 1,
+      cells: (cells.length > 0 ? cells : Array.from({ length: SUB_BOARD_WAYS }, () => null)).map(
+        normaliseCell,
+      ),
+      extras: [],
+      side: raw.side,
+    };
+  }
+
   const rows =
     typeof raw.rows === "number" && raw.rows >= MIN_ROWS && raw.rows <= MAX_ROWS
       ? Math.floor(raw.rows)
@@ -645,7 +710,6 @@ function normaliseSection(value: unknown): BoardSection {
       normaliseCell(Array.isArray(raw.cells) ? raw.cells[index] : undefined),
     ),
     extras: Array.isArray(raw.extras) ? raw.extras.slice(0, 24).map(normaliseCell) : [],
-    ...(raw.side === "LEFT" || raw.side === "RIGHT" ? { side: raw.side } : {}),
   };
 }
 

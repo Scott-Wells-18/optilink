@@ -277,7 +277,7 @@ export function BoardViewer({
                     // A way drawing part of the device beside it belongs to
                     // that device: it is picked, named and counted as the one
                     // way the device actually sits in.
-                    const owner = ownerOf(index, span.part);
+                    const owner = ownerOf(active, index, span.part);
                     return (
                       <ViewCell
                         key={index}

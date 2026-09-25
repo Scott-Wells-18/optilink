@@ -1512,8 +1512,9 @@ body {
 
 .board-sub {
   flex: none;
-  width: 264px;
-  margin-top: 46px;
+  max-width: 420px;
+  /* Clear of the dashed + that adds it, which straddles the enclosure edge. */
+  margin-top: 92px;
   padding: 12px 12px 8px;
   border: 2px solid var(--ink-2);
   background: #fff;
@@ -1523,12 +1524,12 @@ body {
    that adds it straddles that edge, so the contents start clear of it. */
 .board-sub.is-left {
   border-right-width: 0;
-  padding-right: 26px;
+  padding-right: 22px;
 }
 
 .board-sub.is-right {
   border-left-width: 0;
-  padding-left: 26px;
+  padding-left: 22px;
 }
 
 .board-sub-head {
@@ -1590,22 +1591,140 @@ body {
   color: var(--ink-4);
 }
 
-.board-grid.is-sub {
-  padding: 0;
+/* One rail of ways read left to right, the modules standing upright on it.
+   No gap between them: on a real rail the modules touch, and a device
+   standing across several ways has to read as one thing. */
+.board-sub-rail {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
-.board-grid.is-sub .board-cell {
+.board-sub-way {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* The ways butt together, so only the outer ends are rounded. */
+.board-sub-rail .board-cell.is-upright {
+  border-radius: 0;
+}
+
+.board-sub-way:first-child .board-cell.is-upright {
+  border-top-left-radius: 3px;
+  border-bottom-left-radius: 3px;
+}
+
+.board-sub-no {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #64798c;
+}
+
+.board-cell.is-upright {
+  width: 34px;
   min-width: 0;
+  height: 104px;
 }
 
-.board-rows-control.is-sub {
-  gap: 8px;
-  margin-top: 10px;
+/*
+ * A device standing across several ways runs along the rail rather than down
+ * it, so the edges that have to disappear are the ones on the sides.
+ */
+.board-cell.is-upright.is-part-top {
+  border-right-color: transparent;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: var(--dev-edge, var(--hair-strong));
+  border-bottom-left-radius: 3px;
 }
 
-.board-rows-control.is-sub .board-row-btn {
-  min-width: 28px;
-  padding: 4px 8px;
+.board-cell.is-upright.is-part-middle {
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-top-color: var(--dev-edge, var(--hair-strong));
+  border-bottom-color: var(--dev-edge, var(--hair-strong));
+  border-radius: 0;
+}
+
+.board-cell.is-upright.is-part-bottom,
+.board-cell.is-upright.is-part-button {
+  border-left-color: transparent;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-color: var(--dev-edge, var(--hair-strong));
+  border-top-right-radius: 3px;
+}
+
+.board-cell.is-upright.is-part-bottom {
+  border-right-color: transparent;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* The circuit name reads down the module, the way a label is stuck on one. */
+.board-cell.is-upright .board-cell-text,
+.board-cell.is-upright .board-cell-label {
+  left: 50%;
+  right: auto;
+  top: 8px;
+  bottom: 24px;
+  width: 16px;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+}
+
+.board-cell.is-upright .board-cell-phase {
+  left: 50%;
+  top: auto;
+  bottom: 4px;
+  transform: translateX(-50%);
+}
+
+.board-cell.is-upright .board-cell-edit {
+  right: 50%;
+  top: auto;
+  bottom: 3px;
+  transform: translateX(50%);
+  width: 16px;
+  height: 16px;
+}
+
+/* Grow or shrink the rail from its far end. */
+.board-sub-way.is-controls {
+  gap: 3px;
+  margin-left: 6px;
+  align-self: center;
+}
+
+.board-sub-way-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px dashed var(--hair-strong);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.board-sub-way-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.board-sub-way-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .board-case {

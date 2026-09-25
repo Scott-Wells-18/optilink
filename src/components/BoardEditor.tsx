@@ -10,6 +10,8 @@ import {
   createBoard,
   createSection,
   createSubBoard,
+  MAX_SUB_WAYS,
+  withWays,
   emptyCell,
   nextFitting,
   nextState,
@@ -369,7 +371,6 @@ export function BoardEditor({
               <SubBoard
                 key={section.id}
                 section={section}
-                numbering={board.numbering}
                 renaming={renaming === section.id}
                 onRename={(value) => renameSection(section.id, value)}
                 onDoneRenaming={() => setRenaming(null)}
@@ -378,7 +379,10 @@ export function BoardEditor({
                   editSection(section.id, (current) => {
                     if (spanAt(current, index).part !== "whole") return current;
                     const cells = [...current.cells];
-                    cells[index] = { ...cells[index], state: nextState(cells[index].state, true) };
+                    // Everything is on offer out here, but a device still has
+                    // to have the room: a three-phase one on a rail of six
+                    // wants three ways along it, and four for an RCBO.
+                    cells[index] = { ...cells[index], state: nextFitting(current, index, true) };
                     return { ...current, cells };
                   })
                 }
@@ -389,7 +393,7 @@ export function BoardEditor({
                     return { ...current, cells };
                   })
                 }
-                onRows={(rows) => editSection(section.id, (current) => withRows(current, rows))}
+                onWays={(ways) => editSection(section.id, (current) => withWays(current, ways))}
                 onRemove={() => removeSection(section.id)}
               />
             ))}
@@ -460,7 +464,7 @@ export function BoardEditor({
                     const span = spanAt(active, index);
                     // A way drawing part of the device beside it shows that
                     // device's name, not its own: there is only one device.
-                    const owner = ownerOf(index, span.part);
+                    const owner = ownerOf(active, index, span.part);
                     const cell = (
                       <Cell
                         key={index}
@@ -519,7 +523,6 @@ export function BoardEditor({
               <SubBoard
                 key={section.id}
                 section={section}
-                numbering={board.numbering}
                 renaming={renaming === section.id}
                 onRename={(value) => renameSection(section.id, value)}
                 onDoneRenaming={() => setRenaming(null)}
@@ -528,7 +531,10 @@ export function BoardEditor({
                   editSection(section.id, (current) => {
                     if (spanAt(current, index).part !== "whole") return current;
                     const cells = [...current.cells];
-                    cells[index] = { ...cells[index], state: nextState(cells[index].state, true) };
+                    // Everything is on offer out here, but a device still has
+                    // to have the room: a three-phase one on a rail of six
+                    // wants three ways along it, and four for an RCBO.
+                    cells[index] = { ...cells[index], state: nextFitting(current, index, true) };
                     return { ...current, cells };
                   })
                 }
@@ -539,7 +545,7 @@ export function BoardEditor({
                     return { ...current, cells };
                   })
                 }
-                onRows={(rows) => editSection(section.id, (current) => withRows(current, rows))}
+                onWays={(ways) => editSection(section.id, (current) => withWays(current, ways))}
                 onRemove={() => removeSection(section.id)}
               />
             ))}
@@ -586,33 +592,38 @@ export function BoardEditor({
  * another run of ways inside the big one. It takes anything: it is off the
  * main rail, so an RCD or a contactor is as much at home in it as a breaker.
  */
+/**
+ * A sub-board bolted onto the end of the enclosure.
+ *
+ * One rail of ways read left to right with the modules standing upright,
+ * which is what a little DB is. It is fed from the board beside it and has no
+ * main switch of its own — the whole reason it is drawn as its own box rather
+ * than as another run of ways inside the big one.
+ *
+ * Being off the main rail, it takes anything: a breaker, an RCD, an RCBO or a
+ * contactor, single or three phase.
+ */
 function SubBoard({
   section,
-  numbering,
   renaming,
   onRename,
   onDoneRenaming,
   onStartRenaming,
   onCycle,
   onLabel,
-  onRows,
+  onWays,
   onRemove,
 }: {
   section: BoardSection;
-  numbering: Numbering;
   renaming: boolean;
   onRename: (value: string) => void;
   onDoneRenaming: () => void;
   onStartRenaming: () => void;
   onCycle: (index: number) => void;
   onLabel: (index: number, value: string) => void;
-  onRows: (rows: number) => void;
+  onWays: (ways: number) => void;
   onRemove: () => void;
 }) {
-  const rows = Array.from({ length: section.rows }, (_, row) =>
-    Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column),
-  );
-
   return (
     <section className={`board-sub is-${section.side?.toLowerCase()}`}>
       <header className="board-sub-head">
@@ -646,57 +657,47 @@ function SubBoard({
 
       <p className="board-sub-note">No main switch — fed from the board beside it.</p>
 
-      <div className="board-grid is-sub">
-        {rows.map((indexes, row) => (
-          <div className="board-row" key={row}>
-            {indexes.map((index, column) => {
-              const span = spanAt(section, index);
-              const owner = ownerOf(index, span.part);
-              const cell = (
-                <Cell
-                  key={index}
-                  state={span.state}
-                  part={span.part}
-                  label={section.cells[owner].label}
-                  onCycle={() => onCycle(index)}
-                  onLabel={(value) => onLabel(owner, value)}
-                />
-              );
-              if (column === 0) {
-                return (
-                  <Fragment key={index}>
-                    {cell}
-                    <span className="board-gutter">
-                      <span>{positionNumber(section, index, numbering)}</span>
-                      <span>{positionNumber(section, index + 1, numbering)}</span>
-                    </span>
-                  </Fragment>
-                );
-              }
-              return cell;
-            })}
-          </div>
-        ))}
-      </div>
+      <div className="board-sub-rail">
+        {section.cells.map((_, index) => {
+          const span = spanAt(section, index);
+          const owner = ownerOf(section, index, span.part);
+          return (
+            <div className="board-sub-way" key={index}>
+              <span className="board-sub-no">{index + 1}</span>
+              <Cell
+                upright
+                state={span.state}
+                part={span.part}
+                label={section.cells[owner].label}
+                onCycle={() => onCycle(index)}
+                onLabel={(value) => onLabel(owner, value)}
+              />
+            </div>
+          );
+        })}
 
-      <div className="board-rows-control is-sub">
-        <button
-          type="button"
-          className="board-row-btn"
-          onClick={() => onRows(section.rows - 1)}
-          disabled={section.rows <= MIN_ROWS}
-        >
-          −
-        </button>
-        <span className="board-rows-count">{section.rows * COLUMNS} ways</span>
-        <button
-          type="button"
-          className="board-row-btn"
-          onClick={() => onRows(section.rows + 1)}
-          disabled={section.rows >= MAX_ROWS}
-        >
-          +
-        </button>
+        <div className="board-sub-way is-controls">
+          <button
+            type="button"
+            className="board-sub-way-btn"
+            onClick={() => onWays(section.cells.length + 1)}
+            disabled={section.cells.length >= MAX_SUB_WAYS}
+            title="Add a way"
+            aria-label="Add a way"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="board-sub-way-btn"
+            onClick={() => onWays(section.cells.length - 1)}
+            disabled={section.cells.length <= 1}
+            title="Take a way off the end"
+            aria-label="Take a way off the end"
+          >
+            −
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -705,14 +706,20 @@ function SubBoard({
 function Cell({
   state,
   part = "whole",
+  upright = false,
   label,
   onCycle,
   onLabel,
   onRemove,
 }: {
   state: CellState;
-  /** Which third of a three-phase device this way is drawing. */
+  /** Which part of a multi-way device this way is showing. */
   part?: Part;
+  /**
+   * Standing on end rather than lying on its side. A sub-board is one rail of
+   * ways side by side, which is how a little DB looks with the door off.
+   */
+  upright?: boolean;
   label: string;
   onCycle: () => void;
   onLabel: (value: string) => void;
@@ -733,8 +740,8 @@ function Cell({
   return (
     <div
       className={`board-cell is-${state.toLowerCase()} is-part-${part} ${
-        spanned ? "is-spanned" : ""
-      }`}
+        upright ? "is-upright" : ""
+      } ${spanned ? "is-spanned" : ""}`}
       aria-disabled={spanned || undefined}
       onClick={() => {
         if (!editing && !spanned) onCycle();
