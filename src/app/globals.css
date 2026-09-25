@@ -3021,6 +3021,18 @@ body {
   object-fit: cover;
 }
 
+/* What a piece of work still needs, said on the way out rather than as a
+   refusal: it can be saved as it is and finished off later. */
+.issue-unfinished {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(214, 158, 46, 0.12);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #7a5310;
+}
+
 .issue-empty {
   margin-top: 8px;
   font-size: 11.5px;

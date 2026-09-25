@@ -167,8 +167,10 @@ export function Gateway({
 
       {open && clients.jobItem ? (
         <JobItemDialog
+          key={clients.jobItem.itemId ?? clients.jobItem.jobId}
           jobId={clients.jobItem.jobId}
           jobTitle={clients.jobItem.jobTitle}
+          itemId={clients.jobItem.itemId}
           onCancel={clients.closeJobItem}
           onSaved={clients.closeJobItem}
         />

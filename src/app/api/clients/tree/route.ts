@@ -49,6 +49,9 @@ export async function GET() {
                   location: true,
                   found: true,
                   done: true,
+                  // Which stages are covered, so the tree can say what a piece
+                  // of work still needs without loading every photo.
+                  photos: { select: { stage: true } },
                   _count: { select: { photos: true } },
                 },
               },

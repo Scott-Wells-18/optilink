@@ -6,6 +6,7 @@ import {
   JOB_STAGES,
   MAX_PHOTOS_PER_STAGE,
   STAGE_LABELS,
+  isComplete,
   type JobPhotoStage,
 } from "@/lib/jobs";
 import { COMPANY } from "@/lib/company";
@@ -73,6 +74,8 @@ export type JobReport = PageMeta & {
   contactName: string | null;
   recommendations: string[];
   items: Item[];
+  /** Pieces of work saved but not yet written up, left off this report. */
+  unfinished: number;
 };
 
 /* --- gathering ------------------------------------------------------------ */
@@ -95,8 +98,15 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
   });
   if (!job) return null;
 
+  // Only what is finished goes on the report. A job gets done and written up
+  // at different times, so a piece of work can be saved half-written and
+  // picked up later — but a works record is what was done, and half a
+  // sentence about it is not that. What is left out is counted and said.
+  const ready = job.items.filter((item) => isComplete(item));
+  const unfinished = job.items.length - ready.length;
+
   const items: Item[] = [];
-  for (const [index, item] of job.items.entries()) {
+  for (const [index, item] of ready.entries()) {
     const photos: Photo[] = [];
     for (const photo of item.photos) {
       const bytes = await photoBytes(photo.fileId);
@@ -123,6 +133,7 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     reportDate: new Date(),
     recommendations: job.recommendations.map(safe),
     items,
+    unfinished,
     logo: await brandBytes("logo.jpg"),
     signature: await reportSignature(),
   };
@@ -213,7 +224,16 @@ function summary(doc: Doc, data: JobReport, laid: Layout) {
       count === 1 ? "One item of work was completed" : `${count} items of work were completed`
     }, photographed as found and as left — ${photos} ${
       photos === 1 ? "photograph" : "photographs"
-    } in all.`,
+    } in all.${
+      // A piece of work saved but not yet written up is left off rather than
+      // printed half-finished, and the report says so rather than quietly
+      // being shorter than the day was.
+      data.unfinished === 0
+        ? ""
+        : data.unfinished === 1
+          ? " A further item of work has been recorded but not yet written up, and is not included here."
+          : ` A further ${data.unfinished} items of work have been recorded but not yet written up, and are not included here.`
+    }`,
     MARGIN,
     MARGIN + 46,
     { width: CONTENT, lineGap: 2.5 },

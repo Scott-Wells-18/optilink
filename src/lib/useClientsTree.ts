@@ -10,6 +10,7 @@ import {
   type Board,
 } from "@/lib/board";
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
+import { missingReads, whatIsMissing, type JobPhotoStage } from "@/lib/jobs";
 import { usePersisted } from "@/lib/session";
 import type { Contact, ContactInput } from "@/lib/contacts";
 import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDialog";
@@ -61,6 +62,8 @@ type JobItemRecord = {
   location: string;
   found: string;
   done: string;
+  /** Which stages are covered, for working out whether it is finished. */
+  photos: { stage: JobPhotoStage }[];
   _count: { photos: number };
 };
 
@@ -201,7 +204,12 @@ export type SafetySpec = {
 };
 
 /** Adding one piece of work to a job. */
-export type JobItemSpec = { jobId: string; jobTitle: string };
+export type JobItemSpec = {
+  jobId: string;
+  jobTitle: string;
+  /** Set when an unfinished piece of work is being picked back up. */
+  itemId?: string;
+};
 
 /** Reporting straight against a motor, which has no positions to pick from. */
 export type MotorIssueSpec = {
@@ -721,7 +729,13 @@ export function useClientsTree(enabled: boolean) {
                 return {
                   id: `job:${job.id}`,
                   label: title,
-                  detail: countLabel(job.items.length, "item", "items"),
+                  detail: (() => {
+                    const unfinished = job.items.filter(
+                      (item) => whatIsMissing(item).length > 0,
+                    ).length;
+                    const all = countLabel(job.items.length, "item", "items");
+                    return unfinished > 0 ? `${all}  ·  ${unfinished} unfinished` : all;
+                  })(),
                   editDate: {
                     value: isoDate(job.date),
                     onSave: (value) => void setJobDate(job.id, value),
@@ -729,22 +743,34 @@ export function useClientsTree(enabled: boolean) {
                   onDownload: () => download(`/api/jobs/${job.id}/report`),
                   onRemove: () => void remove(`/api/jobs/${job.id}`, title),
                   children: [
-                    ...job.items.map<TreeNode>((item) => ({
-                      id: `jobitem:${item.id}`,
-                      label: item.title,
-                      detail: `${item.location}  ·  ${countLabel(
-                        item._count.photos,
-                        "photo",
-                        "photos",
-                      )}`,
-                      variant: "info",
-                      onActivate: () =>
-                        setInfo({
-                          title: item.title,
-                          body: `${item.location}\n\nFound\n${item.found}\n\nDone\n${item.done}`,
-                        }),
-                      onRemove: () => void remove(`/api/job-items/${item.id}`, item.title),
-                    })),
+                    ...job.items.map<TreeNode>((item) => {
+                      // A job is done and written up at different times, so a
+                      // piece of work can sit here unfinished. It says what it
+                      // is short of, and opening it picks it back up.
+                      const missing = whatIsMissing(item);
+                      const name = item.title.trim() || "Unfinished work";
+                      return {
+                        id: `jobitem:${item.id}`,
+                        label: missing.length > 0 ? `${name}  \u2014  unfinished` : name,
+                        detail:
+                          missing.length > 0
+                            ? missingReads(missing)
+                            : `${item.location}  ·  ${countLabel(
+                                item._count.photos,
+                                "photo",
+                                "photos",
+                              )}`,
+                        variant: "info" as const,
+                        onActivate: () =>
+                          missing.length > 0
+                            ? setJobItem({ jobId: job.id, jobTitle: title, itemId: item.id })
+                            : setInfo({
+                                title: name,
+                                body: `${item.location}\n\nFound\n${item.found}\n\nDone\n${item.done}`,
+                              }),
+                        onRemove: () => void remove(`/api/job-items/${item.id}`, name),
+                      };
+                    }),
                     {
                       id: `add:jobitem:${job.id}`,
                       label: "Add new",

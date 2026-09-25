@@ -8,6 +8,8 @@ import {
   PHOTO_BUDGET,
   STAGE_LABELS,
   STAGE_NOTES,
+  missingReads,
+  whatIsMissing,
   type JobPhotoStage,
 } from "@/lib/jobs";
 import { uploadImage } from "@/components/ImageUpload";
@@ -43,21 +45,25 @@ const FIELDS: Field[] = [
 export function JobItemDialog({
   jobId,
   jobTitle,
+  itemId,
   onCancel,
   onSaved,
 }: {
   jobId: string;
   jobTitle: string;
+  /** Set when an unfinished piece of work is being picked back up. */
+  itemId?: string;
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const key = `jobitem:${jobId}`;
+  const key = `jobitem:${itemId ?? jobId}`;
   const [values, setValues] = usePersisted<Record<string, string>>(`${key}:fields`, {});
   const [photos, setPhotos] = usePersisted<Partial<Record<JobPhotoStage, Pending[]>>>(
     `${key}:photos`,
     {},
   );
-  const [busy, setBusy] = useState<JobPhotoStage | "save" | null>(null);
+  const [busy, setBusy] = useState<JobPhotoStage | "save" | "load" | null>(null);
+  const [loaded, setLoaded] = useState(!itemId);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,10 +87,72 @@ export function JobItemDialog({
   }
 
   function cancel() {
+    // Only what was uploaded into this draft and never saved. A photo already
+    // on a saved piece of work is spoken for, and releasing it does nothing.
     release(JOB_STAGES.flatMap((stage) => (photos[stage] ?? []).map((photo) => photo.fileId)));
     forget();
     onCancel();
   }
+
+  /**
+   * Picking an unfinished piece of work back up.
+   *
+   * Whatever is on it comes back as it was saved, so the photographs taken
+   * yesterday are there to write against today. A draft left in this browser
+   * wins, because that is the more recent thinking.
+   */
+  useEffect(() => {
+    if (!itemId || loaded) return;
+    let stale = false;
+    setBusy("load");
+    void (async () => {
+      try {
+        const response = await fetch(`/api/job-items/${itemId}`);
+        if (!response.ok) throw new Error("gone");
+        const item = (await response.json()) as {
+          title: string;
+          location: string;
+          found: string;
+          done: string;
+          photos: { stage: JobPhotoStage; fileId: string }[];
+        };
+        if (stale) return;
+        setValues((current) =>
+          Object.keys(current).length > 0
+            ? current
+            : {
+                title: item.title,
+                location: item.location,
+                found: item.found,
+                done: item.done,
+              },
+        );
+        setPhotos((current) => {
+          if (JOB_STAGES.some((stage) => (current[stage]?.length ?? 0) > 0)) return current;
+          const held: Partial<Record<JobPhotoStage, Pending[]>> = {};
+          for (const photo of item.photos) {
+            held[photo.stage] = [
+              ...(held[photo.stage] ?? []),
+              { fileId: photo.fileId, name: "" },
+            ];
+          }
+          return held;
+        });
+      } catch {
+        setError("That piece of work could not be opened.");
+      } finally {
+        if (!stale) {
+          setLoaded(true);
+          setBusy(null);
+        }
+      }
+    })();
+    return () => {
+      stale = true;
+    };
+    // Runs once, when an existing item is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -98,9 +166,27 @@ export function JobItemDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCancel, photos]);
 
-  const filled = FIELDS.every((field) => values[field.key]?.trim());
-  const ready =
-    filled && (photos.BEFORE?.length ?? 0) > 0 && (photos.AFTER?.length ?? 0) > 0;
+  const allPhotos = JOB_STAGES.flatMap((stage) =>
+    (photos[stage] ?? []).map(() => ({ stage })),
+  );
+  const missing = whatIsMissing({
+    title: values.title,
+    location: values.location,
+    found: values.found,
+    done: values.done,
+    photos: allPhotos,
+  });
+
+  /**
+   * There is something worth keeping.
+   *
+   * A job is done and written up at different times — the photographs are
+   * taken with the board open and the words wait until the morning — so
+   * whatever there is can be saved and finished later. What is short is said
+   * on the way out, and the work sits in the report marked unfinished.
+   */
+  const anything =
+    allPhotos.length > 0 || FIELDS.some((field) => values[field.key]?.trim());
 
   /**
    * Take a selection — a handful of photos, or a whole folder off the phone or
@@ -176,12 +262,12 @@ export function JobItemDialog({
   }
 
   async function save() {
-    if (!ready) return;
+    if (!anything) return;
     setBusy("save");
     setError(null);
     try {
-      const response = await fetch("/api/job-items", {
-        method: "POST",
+      const response = await fetch(itemId ? `/api/job-items/${itemId}` : "/api/job-items", {
+        method: itemId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           jobId,
@@ -209,8 +295,10 @@ export function JobItemDialog({
 
       <div className="dialog is-issue">
         <div className="issue-head">
-          <h2 className="dialog-title">Add work</h2>
-          <p className="board-section-note">{jobTitle}</p>
+          <h2 className="dialog-title">{itemId ? "Finish this work" : "Add work"}</h2>
+          <p className="board-section-note">
+            {busy === "load" ? "Opening\u2026" : jobTitle}
+          </p>
         </div>
 
         <div className="dialog-fields">
@@ -329,6 +417,13 @@ export function JobItemDialog({
 
         {error ? <p className="dialog-error">{error}</p> : null}
 
+        {missing.length > 0 && anything ? (
+          <p className="issue-unfinished">
+            {missingReads(missing)} Save it as it is and finish it off later — the
+            photographs keep.
+          </p>
+        ) : null}
+
         <div className="dialog-actions">
           <button type="button" className="dialog-cancel" onClick={cancel}>
             Cancel
@@ -336,10 +431,14 @@ export function JobItemDialog({
           <button
             type="button"
             className="dialog-confirm"
-            disabled={!ready || busy !== null}
+            disabled={!anything || busy !== null}
             onClick={() => void save()}
           >
-            {busy === "save" ? "Saving…" : "Save"}
+            {busy === "save"
+              ? "Saving\u2026"
+              : missing.length > 0
+                ? "Save unfinished"
+                : "Save"}
           </button>
         </div>
       </div>

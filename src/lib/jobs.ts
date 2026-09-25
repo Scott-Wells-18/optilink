@@ -56,3 +56,46 @@ export function readJobPhotos(input: JobPhotoInput[] | undefined) {
       .map((photo, position) => ({ stage, fileId: photo.fileId, position })),
   );
 }
+
+
+/**
+ * What a piece of work still needs before it is finished.
+ *
+ * A job gets done and written up at different times: the photographs are
+ * taken with the board open and the words often wait until the next morning.
+ * So a piece of work can be saved with whatever there is so far and finished
+ * later — it is simply marked as not finished yet, and says what is short.
+ *
+ * Nothing unfinished goes on a report. A works record is what was done, and
+ * half a sentence about it is not that.
+ */
+export type WorkParts = {
+  title?: string | null;
+  location?: string | null;
+  found?: string | null;
+  done?: string | null;
+  photos: { stage: JobPhotoStage }[];
+};
+
+export function whatIsMissing(item: WorkParts): string[] {
+  const missing: string[] = [];
+  if (!item.title?.trim()) missing.push("what it was");
+  if (!item.location?.trim()) missing.push("where");
+  if (!item.found?.trim()) missing.push("how you found it");
+  if (!item.done?.trim()) missing.push("what you did");
+  if (!item.photos.some((photo) => photo.stage === "BEFORE")) missing.push("a before photo");
+  if (!item.photos.some((photo) => photo.stage === "AFTER")) missing.push("an after photo");
+  return missing;
+}
+
+export function isComplete(item: WorkParts): boolean {
+  return whatIsMissing(item).length === 0;
+}
+
+/** "Needs where and an after photo." */
+export function missingReads(missing: string[]): string {
+  if (missing.length === 0) return "";
+  if (missing.length === 1) return `Needs ${missing[0]}.`;
+  const last = missing[missing.length - 1];
+  return `Needs ${missing.slice(0, -1).join(", ")} and ${last}.`;
+}
