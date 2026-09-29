@@ -5058,3 +5058,186 @@ body {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ===========================================================================
+   Amp readings
+   ===========================================================================
+
+   A report is a list of short recordings rather than one upload, so the list
+   is the screen: each row carries what the recording is called, what the file
+   turned out to hold, and what protects the circuit it came off.
+   =========================================================================== */
+
+.amp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.amp-row {
+  padding: 14px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.amp-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.amp-row-number {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(27, 155, 216, 0.12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-deep, #14528f);
+}
+
+.amp-row-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.amp-row-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.amp-move {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hair-strong);
+  border-radius: 9px;
+  background: #fff;
+  font-family: var(--font-app);
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 200ms var(--ease-soft), color 200ms var(--ease-soft);
+}
+
+.amp-move:hover:not(:disabled) {
+  border-color: rgba(27, 155, 216, 0.5);
+  color: var(--accent);
+}
+
+.amp-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.amp-move.is-remove:hover {
+  border-color: rgba(182, 42, 48, 0.5);
+  color: #b62a30;
+}
+
+.amp-figures {
+  margin: 10px 0 0 34px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3, #4a6072);
+}
+
+.amp-warning {
+  margin: 6px 0 0 34px;
+  font-size: 11.5px;
+  color: #b62a30;
+}
+
+.amp-device {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 12px 0 0 34px;
+}
+
+.amp-rating {
+  flex: 0 1 150px;
+}
+
+.amp-kind {
+  flex: 1 1 260px;
+}
+
+.issue-picks.is-tight {
+  gap: 8px;
+}
+
+.amp-hint {
+  margin: 8px 0 0 34px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.amp-new {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid rgba(27, 155, 216, 0.45);
+  border-radius: 14px;
+  background: rgba(27, 155, 216, 0.05);
+}
+
+.amp-new .amp-device {
+  margin-left: 0;
+}
+
+.amp-new-file {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+/* The report, read before it is sent to anybody. */
+.amp-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 29, 46, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.amp-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--hair);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.amp-preview-page {
+  flex: 1 1 auto;
+  width: 100%;
+  border: 0;
+  background: #f2f7fb;
+}
+
+.amp-hint.is-standalone {
+  margin: 10px 0 0;
+}
+
+/* The preview's "open in a new tab" is a link wearing a button's clothes. */
+a.dialog-cancel {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

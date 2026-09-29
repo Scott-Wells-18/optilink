@@ -123,18 +123,31 @@ export function serverError(error: unknown, message: string) {
  * `filename*` will take the plain one literally — which is how a percent-
  * encoded name ends up saved as "Kogarah%20Depot.pdf".
  */
-export function pdfResponse(pdf: Buffer, name: string) {
-  return fileResponse(pdf, name, "application/pdf");
+export function pdfResponse(pdf: Buffer, name: string, options: FileOptions = {}) {
+  return fileResponse(pdf, name, "application/pdf", options);
 }
 
+/**
+ * `inline` hands the file to the browser's own viewer instead of saving it,
+ * which is what a preview is: the same bytes as the download, shown rather
+ * than filed.
+ */
+export type FileOptions = { inline?: boolean };
+
 /** Any generated file, handed back as a download under its own name. */
-export function fileResponse(bytes: Buffer, name: string, mimeType: string) {
+export function fileResponse(
+  bytes: Buffer,
+  name: string,
+  mimeType: string,
+  options: FileOptions = {},
+) {
   const plain = name.replace(/[^\w .\-()]+/g, " ").replace(/\s+/g, " ").trim();
+  const how = options.inline ? "inline" : "attachment";
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "content-type": mimeType,
       "content-length": String(bytes.byteLength),
-      "content-disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      "content-disposition": `${how}; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
       "cache-control": "no-store",
     },
   });

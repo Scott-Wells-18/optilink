@@ -115,6 +115,19 @@ type PowerRunRecord = {
   } | null;
 };
 
+type AmpReportRecord = {
+  id: string;
+  name: string | null;
+  date: string;
+  location: string | null;
+  recordings: {
+    id: string;
+    name: string;
+    rating: number | null;
+    summary: { count: number; max: number; average: number } | null;
+  }[];
+};
+
 type SafetyDocRecord = {
   id: string;
   date: string;
@@ -137,6 +150,7 @@ type SiteRecord = {
   rcdReports: RcdReportRecord[];
   safetyDocs: SafetyDocRecord[];
   powerRuns: PowerRunRecord[];
+  ampReports: AmpReportRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -201,6 +215,9 @@ export type RcdInstrumentSpec = { reportId: string; instrumentId: string | null 
 
 /** One power analysis, opened to load its recording. */
 export type PowerSpec = { runId: string; siteName: string };
+
+/** One amp reading report, opened to add the recordings it is made of. */
+export type AmpsSpec = { reportId: string; siteName: string };
 
 /** One set of safe work paperwork, opened to be answered. */
 export type SafetySpec = {
@@ -285,6 +302,7 @@ export function useClientsTree(enabled: boolean) {
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
   const [power, setPower] = usePersisted<PowerSpec | null>("power", null);
+  const [amps, setAmps] = usePersisted<AmpsSpec | null>("amps", null);
   const [rcdInstrument, setRcdInstrument] = usePersisted<RcdInstrumentSpec | null>(
     "rcdgear",
     null,
@@ -1322,6 +1340,95 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startPowerRun, setPowerDate, setPower],
   );
 
+  const setAmpDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/amps/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Starting one needs no form; the recordings are added inside it. */
+  const startAmpReport = useCallback(
+    async (siteId: string, siteName: string) => {
+      const response = await fetch("/api/amps", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId }),
+      });
+      if (!response.ok) {
+        setError("That report could not be started.");
+        return;
+      }
+      const report = (await response.json()) as { id: string };
+      await refresh();
+      setAmps({ reportId: report.id, siteName });
+    },
+    [refresh, setAmps],
+  );
+
+  /**
+   * Amp Readings walks client → site → report. One report is a set of short
+   * recordings taken on individual circuits, each with its own chart.
+   */
+  const ampNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `amps:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() || countLabel(site.ampReports.length, "report", "reports"),
+            children: [
+              ...site.ampReports.map<TreeNode>((report) => {
+                const title = report.name?.trim() || isoLabel(report.date);
+                return {
+                  id: `amps:${report.id}`,
+                  label: title,
+                  detail: describeAmpReport(report),
+                  variant: "info",
+                  editDate: {
+                    value: isoDate(report.date),
+                    onSave: (value) => void setAmpDate(report.id, value),
+                  },
+                  onActivate: () => setAmps({ reportId: report.id, siteName: site.name }),
+                  onDownload:
+                    report.recordings.length > 0
+                      ? () => download(`/api/amps/${report.id}/report`)
+                      : undefined,
+                  onRemove: () => void remove(`/api/amps/${report.id}`, title),
+                };
+              }),
+              {
+                id: `add:amps:${site.id}`,
+                label: "Add new",
+                detail: "Report",
+                variant: "add",
+                onActivate: () => void startAmpReport(site.id, site.name),
+              },
+            ],
+          }));
+
+          return {
+            id: `amps:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, remove, startAmpReport, setAmpDate, setAmps],
+  );
+
   const equipmentNodes = useMemo<TreeNode[]>(
     () => [
       ...testGear.map<TreeNode>((item) => ({
@@ -1377,6 +1484,7 @@ export function useClientsTree(enabled: boolean) {
     rcdNodes,
     swmsNodes,
     powerNodes,
+    ampNodes,
     dialog,
     closeDialog: () => setDialog(null),
     info,
@@ -1432,6 +1540,11 @@ export function useClientsTree(enabled: boolean) {
     power,
     closePower: () => {
       setPower(null);
+      void refresh();
+    },
+    amps,
+    closeAmps: () => {
+      setAmps(null);
       void refresh();
     },
     submit,
@@ -1539,6 +1652,25 @@ function describeSafetyDoc(doc: {
 }
 
 /** "8 days · peak 72 A on L3", or what is still missing. */
+/** "3 recordings · highest 58 A" — what a row says without being opened. */
+function describeAmpReport(report: AmpReportRecord): string {
+  const count = report.recordings.length;
+  if (count === 0) return "No recordings added yet";
+  const highest = report.recordings.reduce(
+    (best, recording) => Math.max(best, recording.summary?.max ?? 0),
+    0,
+  );
+  const rated = report.recordings.filter((recording) => recording.rating !== null).length;
+  return [
+    report.location?.trim() || null,
+    countLabel(count, "recording", "recordings"),
+    highest > 0 ? `highest ${Math.round(highest * 100) / 100} A` : null,
+    rated === 0 ? "no device ratings" : rated < count ? `${rated} of ${count} rated` : null,
+  ]
+    .filter(Boolean)
+    .join("  \u00b7  ");
+}
+
 function describePowerRun(run: PowerRunRecord): string {
   if (!run.summary) {
     return run.sourceFileId ? "Recording not readable" : "No recording loaded yet";

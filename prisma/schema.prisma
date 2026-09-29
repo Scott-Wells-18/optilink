@@ -88,6 +88,7 @@ model UploadedFile {
   signatures        Signature[]      @relation("SignatureFile")
   safetyDocSources  SafetyDoc[]      @relation("SafetyDocSource")
   powerSources      PowerAnalysis[]  @relation("PowerAnalysisSource")
+  ampSources        AmpRecording[]   @relation("AmpRecordingSource")
   equipmentCerts    TestEquipment[]  @relation("TestEquipmentCert")
   equipmentPhotos   TestEquipment[]  @relation("TestEquipmentPhoto")
 }
@@ -132,6 +133,7 @@ model TestEquipment {
   updatedAt DateTime @updatedAt
 
   powerRuns  PowerAnalysis[]
+  ampReports AmpReport[]
   rcdReports RcdReport[]
 }
 
@@ -213,6 +215,7 @@ model Site {
   rcdReports  RcdReport[]
   safetyDocs  SafetyDoc[]
   powerRuns   PowerAnalysis[]
+  ampReports  AmpReport[]
 
   @@index([clientId])
 }
@@ -238,6 +241,7 @@ model Contact {
   jobs        Job[]
   rcdReports  RcdReport[]
   powerRuns   PowerAnalysis[]
+  ampReports  AmpReport[]
   safetyDocs  SafetyDoc[]
 
   @@index([siteId])
@@ -288,6 +292,7 @@ model Equipment {
   issues    Issue[]
   rcdRuns   RcdTestRun[]
   powerRuns PowerAnalysis[]
+  ampReports AmpReport[]
 
   @@index([siteId])
 }
@@ -1122,4 +1127,111 @@ model PowerAnalysis {
   @@index([equipmentId])
   @@index([instrumentId])
   @@index([contactId])
+}
+
+// ---------------------------------------------------------------------------
+// Amp readings
+// ---------------------------------------------------------------------------
+
+/**
+ * What a protective device's rating belongs to.
+ *
+ * Kept apart because the two are read differently: a breaker's rating is the
+ * current it is there to interrupt, while an RCBO or RCD carries *two* ratings
+ * and only one of them is in amps. The other — the residual current it trips
+ * on — is in milliamps and has nothing to do with the current recorded here.
+ */
+enum AmpDevice {
+  BREAKER
+  RCBO
+}
+
+/**
+ * A set of short current recordings, issued as one report.
+ *
+ * Separate from PowerAnalysis on purpose. That is one logger on one board for a
+ * fortnight at five-minute intervals, read for maximum demand; this is a clamp
+ * on individual circuits for a minute at a time at one-second intervals, read
+ * for what those circuits actually drew while somebody watched them. They share
+ * a look and nothing else.
+ */
+model AmpReport {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The day the readings were taken. */
+  date DateTime @default(now()) @db.Date
+  name String?
+
+  /** Where the readings were taken — "Pit jacks distribution board". */
+  location String?
+
+  /** The board they were taken at, where that board has been drawn. */
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  /** Why they were taken, printed at the front of the report. */
+  purpose String?
+
+  /** The instrument they were taken with, named on the report. */
+  instrumentId String?
+  instrument   TestEquipment? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  /** Who asked for them. */
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contactName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recordings AmpRecording[]
+
+  @@index([siteId])
+  @@index([equipmentId])
+  @@index([instrumentId])
+  @@index([contactId])
+}
+
+/**
+ * One named recording inside a report — one clamp, on one circuit.
+ *
+ * The file is kept as it came off the meter and read again whenever the report
+ * is drawn; what is stored here is the name it was given, the device it was
+ * taken behind, and enough of a summary to describe the row without opening
+ * the file again.
+ */
+model AmpRecording {
+  id       String    @id @default(cuid())
+  reportId String
+  report   AmpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  /** "A-Phase PIT JACKS" — what it is called wherever it appears. */
+  name String
+
+  /**
+   * The protective device's stated current rating, in amps.
+   *
+   * Not its trip setting, and never an RCD's residual-current rating in
+   * milliamps. Null where none was entered, which is a report of the
+   * measurements and no verdict at all.
+   */
+  rating Float?
+  device AmpDevice?
+
+  /** The meter's own export, kept byte for byte. */
+  fileId String
+  file   UploadedFile @relation("AmpRecordingSource", fields: [fileId], references: [id], onDelete: Cascade)
+
+  /** Hand-ordered within the report. */
+  position Int @default(0)
+
+  /** Count, period, highest, average — for the dialog and the tree. */
+  summary Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([fileId])
 }

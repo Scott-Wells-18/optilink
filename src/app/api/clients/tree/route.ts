@@ -91,6 +91,19 @@ export async function GET() {
               summary: true,
             },
           },
+          ampReports: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              name: true,
+              date: true,
+              location: true,
+              recordings: {
+                orderBy: { position: "asc" },
+                select: { id: true, name: true, rating: true, summary: true },
+              },
+            },
+          },
           safetyDocs: {
             orderBy: { createdAt: "asc" },
             select: {
