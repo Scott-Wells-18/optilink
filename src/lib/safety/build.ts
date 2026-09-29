@@ -1,13 +1,16 @@
+import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/db";
 import { shortDate } from "@/lib/report/theme";
 import { titleCase } from "@/lib/writing";
 import { SIGNATORIES, type Template } from "@/lib/safety/catalogue";
 import { decide, type Answers } from "@/lib/safety/decide";
 import { canFillJsaPdf, fillJsaPdf, type JsaPdfValues } from "@/lib/safety/fillJsaPdf";
-import { fillJsaDocx } from "@/lib/safety/fillJsaDocx";
 import { fillWhs002 } from "@/lib/safety/fillWhs002";
 import { canFill, fillSwms, type SwmsValues } from "@/lib/safety/fillSwms";
-import { signatureBytes, templateBytes, templateFor } from "@/lib/safety/library";
+import { pdfBytes, signatureBytes, templateBytes, templateFor } from "@/lib/safety/library";
+import { personName } from "@/lib/contacts";
+import { clean, toPlain, type RichText } from "@/lib/safety/richText";
+import { scopePage } from "@/lib/safety/scopePage";
 import { CIRCUMSTANCES, HAZARDS, conditionOf, type Whs002 } from "@/lib/safety/whs002";
 
 /**
@@ -18,13 +21,21 @@ import { CIRCUMSTANCES, HAZARDS, conditionOf, type Whs002 } from "@/lib/safety/w
  * revised template takes effect on the next download rather than needing
  * everything regenerated.
  *
- * Every document comes back in the format it was released in. A SWMS is a PDF
- * and is stamped in the boxes its own pages leave blank; a JSA released as a
- * PDF is stamped the same way; a JSA released as Word is edited inside the
- * .docx and handed back as Word. None of them is redrawn. Whatever the
- * document's page size, tables, column widths, colours, logo and page breaks
- * were when it was approved, they still are — the only difference is that the
- * blanks have something in them.
+ * Every SWMS and JSA comes back as a PDF, stamped in the boxes its own pages
+ * left blank. Four of the JSAs were released as Word files and are filled
+ * through a PDF rendition of the released file — see `library.ts`. None of
+ * them is redrawn: whatever the document's page size, tables, column widths,
+ * colours, logo and page breaks were when it was approved, they still are, and
+ * the only difference is that the blanks have something in them.
+ *
+ * In front of each one goes a scope of works page. The released documents were
+ * written to be used on any job and none of them says what *this* job is, so
+ * that page carries the words the electrician wrote about this work. It is an
+ * addition — the document's own pages follow it, untouched.
+ *
+ * OEC-WHS002 is the exception on both counts. It is not a method statement or
+ * a risk assessment but an authorisation that gets completed and signed on
+ * site, so it stays the Word form it was written as and gets no scope page.
  *
  * Two things are never written automatically. The document's own identifier —
  * OEC-SWMS014, OEC-JSA001 — is left exactly as printed; the job number is a
@@ -33,7 +44,7 @@ import { CIRCUMSTANCES, HAZARDS, conditionOf, type Whs002 } from "@/lib/safety/w
  * have read that set of documents. A saved signature is not a review.
  */
 
-export type Built = { name: string; mimeType: string; bytes: Buffer };
+export type Built = { code: string; name: string; mimeType: string; bytes: Buffer };
 
 /** Recorded when a person confirms they have read the documents. */
 export type SignOff = Record<string, { at: string } | undefined>;
@@ -43,13 +54,17 @@ const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
   const doc = await prisma.safetyDoc.findUnique({
     where: { id },
-    include: { site: { include: { client: true } } },
+    include: { site: { include: { client: true } }, contact: true },
   });
   if (!doc) return null;
 
   const answers = (doc.answers ?? {}) as Answers;
   const decision = decide(answers, { title: doc.jobTitle, description: doc.jobDescription });
-  const description = doc.workDescription?.trim() || decision.description;
+  const scope = clean(doc.scope);
+  const overrides = (doc.scopeOverrides ?? {}) as Record<string, unknown>;
+  // The scope is the job in the operator's own words, so it is what the
+  // documents say the work is. The answers only fill in behind it.
+  const description = toPlain(scope) || doc.workDescription?.trim() || decision.description;
   const signOff = (doc.signOff ?? {}) as SignOff;
 
   // The date the assessment was actually carried out. Where nobody has said,
@@ -66,29 +81,44 @@ export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
 
   for (const code of doc.codes) {
     const template = templateFor(code);
-    const bytes = await templateBytes(code);
-    if (!template || !bytes) continue;
+    if (!template) continue;
+    // A JSA released as Word is filled through the PDF rendition of it.
+    const bytes =
+      template.kind === "WHS" ? await templateBytes(code) : await pdfBytes(code);
+    if (!bytes) continue;
 
-    const filled = await one(template, bytes, {
+    const own = clean(overrides[code]);
+    const values: Values = {
       clientName: doc.site.client.name,
       siteName: doc.site.name,
       siteAddress: doc.site.location ?? doc.site.name,
       projectName,
       jobNumber,
-      projectManager: doc.projectManager ?? "",
-      contactNumber: doc.contactNumber ?? "",
-      description,
+      // Read from the contact record every time, so correcting the contact
+      // corrects the paperwork.
+      projectManager: personName(doc.contact?.name ?? "") || doc.projectManager || "",
+      contactNumber: doc.contact?.phone?.trim() ?? "",
+      description: own.length > 0 ? toPlain(own) : description,
       issued,
       assessed,
       who,
       linked: linkedTo(doc.codes),
       energised: readable((doc.energised ?? {}) as Whs002),
-    });
-    if (!filled) continue;
+    };
+
+    const drawn = await one(template, bytes, values);
+    if (!drawn) continue;
+    let filled = drawn;
+
+    const paper = template.kind === "WHS" ? "docx" : "pdf";
+    if (paper === "pdf") {
+      filled = await withScope(filled, code, template.title, own.length > 0 ? own : scope, values);
+    }
 
     out.push({
-      name: fileName(code, template.title, doc.site.client.name, doc.date, template.format),
-      mimeType: template.format === "docx" ? DOCX : "application/pdf",
+      code,
+      name: fileName(code, template.title, doc.site.client.name, doc.date, paper),
+      mimeType: paper === "docx" ? DOCX : "application/pdf",
       bytes: filled,
     });
   }
@@ -150,7 +180,6 @@ async function one(
         signature: person.signature,
       })),
     };
-    if (template.format === "docx") return fillJsaDocx(bytes, jsa);
     if (canFillJsaPdf(template.code)) return fillJsaPdf(template.code, bytes, jsa);
     return bytes;
   }
@@ -300,6 +329,48 @@ function jobLine(values: Values): string {
 }
 
 /**
+ * The scope of works page, bound onto the front.
+ *
+ * Drawn at the page size of the document it belongs to, then put in front of
+ * it. The document's own pages are copied across untouched — nothing about
+ * them is re-laid out, resized or re-encoded beyond what copying a page is.
+ */
+async function withScope(
+  filled: Buffer,
+  code: string,
+  title: string,
+  scope: RichText,
+  values: Values,
+): Promise<Buffer> {
+  const source = await PDFDocument.load(filled);
+  const first = source.getPage(0);
+  const size = { width: first.getWidth(), height: first.getHeight() };
+
+  const page = await scopePage(size, {
+    scope,
+    facts: {
+      code: `OEC-${code}`,
+      title,
+      clientName: values.clientName,
+      siteName: values.siteName,
+      siteAddress: values.siteAddress,
+      projectName: values.projectName,
+      jobNumber: values.jobNumber ? `Job ${values.jobNumber}` : "",
+      contactName: values.projectManager,
+      contactNumber: values.contactNumber,
+      date: values.issued,
+      assessed: values.assessed,
+    },
+  });
+
+  const out = await PDFDocument.create();
+  const front = await PDFDocument.load(page);
+  for (const copied of await out.copyPages(front, front.getPageIndices())) out.addPage(copied);
+  for (const copied of await out.copyPages(source, source.getPageIndices())) out.addPage(copied);
+  return Buffer.from(await out.save());
+}
+
+/**
  * The calendar answers, written the way the rest of the document is.
  *
  * The form asks for them on a calendar, which hands back 2026-09-25; the page
@@ -415,6 +486,6 @@ export function fillable(code: string): boolean {
   const template = templateFor(code);
   if (!template) return false;
   if (template.kind === "WHS") return true;
-  if (template.kind === "JSA") return template.format === "docx" || canFillJsaPdf(code);
+  if (template.kind === "JSA") return canFillJsaPdf(code);
   return canFill(code);
 }

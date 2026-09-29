@@ -4948,3 +4948,113 @@ body {
   font-size: 11.5px;
   color: var(--ink-4);
 }
+
+/* --- writing the scope of works ------------------------------------------- */
+
+.rich {
+  margin-top: 12px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rich-tools {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--soft, #f2f7fb);
+}
+
+.rich-tool {
+  min-width: 32px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--font-app);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 180ms var(--ease-soft), border-color 180ms var(--ease-soft);
+}
+
+.rich-tool:hover {
+  border-color: var(--hair-strong);
+  background: #fff;
+}
+
+.rich-box {
+  min-height: 150px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  font-family: var(--font-app);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  outline: none;
+}
+
+.rich-box p {
+  margin: 0 0 8px;
+}
+
+.rich-box ul {
+  margin: 0 0 8px;
+  padding-left: 22px;
+}
+
+.rich-box li {
+  margin-bottom: 3px;
+}
+
+/* The prompt only shows while the box is genuinely empty. */
+.rich-box:empty::before,
+.rich-box:has(> p:only-child:empty)::before,
+.rich-box > p:only-child:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: var(--ink-4);
+  pointer-events: none;
+}
+
+.rich-box > p:only-child:has(> br:only-child)::before {
+  content: "What is being done on this job?";
+}
+
+/* A number that is read from somewhere else, and cannot be argued with here. */
+.dialog-input.is-locked {
+  background: var(--soft, #f2f7fb);
+  color: var(--ink-2);
+  cursor: default;
+}
+
+/* --- the chosen documents -------------------------------------------------- */
+
+.doc-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-scope {
+  margin: -2px 0 8px;
+  padding: 10px 14px 14px;
+  border: 1px solid var(--hair);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  background: var(--soft, #f2f7fb);
+}
+
+/* A document to take away, rather than a choice to make. */
+.issue-pick.is-download .issue-pick-label::before {
+  content: "↓";
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  color: var(--accent-deep);
+}
+
+.issue-pick.is-download:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

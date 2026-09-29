@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { readUpload, uploadDir } from "@/lib/storage";
@@ -164,6 +164,38 @@ export async function templateBytes(code: string): Promise<Buffer | null> {
   if (!held) return null;
   try {
     return await readUpload(held.file.storedName);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The PDF rendition of a document released as a Word file.
+ *
+ * Four of the eighteen JSAs were released as .docx, and everything goes out as
+ * a PDF. Converting Word to PDF needs Word or LibreOffice, and neither is on
+ * the server, so the conversion was done once from the released files and the
+ * result is kept in the repository beside the brand assets. It is a rendition,
+ * not a rewrite: nothing was retyped or redrawn, and the .docx in the release
+ * is still the template — replace it there and this has to be made again.
+ */
+const RENDITIONS: Record<string, string> = {
+  JSA001: "OEC-JSA001.Electrical.Equipment.Cabling.JSA.Risk.Assessment.pdf",
+  JSA001A: "OEC-JSA001A.Electrical.Communication.Rough.In.and.Fit.Out.JSA.pdf",
+  JSA002: "OEC-JSA002.Emergency.Electrical.Works.JSA.Risk.Assessment.pdf",
+  JSA003: "OEC-JSA003.Communications.Data.Cabling.JSA.Risk.Assessment.pdf",
+};
+
+export function hasRendition(code: string): boolean {
+  return Boolean(RENDITIONS[code]);
+}
+
+/** The PDF this document is filled from: its rendition, or the template itself. */
+export async function pdfBytes(code: string): Promise<Buffer | null> {
+  const rendition = RENDITIONS[code];
+  if (!rendition) return templateBytes(code);
+  try {
+    return await readFile(path.join(process.cwd(), "public", "safety", rendition));
   } catch {
     return null;
   }

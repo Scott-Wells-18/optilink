@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BY_CODE, DISCREPANCIES, SIGNATORIES, TEMPLATES } from "@/lib/safety/catalogue";
-import { COMPANY } from "@/lib/company";
 import { personName } from "@/lib/contacts";
 import {
   decide,
@@ -15,7 +14,8 @@ import {
 } from "@/lib/safety/decide";
 import { STANDING_RULES, rules } from "@/lib/safety/rules";
 import { titleCase } from "@/lib/writing";
-import { uploadFile } from "@/components/ImageUpload";
+import { RichTextBox } from "@/components/RichTextBox";
+import { isEmpty, summarise, type RichText } from "@/lib/safety/richText";
 import { Whs002Form, type BoardOption } from "@/components/Whs002Form";
 import { whsGaps, type Whs002 } from "@/lib/safety/whs002";
 import { clearSession, usePersisted } from "@/lib/session";
@@ -23,12 +23,16 @@ import { clearSession, usePersisted } from "@/lib/session";
 /**
  * Getting a job's safe work paperwork out.
  *
- * The quote says what the job is, so it is read rather than asked about. What
- * it does not say is asked — about the work, never about the paperwork: is any
- * of it off the ground, is a board being opened, is anything opened up while
- * the supply is on. Which SWMS and which JSA follow from the answers, they are
- * shown with the reason for each before anything is generated, and anything
- * that looks wrong can be taken out or put back by hand.
+ * It starts with what the job is — any of the eighteen scopes the company has
+ * written a statement for, because any of them can be the whole job. A day of
+ * RCD testing is not an installation with testing bolted on. Everything after
+ * that adds to it, and a question the first answer has already settled is not
+ * asked again.
+ *
+ * Then the scope of works, written once in the operator's own words. That goes
+ * on a page of its own in front of every document, and into the scope panel
+ * the SWMS templates leave blank. Where one document needs to say something
+ * different, its scope can be edited on its own.
  *
  * Two things happen at the end and nowhere else. The job number is asked for
  * and written into each document's own job field — never over the identifier
@@ -36,13 +40,6 @@ import { clearSession, usePersisted } from "@/lib/session";
  * it, one at a time, because a signature the app holds is not a review: it
  * goes on a document when its owner says it does.
  */
-
-type Read = {
-  jobTitle: string;
-  jobDescription: string;
-  answered: Answers;
-  candidates: { projectNames: string[]; people: string[]; numbers: string[] };
-};
 
 type Doc = {
   id: string;
@@ -55,16 +52,18 @@ type Doc = {
   jobDescription: string | null;
   workDescription: string | null;
   answers: Answers | null;
-  sourceFileId: string | null;
   jobNumber: string | null;
+  contactId: string | null;
+  scope: RichText | null;
+  scopeOverrides: Record<string, RichText> | null;
   assessmentDate: string | null;
   signOff: Record<string, { at: string }> | null;
   energised: Whs002 | null;
 };
 
-export type SafetyContact = { name: string; phone: string | null };
+export type SafetyContact = { id: string; name: string; phone: string | null };
 
-type Step = "quote" | "questions" | "documents" | "details" | "energised" | "sign";
+type Step = "questions" | "scope" | "documents" | "details" | "energised" | "sign";
 
 export function SafetyDocDialog({
   docId,
@@ -84,19 +83,20 @@ export function SafetyDocDialog({
   onClose: () => void;
 }) {
   const key = `safety:${docId}`;
-  const [step, setStep] = usePersisted<Step>(`${key}:step`, "quote");
-  const [read, setRead] = usePersisted<Read | null>(`${key}:read`, null);
+  const [step, setStep] = usePersisted<Step>(`${key}:step`, "questions");
   const [answers, setAnswers] = usePersisted<Answers>(`${key}:answers`, {});
   const [title, setTitle] = usePersisted<string>(`${key}:title`, "");
-  const [manager, setManager] = usePersisted<string>(`${key}:manager`, "");
-  const [number, setNumber] = usePersisted<string>(`${key}:number`, "");
+  const [contactId, setContactId] = usePersisted<string>(`${key}:contact`, "");
+  const [scope, setScope] = usePersisted<RichText>(`${key}:scope`, []);
+  const [overrides, setOverrides] = usePersisted<Record<string, RichText>>(`${key}:scopes`, {});
+  const [editing, setEditing] = useState<string | null>(null);
   const [jobNumber, setJobNumber] = usePersisted<string>(`${key}:job`, "");
   const [assessed, setAssessed] = usePersisted<string>(`${key}:assessed`, "");
   const [energised, setEnergised] = usePersisted<Whs002>(`${key}:whs`, {});
   const [typing, setTyping] = usePersisted<boolean>(`${key}:typing`, false);
   const [showRules, setShowRules] = useState(false);
   const [signed, setSigned] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<"quote" | "save" | "sign" | null>(null);
+  const [busy, setBusy] = useState<"save" | "sign" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -109,8 +109,7 @@ export function SafetyDocDialog({
     if (!response.ok) return;
     const doc = (await response.json()) as Doc;
     setTitle((current) => current || doc.jobTitle || doc.projectName || "");
-    setManager((current) => current || doc.projectManager || "");
-    setNumber((current) => current || doc.contactNumber || "");
+    setContactId((current) => current || doc.contactId || "");
     setJobNumber((current) => current || doc.jobNumber || "");
     setAssessed((current) => current || (doc.assessmentDate ?? "").slice(0, 10));
     setSigned(
@@ -124,27 +123,20 @@ export function SafetyDocDialog({
     if (doc.energised) {
       setEnergised((current) => (Object.keys(current).length ? current : doc.energised!));
     }
-
-    // The quote is kept against the job, so coming back tomorrow reads it
-    // again rather than losing what it said.
-    if (!doc.sourceFileId) return;
-    const again = await fetch("/api/safety-docs/read-quote", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fileId: doc.sourceFileId }),
-    });
-    if (!again.ok) return;
-    setRead((await again.json()) as Read);
+    if (doc.scope) setScope((current) => (current.length ? current : doc.scope!));
+    if (doc.scopeOverrides) {
+      setOverrides((current) => (Object.keys(current).length ? current : doc.scopeOverrides!));
+    }
   }, [
     docId,
     setTitle,
-    setManager,
-    setNumber,
+    setContactId,
     setAnswers,
-    setRead,
     setJobNumber,
     setAssessed,
     setEnergised,
+    setScope,
+    setOverrides,
   ]);
 
   useEffect(() => {
@@ -159,66 +151,22 @@ export function SafetyDocDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function readQuote(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
-    setBusy("quote");
-    setError(null);
-    try {
-      const stored = await uploadFile(file);
-      const response = await fetch("/api/safety-docs/read-quote", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileId: stored.id }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error ?? "That quote could not be read.");
-      }
-      const result = (await response.json()) as Read;
-      setRead(result);
-      if (result.jobTitle) setTitle(result.jobTitle);
-      // What the quote settles is filled in, and shown as such on the way past.
-      setAnswers((current) => ({ ...result.answered, ...current }));
-
-      await fetch(`/api/safety-docs/${docId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceFileId: stored.id,
-          jobTitle: result.jobTitle || null,
-          jobDescription: result.jobDescription || null,
-        }),
-      });
-      setStep("questions");
-    } catch (readError) {
-      setError(readError instanceof Error ? readError.message : "That quote could not be read.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /** What the quote answered, and what is still open. */
-  const fromQuote = read?.answered ?? {};
   const asking = useMemo(() => asked(answers), [answers]);
   const decision = useMemo(
-    () =>
-      decide(answers, {
-        title: title || read?.jobTitle,
-        description: read?.jobDescription,
-      }),
-    [answers, title, read],
+    () => decide(answers, { title }),
+    [answers, title],
   );
   const manual = manualCodes(answers);
 
   const open = stillOpen(answers);
   const needsWhs = decision.codes.includes("WHS002");
   const whsLeft = needsWhs ? whsGaps(energised).length : 0;
-  const ready = open.length === 0 && title.trim().length > 0;
+  const chosen = contacts.find((one) => one.id === contactId) ?? null;
+  const ready = open.length === 0 && title.trim().length > 0 && !isEmpty(scope);
 
   const STEPS: [Step, string][] = [
-    ["quote", "Quote"],
     ["questions", "The job"],
+    ["scope", "Scope"],
     ["documents", "Documents"],
     ["details", "Details"],
     ...(needsWhs ? ([["energised", "Energised"]] as [Step, string][]) : []),
@@ -230,16 +178,16 @@ export function SafetyDocDialog({
     () => ({
       answers,
       jobTitle: title.trim(),
-      jobDescription: read?.jobDescription ?? null,
       workDescription: decision.description,
       projectName: title.trim(),
-      projectManager: manager.trim(),
-      contactNumber: number.trim(),
+      contactId: contactId || null,
+      scope,
+      scopeOverrides: overrides,
       jobNumber: jobNumber.trim(),
       assessmentDate: assessed || null,
       energised: needsWhs ? energised : null,
     }),
-    [answers, title, read, decision, manager, number, jobNumber, assessed, energised, needsWhs],
+    [answers, title, decision, contactId, scope, overrides, jobNumber, assessed, energised, needsWhs],
   );
 
   async function save(then: "close" | "stay") {
@@ -261,7 +209,7 @@ export function SafetyDocDialog({
       setSigned({});
       if (then === "close") {
         for (const part of [
-          "step", "read", "answers", "title", "manager", "number",
+          "step", "answers", "title", "contact", "scope", "scopes",
           "typing", "job", "assessed", "whs",
         ]) {
           clearSession(`${key}:${part}`);
@@ -313,37 +261,48 @@ export function SafetyDocDialog({
     }
   }
 
-  const titleOptions = useMemo(
-    () =>
-      unique([
-        read?.jobTitle ?? "",
-        ...(read?.candidates.projectNames ?? []),
-        `${titleCase(siteName)} — ${titleCase(clientName)}`,
-      ]),
-    [read, siteName, clientName],
-  );
+  /** A name for the job, from what has been answered about it. */
+  /**
+   * A document, or the lot.
+   *
+   * Saved first, because the documents are filled from what is on file rather
+   * than from what is on screen, and downloading something that does not match
+   * what was just typed would be the worst kind of surprise.
+   */
+  async function take(code?: string) {
+    if (!ready) return;
+    setBusy("save");
+    setError(null);
+    try {
+      const saved = await fetch(`/api/safety-docs/${docId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body()),
+      });
+      if (!saved.ok) throw new Error("That could not be saved.");
+      const link = document.createElement("a");
+      link.href = `/api/safety-docs/${docId}/download${code ? `?only=${code}` : ""}`;
+      link.rel = "noopener";
+      link.download = "";
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch (downloadError) {
+      setError(
+        downloadError instanceof Error ? downloadError.message : "That could not be built.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
 
-  const managerOptions = useMemo(
-    () =>
-      // The person, not their job title: "Site Manager - Dean Mills" is a
-      // contact record, and "Dean Mills" is who is running the job.
-      unique([
-        ...contacts.map((c) => personName(c.name)),
-        ...(read?.candidates.people ?? []),
-        "Scott Wells",
-      ]),
-    [contacts, read],
-  );
-
-  const numberOptions = useMemo(
-    () =>
-      unique([
-        ...contacts.map((c) => c.phone ?? "").filter(Boolean),
-        ...(read?.candidates.numbers ?? []),
-        COMPANY.phone,
-      ]),
-    [contacts, read],
-  );
+  const titleOptions = useMemo(() => {
+    const main = asking[0]?.options.find((one) => one.value === answers.nature);
+    return unique([
+      main ? `${main.label} — ${titleCase(siteName)}` : "",
+      `${titleCase(siteName)} — ${titleCase(clientName)}`,
+    ]);
+  }, [asking, answers.nature, siteName, clientName]);
 
   /** Anything the library disagrees with itself about, for the chosen set. */
   const problems = DISCREPANCIES.filter(
@@ -381,76 +340,6 @@ export function SafetyDocDialog({
 
         <div className="board-scroll" ref={scroller}>
           <div className="board-body">
-            {step === "quote" ? (
-              <section>
-                <div className="board-section-head">
-                  <h3 className="board-section-title">The quote for this job</h3>
-                  <p className="board-section-note">
-                    Upload it as a PDF or the CSV the accounting software exports. The job
-                    and what it involves are read out of it, and whatever it does not say
-                    is asked on the next step.
-                  </p>
-                </div>
-
-                <label className="rcd-drop">
-                  {busy === "quote"
-                    ? "Reading…"
-                    : read
-                      ? "Use a different quote"
-                      : "Choose the quote"}
-                  <input
-                    type="file"
-                    accept=".csv,.pdf,text/csv,application/pdf"
-                    hidden
-                    onChange={(event) => {
-                      void readQuote(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-
-                {read ? (
-                  <>
-                    <div className="board-section-head">
-                      <h3 className="board-section-title">What it says</h3>
-                    </div>
-                    <dl className="rcd-facts">
-                      <div>
-                        <dt>Job</dt>
-                        <dd>{read.jobTitle || "Not named — you can name it at the end"}</dd>
-                      </div>
-                      <div>
-                        <dt>Answered</dt>
-                        <dd>
-                          {Object.keys(read.answered).length} of {asking.length} questions
-                        </dd>
-                      </div>
-                    </dl>
-                    {read.jobDescription ? (
-                      <p className="issue-empty">{read.jobDescription.slice(0, 900)}</p>
-                    ) : (
-                      <p className="issue-empty">
-                        No description found in it. The questions will carry the whole job
-                        instead, which works — it just means a few more taps.
-                      </p>
-                    )}
-                  </>
-                ) : null}
-
-                {error ? <p className="dialog-error">{error}</p> : null}
-
-                <div className="dialog-actions">
-                  <button
-                    type="button"
-                    className={read ? "dialog-confirm" : "dialog-cancel"}
-                    onClick={() => setStep("questions")}
-                  >
-                    {read ? "Next" : "Skip — no quote"}
-                  </button>
-                </div>
-              </section>
-            ) : null}
-
             {step === "questions" ? (
               <section>
                 <div className="board-section-head">
@@ -463,9 +352,6 @@ export function SafetyDocDialog({
                 </div>
 
                 {asking.map((question) => {
-                  const fromTheQuote =
-                    fromQuote[question.key] !== undefined &&
-                    fromQuote[question.key] === answers[question.key];
                   return (
                     <div
                       key={question.key}
@@ -476,9 +362,6 @@ export function SafetyDocDialog({
                           {question.question}
                           {question.when ? (
                             <span className="safety-from-quote is-follow">follow-up</span>
-                          ) : null}
-                          {fromTheQuote ? (
-                            <span className="safety-from-quote">from the quote</span>
                           ) : null}
                         </h3>
                         {question.note ? (
@@ -515,18 +398,55 @@ export function SafetyDocDialog({
                 })}
 
                 <div className="dialog-actions">
-                  <button type="button" className="dialog-cancel" onClick={() => setStep("quote")}>
+                  <button
+                    type="button"
+                    className="dialog-confirm"
+                    disabled={open.length > 0}
+                    onClick={() => setStep("scope")}
+                  >
+                    {open.length > 0 ? `${open.length} left` : "Next — the scope of works"}
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {step === "scope" ? (
+              <section>
+                <div className="board-section-head">
+                  <h3 className="board-section-title">The scope of works</h3>
+                  <p className="board-section-note">
+                    What is actually being done on this job, in your words. It goes on a
+                    page of its own in front of every document, and into the scope panel
+                    the statements leave blank. Paragraphs, dot points, bold and italics all
+                    come through onto the page.
+                  </p>
+                </div>
+
+                <RichTextBox value={scope} onChange={setScope} />
+
+                {isEmpty(scope) ? (
+                  <p className="issue-empty">
+                    Nothing yet. The documents cannot go out without it — every one of them
+                    was written to be used on any job, so this is the only part that says
+                    which job.
+                  </p>
+                ) : null}
+
+                <div className="dialog-actions">
+                  <button
+                    type="button"
+                    className="dialog-cancel"
+                    onClick={() => setStep("questions")}
+                  >
                     Back
                   </button>
                   <button
                     type="button"
                     className="dialog-confirm"
-                    disabled={open.length > 0}
+                    disabled={isEmpty(scope)}
                     onClick={() => setStep("documents")}
                   >
-                    {open.length > 0
-                      ? `${open.length} left`
-                      : `Next — ${decision.codes.length} documents`}
+                    {isEmpty(scope) ? "Write the scope first" : `Next — ${decision.codes.length} documents`}
                   </button>
                 </div>
               </section>
@@ -546,21 +466,68 @@ export function SafetyDocDialog({
                   {decision.codes.map((code) => {
                     const template = BY_CODE.get(code);
                     if (!template) return null;
+                    const own = overrides[code];
+                    const separate = own && !isEmpty(own);
                     return (
-                      <div key={code} className="issue-pick is-on is-static">
-                        <span className="issue-pick-body">
-                          <span className="issue-pick-label">
-                            OEC-{code} · {template.title}
+                      <div key={code} className="doc-row">
+                        <div className="issue-pick is-on is-static">
+                          <span className="issue-pick-body">
+                            <span className="issue-pick-label">
+                              OEC-{code} · {template.title}
+                            </span>
+                            <span className="issue-pick-note">{decision.reasons[code]}</span>
+                            <span className="issue-pick-note">
+                              {separate
+                                ? `Its own scope: ${summarise(own, 90)}`
+                                : "Uses the job's scope of works"}
+                            </span>
                           </span>
-                          <span className="issue-pick-note">{decision.reasons[code]}</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="whs-drop"
-                          onClick={() => setAnswers((current) => withManual(current, code, false))}
-                        >
-                          Take out
-                        </button>
+                          <button
+                            type="button"
+                            className="whs-fill"
+                            onClick={() =>
+                              setEditing((current) => (current === code ? null : code))
+                            }
+                          >
+                            {editing === code ? "Done" : separate ? "Edit its scope" : "Give it its own scope"}
+                          </button>
+                          <button
+                            type="button"
+                            className="whs-drop"
+                            onClick={() => setAnswers((current) => withManual(current, code, false))}
+                          >
+                            Take out
+                          </button>
+                        </div>
+                        {editing === code ? (
+                          <div className="doc-scope">
+                            <p className="board-section-note">
+                              What OEC-{code} says the work is. Everything else keeps the
+                              job&apos;s scope.
+                            </p>
+                            <RichTextBox
+                              value={separate ? own : scope}
+                              onChange={(next) =>
+                                setOverrides((current) => ({ ...current, [code]: next }))
+                              }
+                            />
+                            {separate ? (
+                              <button
+                                type="button"
+                                className="whs-drop"
+                                onClick={() =>
+                                  setOverrides((current) => {
+                                    const next = { ...current };
+                                    delete next[code];
+                                    return next;
+                                  })
+                                }
+                              >
+                                Put it back on the job&apos;s scope
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -733,11 +700,7 @@ export function SafetyDocDialog({
                 ) : null}
 
                 <div className="dialog-actions">
-                  <button
-                    type="button"
-                    className="dialog-cancel"
-                    onClick={() => setStep("questions")}
-                  >
+                  <button type="button" className="dialog-cancel" onClick={() => setStep("scope")}>
                     Back
                   </button>
                   <button
@@ -819,7 +782,7 @@ export function SafetyDocDialog({
                     <span className="issue-pick-mark is-one" aria-hidden />
                     <span className="issue-pick-body">
                       <span className="issue-pick-label">Something else</span>
-                      <span className="issue-pick-note">For a job the quote never named</span>
+                      <span className="issue-pick-note">A name of your own</span>
                     </span>
                   </button>
                 </div>
@@ -837,42 +800,57 @@ export function SafetyDocDialog({
                 ) : null}
 
                 <div className="board-section-head">
-                  <h3 className="board-section-title">Who is running it?</h3>
+                  <h3 className="board-section-title">Who is the site contact?</h3>
+                  <p className="board-section-note">
+                    The people saved against this site. Their number comes with them and is
+                    printed on the documents as it is held here.
+                  </p>
                 </div>
-                <div className="issue-picks">
-                  {managerOptions.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`issue-pick ${manager === option ? "is-on" : ""}`}
-                      onClick={() => setManager(manager === option ? "" : option)}
-                    >
-                      <span className="issue-pick-mark is-one" aria-hidden />
-                      <span className="issue-pick-body">
-                        <span className="issue-pick-label">{option}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                {contacts.length === 0 ? (
+                  <p className="issue-empty">
+                    Nobody is saved against this site yet. Add them under Sites &amp;
+                    contacts and they will appear here.
+                  </p>
+                ) : (
+                  <div className="issue-picks">
+                    {contacts.map((person) => (
+                      <button
+                        key={person.id}
+                        type="button"
+                        className={`issue-pick ${contactId === person.id ? "is-on" : ""}`}
+                        onClick={() => setContactId(contactId === person.id ? "" : person.id)}
+                      >
+                        <span className="issue-pick-mark is-one" aria-hidden />
+                        <span className="issue-pick-body">
+                          <span className="issue-pick-label">{personName(person.name)}</span>
+                          <span className="issue-pick-note">
+                            {person.phone?.trim()
+                              ? person.phone
+                              : "No phone number saved against this contact"}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                <div className="board-section-head">
-                  <h3 className="board-section-title">And on what number?</h3>
-                </div>
-                <div className="issue-picks">
-                  {numberOptions.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`issue-pick ${number === option ? "is-on" : ""}`}
-                      onClick={() => setNumber(number === option ? "" : option)}
-                    >
-                      <span className="issue-pick-mark is-one" aria-hidden />
-                      <span className="issue-pick-body">
-                        <span className="issue-pick-label">{option}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                {chosen ? (
+                  <label className="dialog-field">
+                    <span className="dialog-label">Contact number</span>
+                    <input
+                      className="dialog-input is-locked"
+                      value={chosen.phone?.trim() || ""}
+                      placeholder="No number saved"
+                      readOnly
+                      tabIndex={-1}
+                    />
+                    <span className="dialog-help">
+                      {chosen.phone?.trim()
+                        ? `Read from ${personName(chosen.name)}'s contact record. If it is wrong, correct it under Sites & contacts — this workflow will not hold a different number to the one on file.`
+                        : `${personName(chosen.name)} has no phone number saved. Add it under Sites & contacts; it cannot be typed here, because a number that only exists on one job is a number nobody can ring twice.`}
+                    </span>
+                  </label>
+                ) : null}
 
                 {error ? <p className="dialog-error">{error}</p> : null}
 
@@ -1003,6 +981,51 @@ export function SafetyDocDialog({
                   Changing any answer withdraws both confirmations, because what was read
                   would no longer be what comes out.
                 </p>
+
+                <div className="board-section-head">
+                  <h3 className="board-section-title">Take them away</h3>
+                  <p className="board-section-note">
+                    Saved as it stands, then built. Every statement and risk assessment is a
+                    PDF with the scope of works in front of it; OEC-WHS002, where the job
+                    needs one, stays the Word form so it can be completed and signed on
+                    site.
+                  </p>
+                </div>
+                <div className="issue-picks">
+                  <button
+                    type="button"
+                    className="issue-pick is-download"
+                    disabled={!ready || busy !== null}
+                    onClick={() => void take()}
+                  >
+                    <span className="issue-pick-body">
+                      <span className="issue-pick-label">
+                        All {decision.codes.length} documents, as one zip
+                      </span>
+                      <span className="issue-pick-note">
+                        {busy === "save" ? "Building…" : "One file to forward or print"}
+                      </span>
+                    </span>
+                  </button>
+                  {decision.codes.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      className="issue-pick is-download"
+                      disabled={!ready || busy !== null}
+                      onClick={() => void take(code)}
+                    >
+                      <span className="issue-pick-body">
+                        <span className="issue-pick-label">
+                          OEC-{code} · {BY_CODE.get(code)?.title ?? code}
+                        </span>
+                        <span className="issue-pick-note">
+                          {BY_CODE.get(code)?.kind === "WHS" ? "Word" : "PDF"}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
 
                 {error ? <p className="dialog-error">{error}</p> : null}
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { notFound, readJson, serverError } from "@/lib/api";
 import { BY_CODE } from "@/lib/safety/catalogue";
 import { decide } from "@/lib/safety/decide";
+import { clean } from "@/lib/safety/richText";
 
 export const runtime = "nodejs";
 
@@ -35,8 +36,10 @@ export async function PATCH(
       jobDescription?: string;
       workDescription?: string;
       answers?: Record<string, string>;
-      sourceFileId?: string | null;
       date?: string;
+      scope?: unknown;
+      scopeOverrides?: Record<string, unknown> | null;
+      contactId?: string | null;
       jobNumber?: string;
       assessmentDate?: string | null;
       energised?: unknown;
@@ -77,7 +80,18 @@ export async function PATCH(
     for (const key of ["jobDescription", "workDescription"] as const) {
       if (body[key] !== undefined) data[key] = body[key]?.slice(0, 3000) || null;
     }
-    if (body.sourceFileId !== undefined) data.sourceFileId = body.sourceFileId;
+    if (body.contactId !== undefined) data.contactId = body.contactId || null;
+    if (body.scope !== undefined) data.scope = clean(body.scope);
+    if (body.scopeOverrides !== undefined) {
+      const kept: Record<string, unknown> = {};
+      for (const [code, value] of Object.entries(body.scopeOverrides ?? {})) {
+        if (!BY_CODE.has(code)) continue;
+        const scope = clean(value);
+        // A scope that has been cleared is not an override of anything.
+        if (scope.length > 0) kept[code] = scope;
+      }
+      data.scopeOverrides = kept;
+    }
     if (body.jobNumber !== undefined) data.jobNumber = body.jobNumber.slice(0, 60) || null;
     for (const key of ["date", "assessmentDate"] as const) {
       if (body[key] === undefined) continue;

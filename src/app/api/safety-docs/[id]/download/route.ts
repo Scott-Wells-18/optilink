@@ -8,15 +8,14 @@ export const runtime = "nodejs";
 /**
  * The finished paperwork.
  *
- * Every document comes back in the format it was released in, because that is
- * the document that was approved: a SWMS is a PDF, a JSA is a PDF or a Word
- * file depending on which one it is, and OEC-WHS002 is Word so it can still be
- * completed and signed on site. Converting any of them would mean redrawing
- * it, and a redrawn controlled document is a different document.
+ * Every SWMS and JSA comes back as a PDF — the released pages with the blanks
+ * filled in and a scope of works page in front — and OEC-WHS002 comes back as
+ * the Word form it was written as, so it can still be completed and signed on
+ * site.
  *
- * So a set comes back as a zip, one file per document, named for the job. A
- * set of one comes back as that file on its own, and `?only=SWMS014` fetches
- * one out of a set.
+ * A set comes back as a zip, one file per document, named for the job. A set
+ * of one comes back as that file on its own, and `?only=SWMS014` fetches one
+ * document out of a set.
  */
 export async function GET(
   request: Request,
@@ -38,7 +37,7 @@ export async function GET(
 
     const only = new URL(request.url).searchParams.get("only");
     if (only) {
-      const wanted = built.find((one) => one.name.startsWith(`${only} `));
+      const wanted = built.find((one) => one.code === only);
       if (!wanted) return notFound("That document is not part of this job.");
       return fileResponse(wanted.bytes, wanted.name, wanted.mimeType);
     }

@@ -208,7 +208,7 @@ export type SafetySpec = {
   clientName: string;
   siteName: string;
   siteLocation: string | null;
-  contacts: { name: string; phone: string | null }[];
+  contacts: { id: string; name: string; phone: string | null }[];
   /** The switchboards drawn for the site, for the energised-testing form. */
   boards: { id: string; name: string; board: unknown }[];
 };
@@ -1143,6 +1143,7 @@ export function useClientsTree(enabled: boolean) {
         siteName: site.name,
         siteLocation: site.location,
         contacts: site.contacts.map((contact) => ({
+          id: contact.id,
           name: contact.name,
           phone: contact.phone ?? null,
         })),
@@ -1189,6 +1190,7 @@ export function useClientsTree(enabled: boolean) {
                       siteName: site.name,
                       siteLocation: site.location,
                       contacts: site.contacts.map((contact) => ({
+                        id: contact.id,
                         name: contact.name,
                         phone: contact.phone ?? null,
                       })),

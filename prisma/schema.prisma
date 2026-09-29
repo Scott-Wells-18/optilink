@@ -238,6 +238,7 @@ model Contact {
   jobs        Job[]
   rcdReports  RcdReport[]
   powerRuns   PowerAnalysis[]
+  safetyDocs  SafetyDoc[]
 
   @@index([siteId])
 }
@@ -1001,6 +1002,27 @@ model SafetyDoc {
    * The answers to OEC-WHS002, where the work needs one.
    */
   energised      Json?
+
+  /**
+   * What the job is, written once in the operator's own words with whatever
+   * paragraphs, dot points and emphasis they used. It becomes a scope of works
+   * page in front of every document, and fills the scope panel the SWMS
+   * templates leave blank. See `lib/safety/richText.ts`.
+   */
+  scope          Json?
+  /**
+   * A different scope for one document, keyed by code, where one document
+   * needs to say something the others do not.
+   */
+  scopeOverrides Json?
+
+  /**
+   * The site contact this paperwork is issued against. Their name and phone
+   * number are read from the contact record every time a document is built,
+   * so correcting the contact corrects the paperwork.
+   */
+  contactId      String?
+  contact        Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -120,9 +120,11 @@ export async function fillJsaPdf(
     const room = { width: block.signatureBox.width - 6, height: block.rowHeight + 4 };
     const scale = Math.min(room.width / image.width, room.height / image.height);
     const drawn = { width: image.width * scale, height: image.height * scale };
+    // Centred on the row, which is the line the label beside it sits on: the
+    // rows are recorded by the top of that label's text, not by the cell.
     page.drawImage(image, {
       x: block.signatureBox.x + 2,
-      y: height - top - block.rowHeight + (block.rowHeight - drawn.height) / 2,
+      y: height - (top + 2) - drawn.height / 2,
       ...drawn,
     });
   }

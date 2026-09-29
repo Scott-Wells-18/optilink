@@ -46,40 +46,86 @@ export type Question = {
 /**
  * What kind of job it is, at heart.
  *
- * Asked first and always, because it decides which risk assessment the job
- * starts from — the company has four, and every other answer adds to whichever
- * one this picks.
+ * Every scope the company has written a statement for is on this list, because
+ * every one of them is a job somebody does on its own. An annual RCD test is a
+ * whole day's work with nothing installed; so is a thermal survey, so is a
+ * board inspection. Offering only the installation scopes here meant reaching
+ * a testing statement by first claiming to be doing something else, which put
+ * a method on the front of the paperwork that nobody was following.
+ *
+ * The order is the order these come up, not the order they are numbered: the
+ * testing and inspection scopes first, because those are the ones that are
+ * most often the entire job.
+ *
+ * Only the method statement is listed against each answer. The risk assessment
+ * written for it comes along on its own — see `decide.ts`.
  */
 const NATURE: Question = {
   key: "nature",
-  question: "What is the job, mainly?",
-  note: "This decides which risk assessment it starts from. Everything else adds to it.",
+  question: "What is the job?",
+  note: "Whatever the work mainly is. Everything after this adds to it, so a job that is only testing stops here.",
   always: true,
   options: [
+    {
+      value: "RCD",
+      label: "RCD testing",
+      note: "Push-button and instrument trip testing of safety switches, and recording the results",
+      requires: ["SWMS014"],
+      hazards: ["TEST_AND_TAG"],
+      describes: "Every accessible RCD is trip tested and the results recorded.",
+      evidence: ["rcd testing", "rcd test", "safety switch", "trip test", "residual current", "rcd"],
+    },
+    {
+      value: "THERMAL",
+      label: "Thermal imaging of switchboards",
+      note: "An infrared survey under normal load",
+      requires: ["SWMS013"],
+      describes: "Switchboards are surveyed with an infrared camera under normal load.",
+      evidence: ["thermal imaging", "thermographic", "thermography", "infrared", "ir survey", "thermal survey", "thermal"],
+    },
+    {
+      value: "TAGGING",
+      label: "Testing, tagging and commissioning",
+      note: "Portable appliance testing, tagging, and commissioning an installation",
+      requires: ["SWMS005"],
+      hazards: ["TEST_AND_TAG"],
+      describes: "Equipment is tested and tagged, and the installation commissioned.",
+      evidence: ["test and tag", "test & tag", "tagging", "commission", "commissioning", "as/nzs 3760"],
+    },
+    {
+      value: "BOARD_MAINT",
+      label: "Switchboard isolation, inspection or maintenance",
+      note: "A board opened up and gone through — no new work installed",
+      requires: ["SWMS004B"],
+      hazards: ["BOARD_ISOLATION"],
+      describes: "A switchboard is isolated and opened for inspection and maintenance.",
+      evidence: ["board inspection", "switchboard maintenance", "msb", "main switchboard", "isolation", "isolate", "escutcheon"],
+    },
     {
       value: "GENERAL",
       label: "Electrical equipment and cabling",
       note: "Installing, repairing or replacing equipment on an existing installation",
-      requires: ["SWMS001", "JSA001"],
+      requires: ["SWMS001"],
+      describes: "Electrical equipment and cabling are installed, repaired or replaced.",
       evidence: [
         "install", "installation", "replace", "repair", "wiring", "cabling", "cable",
         "gpo", "power point", "light", "lighting", "fitting", "circuit", "maintenance",
-        "rcd", "safety switch", "thermal", "thermographic", "switchboard", "timer",
-        "sensor", "floodlight", "exhaust", "fan", "motor", "isolator",
+        "timer", "sensor", "floodlight", "exhaust", "fan", "motor", "isolator",
       ],
     },
     {
       value: "FITOUT",
       label: "Rough-in or fit-out",
       note: "New build, refit or strip-out — first fix through to final fix",
-      requires: ["SWMS001A", "JSA001A"],
+      requires: ["SWMS001A"],
+      describes: "The work is an electrical and communications rough-in and fit-out.",
       evidence: ["rough in", "roughin", "rough-in", "fit out", "fitout", "fit-out", "new build", "refit", "shop fit", "construction", "first fix", "final fix"],
     },
     {
       value: "EMERGENCY",
       label: "Emergency or after-hours call-out",
       note: "A breakdown, a fault, something that could not wait",
-      requires: ["SWMS002", "JSA002"],
+      requires: ["SWMS002"],
       hazards: ["AFTER_HOURS"],
       describes: "The work is an emergency attendance outside normal hours.",
       evidence: ["emergency", "after hours", "after-hours", "call out", "call-out", "callout", "breakdown", "urgent", "fault find", "no power"],
@@ -88,13 +134,120 @@ const NATURE: Question = {
       value: "DATA",
       label: "Communications or data cabling",
       note: "Structured cabling, fibre, a comms rack",
-      requires: ["SWMS003", "JSA003"],
+      requires: ["SWMS003"],
       hazards: ["DATA_CABLING"],
       describes: "The work includes communications and data cabling.",
       evidence: ["data cabling", "comms", "communications", "cat5", "cat6", "cat 6", "fibre", "fiber", "patch panel", "structured cabling", "comms rack", "network cabling"],
     },
+    {
+      value: "BOARD_NEW",
+      label: "Switchboard installation or upgrade",
+      note: "A new board, or an existing one upgraded",
+      requires: ["SWMS004"],
+      hazards: ["BOARD_ISOLATION", "BOARD_WORKS"],
+      describes: "A switchboard is installed or upgraded.",
+      evidence: ["new switchboard", "switchboard install", "board upgrade", "new db", "db install", "upgrade the board"],
+    },
+    {
+      value: "BOARD_MODIFY",
+      label: "Switchboard removal, modification or relocation",
+      requires: ["SWMS004A"],
+      hazards: ["BOARD_ISOLATION", "BOARD_WORKS"],
+      describes: "An existing switchboard is modified, relocated or removed.",
+      evidence: ["switchboard removal", "remove the board", "relocate the board", "board modification", "modify the board", "replace the board"],
+    },
+    {
+      value: "EXCAVATION",
+      label: "Excavation and pit installation",
+      requires: ["SWMS006"],
+      hazards: ["EXCAVATION"],
+      describes: "The work includes excavation and pit installation.",
+      evidence: ["excavat", "trench", "dig", "digging", "bore", "directional drill", "pit installation"],
+    },
+    {
+      value: "PIT",
+      label: "Cabling and conduit into an existing pit",
+      requires: ["SWMS006A"],
+      hazards: ["PIT_CABLING"],
+      describes: "Cabling and conduit are installed into an existing pit.",
+      evidence: ["haul", "hauling", "draw in", "conduit run", "underground cable"],
+    },
+    {
+      value: "HEIGHTS",
+      label: "Work at heights",
+      note: "Where the height is the job rather than a part of it",
+      requires: ["SWMS007"],
+      hazards: ["HEIGHT_EWP"],
+      describes: "The work is carried out at height.",
+      evidence: ["work at height", "working at heights"],
+    },
+    {
+      value: "TEMPORARY",
+      label: "Temporary or builder's supply",
+      requires: ["SWMS008"],
+      hazards: ["TEMP_POWER"],
+      describes: "A temporary supply is installed and maintained for the works.",
+      evidence: ["temporary supply", "temp power", "builders supply", "builder's supply", "festoon", "site supply"],
+    },
+    {
+      value: "ASBESTOS",
+      label: "Asbestos-related electrical work",
+      note: "Where the asbestos is known and the work is planned around it",
+      requires: ["SWMS009"],
+      hazards: ["ASBESTOS"],
+      describes:
+        "Material that may contain asbestos is present and the work is managed under the site register.",
+      evidence: ["asbestos", "acm", "zelemite", "asbestos register"],
+    },
+    {
+      value: "MAKESAFE",
+      label: "Service disconnection and make-safe",
+      requires: ["SWMS010"],
+      hazards: ["MAKE_SAFE"],
+      describes: "The supply is disconnected and the installation made safe.",
+      evidence: ["disconnect", "disconnection", "make safe", "make-safe", "demolition", "abolish"],
+    },
+    {
+      value: "DUCT",
+      label: "Ventilation duct removal",
+      requires: ["SWMS011"],
+      hazards: ["DUCT_REMOVAL"],
+      describes: "Ventilation ductwork is removed.",
+      evidence: ["duct removal", "ductwork", "remove duct", "exhaust duct", "ventilation duct"],
+    },
+    {
+      value: "HOTWORKS",
+      label: "Hot works",
+      note: "Welding, grinding or cutting as the work itself",
+      requires: ["SWMS012"],
+      hazards: ["HOT_WORKS"],
+      describes: "Hot works are carried out under a permit.",
+      evidence: ["hot work", "hot works", "welding", "weld", "brazing", "oxy"],
+    },
   ],
 };
+
+/** The main jobs each follow-up would only repeat. */
+const COVERED: Record<string, string[]> = {
+  heights: ["HEIGHTS"],
+  board: ["BOARD_NEW", "BOARD_MODIFY", "BOARD_MAINT"],
+  testing: ["RCD", "TAGGING"],
+  thermal: ["THERMAL"],
+  ground: ["EXCAVATION", "PIT"],
+  hot: ["HOTWORKS"],
+  asbestos: ["ASBESTOS"],
+  supply: ["TEMPORARY", "MAKESAFE"],
+  duct: ["DUCT"],
+  // Testing that needs the supply on does not need to be asked whether it is
+  // live. It is; what matters is whether anything is opened up, which is the
+  // follow-up below.
+  energised: ["RCD", "THERMAL"],
+};
+
+/** True when the main job has already answered this follow-up. */
+function settled(key: string, answers: Record<string, string>): boolean {
+  return (COVERED[key] ?? []).includes(answers.nature);
+}
 
 export const QUESTIONS: Question[] = [
   NATURE,
@@ -102,6 +255,7 @@ export const QUESTIONS: Question[] = [
     key: "heights",
     question: "Will any of it be done off the ground?",
     note: "Anything above about two metres, or anywhere a fall could happen.",
+    when: (answers) => !settled("heights", answers),
     options: [
       { value: "NONE", label: "No — all at ground level" },
       {
@@ -134,6 +288,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "board",
     question: "Is a switchboard involved, and what happens to it?",
+    when: (answers) => !settled("board", answers),
     options: [
       { value: "NONE", label: "No switchboard work" },
       {
@@ -167,6 +322,7 @@ export const QUESTIONS: Question[] = [
     key: "energised",
     question: "Will anything be worked on or tested while it is live?",
     note: "Testing that needs supply on counts — RCD trip testing and thermal imaging both do.",
+    when: (answers) => !settled("energised", answers),
     options: [
       { value: "NO", label: "No — everything isolated and proven dead first" },
       {
@@ -182,6 +338,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "testing",
     question: "Is anything being tested, tagged or commissioned?",
+    when: (answers) => !settled("testing", answers),
     options: [
       { value: "NO", label: "No" },
       {
@@ -213,6 +370,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "thermal",
     question: "Any thermal imaging?",
+    when: (answers) => !settled("thermal", answers),
     options: [
       { value: "NO", label: "No" },
       {
@@ -228,6 +386,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "ground",
     question: "Any digging, trenching or pit work?",
+    when: (answers) => !settled("ground", answers),
     options: [
       { value: "NONE", label: "No" },
       {
@@ -259,6 +418,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "hot",
     question: "Any welding, grinding or cutting with a spark or a flame?",
+    when: (answers) => !settled("hot", answers),
     options: [
       { value: "NO", label: "No" },
       {
@@ -275,6 +435,7 @@ export const QUESTIONS: Question[] = [
     key: "asbestos",
     question: "Could asbestos be disturbed?",
     note: "Old switchboard panels, eaves, vinyl, anything pre-1990 that has to be drilled or cut.",
+    when: (answers) => !settled("asbestos", answers),
     options: [
       { value: "NO", label: "No — nothing suspect, or the register is clear" },
       {
@@ -291,6 +452,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "supply",
     question: "Anything to do with the incoming supply?",
+    when: (answers) => !settled("supply", answers),
     options: [
       { value: "NO", label: "No" },
       {
@@ -314,6 +476,7 @@ export const QUESTIONS: Question[] = [
   {
     key: "duct",
     question: "Any ventilation ductwork coming out?",
+    when: (answers) => !settled("duct", answers),
     options: [
       { value: "NO", label: "No" },
       {
@@ -345,6 +508,9 @@ export const QUESTIONS: Question[] = [
     note:
       "Testing with the supply on is one thing; being near an exposed live part is another. OEC-WHS002 is about the second, and this is the answer that decides whether you need it.",
     when: (answers) =>
+      answers.nature === "RCD" ||
+      answers.nature === "THERMAL" ||
+      answers.nature === "BOARD_MAINT" ||
       answers.energised === "YES" ||
       answers.testing === "RCD" ||
       answers.testing === "BOTH" ||
