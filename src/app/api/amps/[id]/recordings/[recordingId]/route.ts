@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { readJson, serverError } from "@/lib/api";
-import { readDevice, readRating } from "@/lib/amps/store";
+import { readDevice, readPhase, readRating } from "@/lib/amps/store";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,7 @@ export async function PATCH(
       name?: string;
       rating?: number | string | null;
       device?: string | null;
+      phase?: string | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -25,6 +26,7 @@ export async function PATCH(
     }
     if ("rating" in body) data.rating = readRating(body.rating);
     if ("device" in body) data.device = readDevice(body.device);
+    if ("phase" in body) data.phase = readPhase(body.phase);
 
     if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
 

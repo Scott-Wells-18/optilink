@@ -5241,3 +5241,23 @@ a.dialog-cancel {
   align-items: center;
   text-decoration: none;
 }
+
+/* Which conductor the clamp went on — four choices, side by side. */
+.amp-phase {
+  margin: 12px 0 0 34px;
+}
+
+.amp-new .amp-phase {
+  margin-left: 0;
+}
+
+.issue-picks.is-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.issue-pick.is-phase {
+  flex: 1 1 120px;
+  padding: 9px 12px;
+}

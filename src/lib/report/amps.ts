@@ -9,14 +9,18 @@ import { reportSignature } from "@/lib/signatures";
 import { readAmpRecording, clock, trim, type AmpReading, type Check } from "@/lib/amps/parse";
 import {
   DEVICE_LABELS,
+  PHASE_LABELS,
   duration,
   summariseAmps,
   type Device,
   type Figures,
+  type Phase,
 } from "@/lib/amps/summary";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { expiry } from "@/lib/report/calibration";
 import type { PageMeta } from "@/lib/report/furniture";
+import { stampCertificate } from "@/lib/report/certificate";
+import { equipmentPageCount, equipmentPages } from "@/lib/report/equipment";
 import { ampScaleTop, drawAmpChart } from "@/lib/report/ampChart";
 import { COLOURS, longDate, safe, shortDate } from "@/lib/report/theme";
 
@@ -55,6 +59,8 @@ export type Entry = {
   name: string;
   rating: number | null;
   device: Device | null;
+  /** The conductor the clamp went on, where it was said. */
+  phase: Phase | null;
   fileName: string;
   reading: AmpReading;
   figures: Figures;
@@ -126,6 +132,7 @@ export async function loadAmpReport(id: string): Promise<AmpLoad> {
       name: safe(row.name),
       rating: row.rating ?? null,
       device: (row.device as Device | null) ?? null,
+      phase: (row.phase as Phase | null) ?? null,
       fileName: safe(row.file.originalName),
       reading,
       figures,
@@ -196,7 +203,7 @@ const WHAT_ABOVE_MEANS: Block[] = [
     ],
   },
   {
-    text: "Where an RCBO or RCD is named, the rating shown in this report is its stated current rating in amperes. That is a different thing from its residual-current rating, which is measured in milliamperes and is the earth-leakage current it trips on. The two must not be confused, and nothing in this report measures earth leakage.",
+    text: "Where an RCBO is named, the rating shown in this report is its stated current rating in amperes. That is a different thing from its residual-current rating, which is measured in milliamperes and is the earth-leakage current it trips on. The two must not be confused, and nothing in this report measures earth leakage.",
   },
 ];
 
@@ -272,9 +279,21 @@ export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
 
   limitations(doc, data);
 
+  // What took the readings, and the certificate that says it was in
+  // calibration when it did — the same page the power analysis ends on, built
+  // by the same code so the two cannot drift apart.
+  const slots = equipmentPages(doc, data.instrument, (note) =>
+    head(doc, data, "Equipment Used", note),
+  );
+
   stampPages(doc, data);
   doc.end();
-  return done;
+
+  const pdf = await done;
+  // The certificate's own pages go in last, into the gaps that were left and
+  // bordered for them.
+  const certificate = data.instrument?.certificate;
+  return certificate ? stampCertificate(pdf, certificate, slots) : pdf;
 }
 
 /* --- the cover ------------------------------------------------------------ */
@@ -443,9 +462,28 @@ function recordedBy(doc: Doc, data: AmpReport) {
   doc.fillColor(COLOURS.ink);
 }
 
-/** "A-Phase PIT JACKS — 20 A circuit breaker" */
+/** "A-Phase PIT JACKS — Red phase — 20 A circuit breaker" */
 function describeEntry(entry: Entry): string {
-  return entry.rating === null ? entry.name : `${entry.name} — ${ratingLine(entry)}`;
+  return [
+    entry.name,
+    entry.phase ? PHASE_LABELS[entry.phase] : null,
+    entry.rating === null ? null : ratingLine(entry),
+  ]
+    .filter(Boolean)
+    .join(" — ");
+}
+
+/**
+ * What goes under a recording's name in the table.
+ *
+ * The phase first where one was given, because it is the thing that tells two
+ * recordings of the same board apart; the file it came out of after it, which
+ * is how the recording is traced back.
+ */
+function phaseLine(entry: Entry): string {
+  return [entry.phase ? PHASE_LABELS[entry.phase].toUpperCase() : null, entry.fileName]
+    .filter(Boolean)
+    .join("  ·  ");
 }
 
 /** "20 A circuit breaker", or "20 A protective device" where it was not said. */
@@ -457,11 +495,11 @@ function ratingLine(entry: Entry): string {
 /**
  * What to call the device in the middle of a sentence.
  *
- * "RCBO/RCD" keeps its capitals — they are initials, and "rcbo / rcd" in the
- * middle of a line reads like a typing error.
+ * "RCBO" keeps its capitals — they are initials, and "rcbo" in the middle of a
+ * line reads like a typing error.
  */
 function deviceWord(device: Device | null): string {
-  if (device === "RCBO") return "RCBO/RCD";
+  if (device === "RCBO") return "RCBO";
   if (device === "BREAKER") return "circuit breaker";
   return "protective device";
 }
@@ -559,7 +597,7 @@ function table(doc: Doc, y: number, data: AmpReport): number {
     const figures = entry.figures;
     const cells: [string, string | null][] = [
       [String(index + 1), null],
-      [entry.name, entry.fileName],
+      [entry.name, phaseLine(entry)],
       entry.rating === null
         ? ["—", "no rating entered"]
         : [`${trim(entry.rating)} A`, deviceWord(entry.device)],
@@ -617,6 +655,9 @@ function contents(doc: Doc, data: AmpReport, plans: Plan[], y: number) {
     ["About these readings", 3],
     ...entries,
     ["Limitations", page],
+    ...(equipmentPageCount(data.instrument) > 0
+      ? ([["Equipment used", page + 1]] as [string, number][])
+      : []),
   ];
 
   label(doc, "What is in this report", MARGIN, y);
@@ -750,6 +791,7 @@ function recordingPages(doc: Doc, data: AmpReport, entry: Entry, index: number, 
     ]
       .filter(Boolean)
       .join("  ·  "),
+    entry.phase,
   );
 
   /* --- the figures, before the chart that shows them --------------------- */
@@ -1039,6 +1081,7 @@ function notePages(doc: Doc, data: AmpReport, entry: Entry, index: number, notes
       data,
       `${index + 1}. ${entry.name}`,
       "Readings that could not be read, and what was done about them",
+      entry.phase,
     );
     y = MARGIN + 74;
     side = 0;
@@ -1150,17 +1193,33 @@ function limitations(doc: Doc, data: AmpReport) {
 
 /* --- page furniture ------------------------------------------------------- */
 
-function head(doc: Doc, data: AmpReport, title: string, note?: string) {
+function head(doc: Doc, data: AmpReport, title: string, note?: string, phase?: Phase | null) {
   if (data.logo) doc.image(data.logo, MARGIN, 24, { fit: [118, 38] });
 
   doc.font("Helvetica-Bold").fontSize(14).fillColor(COLOURS.ink);
-  doc.text(safe(title), MARGIN + 136, 28, { width: CONTENT - 136, height: 18, ellipsis: true });
+  doc.text(safe(title), MARGIN + 136, 26, { width: CONTENT - 136, height: 18, ellipsis: true });
+
+  // The phase sits under the name rather than beside it: the name is what the
+  // circuit is called and the phase is which conductor it was taken on, and a
+  // reader looking for the second should not have to find it in a run of
+  // details after the first.
+  let x = MARGIN + 136;
+  if (phase) {
+    const text = PHASE_LABELS[phase].toUpperCase();
+    doc.font("Helvetica-Bold").fontSize(7.5);
+    const width = doc.widthOfString(text, { characterSpacing: 1.2 }) + 16;
+    doc.roundedRect(x, 44, width, 14, 3).fill(COLOURS.band);
+    doc.fillColor(COLOURS.bar);
+    doc.text(text, x + 8, 47.5, { characterSpacing: 1.2, lineBreak: false });
+    x += width + 10;
+  }
+
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   doc.text(
     safe([note, data.boardName, data.siteName, data.clientName].filter(Boolean).join("  ·  ")),
-    MARGIN + 136,
-    46,
-    { width: CONTENT - 136, height: 11, ellipsis: true },
+    x,
+    47,
+    { width: MARGIN + CONTENT - x, height: 11, ellipsis: true },
   );
 
   doc.rect(MARGIN, 72, CONTENT, 0.8).fill(COLOURS.hair);

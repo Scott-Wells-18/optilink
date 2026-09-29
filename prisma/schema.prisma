@@ -1147,6 +1147,19 @@ enum AmpDevice {
 }
 
 /**
+ * Which conductor a recording was taken on.
+ *
+ * Named as they are called on site. A single-phase circuit is still on one of
+ * them, and a clamp round the neutral is a recording of the neutral.
+ */
+enum AmpPhase {
+  RED
+  WHITE
+  BLUE
+  NEUTRAL
+}
+
+/**
  * A set of short current recordings, issued as one report.
  *
  * Separate from PowerAnalysis on purpose. That is one logger on one board for a
@@ -1219,6 +1232,9 @@ model AmpRecording {
    */
   rating Float?
   device AmpDevice?
+
+  /** The conductor the clamp went on, where it was said. */
+  phase AmpPhase?
 
   /** The meter's own export, kept byte for byte. */
   fileId String

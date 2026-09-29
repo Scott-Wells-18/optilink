@@ -22,13 +22,31 @@ export type Device = (typeof DEVICES)[number];
 
 export const DEVICE_LABELS: Record<Device, string> = {
   BREAKER: "Circuit breaker",
-  RCBO: "RCBO / RCD",
+  RCBO: "RCBO",
 };
 
 export const DEVICE_NOTES: Record<Device, string> = {
   BREAKER: "A circuit breaker (MCB or MCCB) protecting the circuit.",
   RCBO:
-    "An RCBO or an RCD. Enter its current rating in amps — not the residual-current rating in milliamps, which is a different thing entirely.",
+    "An RCBO. Enter its current rating in amps — not the residual-current rating in milliamps, which is a different thing entirely.",
+};
+
+/**
+ * Which conductor the clamp went on.
+ *
+ * Named the way they are called on site rather than by their letters: a
+ * recording of the red phase is filed and read as the red phase, and a report
+ * that says "A-Phase PIT JACKS" without saying which phase that was leaves the
+ * next person to guess at it.
+ */
+export const PHASES = ["RED", "WHITE", "BLUE", "NEUTRAL"] as const;
+export type Phase = (typeof PHASES)[number];
+
+export const PHASE_LABELS: Record<Phase, string> = {
+  RED: "Red phase",
+  WHITE: "White phase",
+  BLUE: "Blue phase",
+  NEUTRAL: "Neutral",
 };
 
 export type Excursion = {

@@ -10,12 +10,8 @@ import { COLOURS, safe, shortDate } from "@/lib/report/theme";
 import { type PageMeta } from "@/lib/report/furniture";
 import { expiry } from "@/lib/report/calibration";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
-import {
-  fitted,
-  stampCertificate,
-  type Box,
-  type Slot,
-} from "@/lib/report/certificate";
+import { stampCertificate, type Slot } from "@/lib/report/certificate";
+import { equipmentPageCount, equipmentPages } from "@/lib/report/equipment";
 import {
   SERIES,
   SOLO_FILL_OPACITY,
@@ -437,7 +433,9 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
     });
   }
 
-  const slots = equipmentPages(doc, data);
+  const slots = equipmentPages(doc, data.instrument, (note) =>
+    heading(doc, data, "Equipment Used", note),
+  );
 
   stampPages(doc, data);
   doc.end();
@@ -448,199 +446,6 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
   const certificate = data.instrument?.certificate;
   return certificate ? stampCertificate(pdf, certificate, slots) : pdf;
 }
-
-/* --- the equipment the readings were taken with --------------------------- */
-
-/** The body of a page, between the heading rule and the page foot. */
-const BODY = { top: 104, height: 436 };
-
-/**
- * The instrument block on the first equipment page.
- *
- * Kept narrow on purpose. A portrait certificate on a landscape page is
- * limited by the height of the page, not its width, so every point this block
- * does not take is a point of width the certificate can have — and at two
- * pages across, each one of those points is worth about one and a half points
- * of certificate height.
- */
-const BLOCK = { photo: 96, gap: 14, details: 140, alone: 200, gutter: 22 };
-
-/**
- * How wide the instrument block is, which is what the certificate gets the
- * rest of. Without a photograph the details take the column on their own and
- * are given a little more of it, rather than sitting in a narrow strip beside
- * the space where a photograph would have been.
- */
-function blockWidth(instrument: Instrument): number {
-  return instrument.photo ? BLOCK.photo + BLOCK.gap + BLOCK.details : BLOCK.alone;
-}
-
-/** How many certificate pages go on a page, with and without the block. */
-const FIRST_PAGE = 2;
-const LATER_PAGE = 3;
-
-/** A certificate page is set in from its border, and the border from its gap. */
-const BORDER_GAP = 5;
-const BORDER_WIDTH = 1.4;
-
-/**
- * The equipment page, and however many more the certificate needs.
- *
- * Returns the gaps the certificate's own pages are stamped into afterwards.
- * They are drawn here, borders and all, because the border has to sit around
- * the page at whatever size that page ends up, and only this function knows
- * what size that is.
- */
-function equipmentPages(doc: Doc, data: PowerReport): Slot[] {
-  const instrument = data.instrument;
-  if (!instrument) return [];
-
-  const slots: Slot[] = [];
-  const sizes = instrument.certificate?.sizes ?? [];
-
-  doc.addPage();
-  heading(doc, data, "Equipment Used");
-  instrumentBlock(doc, instrument);
-
-  const left = MARGIN + blockWidth(instrument) + BLOCK.gutter;
-  layCertificates(doc, sizes.slice(0, FIRST_PAGE), 0, {
-    x: left,
-    y: BODY.top,
-    width: MARGIN + CONTENT - left,
-    height: BODY.height,
-  }, doc.bufferedPageRange().count - 1, sizes.length, slots);
-
-  // Anything the first page could not take, three across on a page of its own.
-  for (let from = FIRST_PAGE; from < sizes.length; from += LATER_PAGE) {
-    doc.addPage();
-    heading(doc, data, "Equipment Used", "Calibration certificate, continued");
-    layCertificates(doc, sizes.slice(from, from + LATER_PAGE), from, {
-      x: MARGIN,
-      y: BODY.top,
-      width: CONTENT,
-      height: BODY.height,
-    }, doc.bufferedPageRange().count - 1, sizes.length, slots);
-  }
-
-  return slots;
-}
-
-/** How many pages the equipment section will run to. */
-function equipmentPageCount(data: PowerReport): number {
-  if (!data.instrument) return 0;
-  const sizes = data.instrument.certificate?.sizes.length ?? 0;
-  return 1 + Math.ceil(Math.max(0, sizes - FIRST_PAGE) / LATER_PAGE);
-}
-
-/**
- * The instrument itself: its photograph, and what it is, beside it.
- *
- * The photograph is small on purpose. It is there so a reader can see the box
- * the readings came out of, not to be looked at, and the space it does not
- * take is space the certificate does.
- */
-function instrumentBlock(doc: Doc, instrument: Instrument) {
-  const column = blockWidth(instrument);
-  let x = MARGIN;
-  let width = column;
-
-  if (instrument.photo) {
-    try {
-      doc.image(instrument.photo, MARGIN, BODY.top, { fit: [BLOCK.photo, 88] });
-      x = MARGIN + BLOCK.photo + BLOCK.gap;
-      width = BLOCK.details;
-    } catch {
-      // An image the renderer will not take is not worth a failed report.
-    }
-  }
-
-  let y = BODY.top;
-  const rows: [string, string | null][] = [
-    ["Equipment name", instrument.name],
-    ["Serial no", instrument.serialNo],
-    ["Model no", instrument.modelNo],
-  ];
-
-  for (const [name, value] of rows) {
-    label(doc, name, x, y);
-    y += 13;
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(COLOURS.ink);
-    doc.text(safe(value ?? "\u2014"), x, y, { width });
-    y += doc.heightOfString(safe(value ?? "\u2014"), { width }) + 12;
-  }
-
-  const note = instrument.certificateUnreadable
-    ? "A calibration certificate is on file for this instrument but could not be read, so it has not been reproduced here."
-    : instrument.certificate
-      ? "The calibration certificate is reproduced on this page exactly as it was issued. Nothing has been retyped or redrawn."
-      : "No calibration certificate has been filed against this instrument.";
-
-  const below = Math.max(y, BODY.top + 100) + 8;
-  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  doc.text(safe(note), MARGIN, below, { width: column, lineGap: 1.8 });
-  doc.fillColor(COLOURS.ink);
-}
-
-/**
- * Certificate pages across a region, each as large as it will go.
- *
- * Every page gets the same share of the width whatever shape it is, so a
- * certificate whose second page is landscape does not shove the first one over
- * — and each is fitted inside its share rather than stretched to fill it.
- *
- * The blue rule is set out from the page edge rather than drawn on it, so the
- * certificate's own border, where it has one, stays its own.
- */
-function layCertificates(
-  doc: Doc,
-  sizes: { width: number; height: number }[],
-  offset: number,
-  region: Box,
-  page: number,
-  total: number,
-  slots: Slot[],
-) {
-  if (sizes.length === 0) return;
-
-  const gap = 18;
-  const inset = BORDER_GAP + BORDER_WIDTH + 2;
-  const share = (region.width - gap * (sizes.length - 1)) / sizes.length;
-
-  sizes.forEach((size, index) => {
-    const space: Box = {
-      x: region.x + index * (share + gap) + inset,
-      y: region.y + inset,
-      width: share - inset * 2,
-      height: region.height - inset * 2,
-    };
-    const box = fitted(space, size);
-
-    // A hairline on the page edge gives a white certificate a definite edge;
-    // the blue rule sits outside it.
-    doc.lineWidth(0.5).strokeColor(COLOURS.hair);
-    doc.rect(box.x, box.y, box.width, box.height).stroke();
-    doc.lineWidth(BORDER_WIDTH).strokeColor(COLOURS.accent);
-    doc.rect(
-      box.x - BORDER_GAP,
-      box.y - BORDER_GAP,
-      box.width + BORDER_GAP * 2,
-      box.height + BORDER_GAP * 2,
-    ).stroke();
-    doc.lineWidth(1).strokeColor("#000000");
-
-    doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
-    doc.text(
-      `PAGE ${offset + index + 1} OF ${total}`,
-      box.x - BORDER_GAP,
-      box.y + box.height + BORDER_GAP + 5,
-      { width: box.width + BORDER_GAP * 2, align: "center", characterSpacing: 1.1 },
-    );
-    doc.fillColor(COLOURS.ink);
-
-    slots.push({ ...box, page, source: offset + index });
-  });
-}
-
 
 /**
  * The cover.
@@ -929,7 +734,7 @@ function explain(doc: Doc, data: PowerReport, channels: Channel[], weekCount: nu
     Math.max(y, at + doc.heightOfString(how, { width, lineGap: 1.6 })) + 26,
     channels,
     weekCount,
-    equipmentPageCount(data),
+    equipmentPageCount(data.instrument),
   );
   doc.fillColor(COLOURS.ink);
 }

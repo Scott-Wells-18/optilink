@@ -20,6 +20,7 @@ import { clearSession, usePersisted } from "@/lib/session";
  */
 
 type Device = "BREAKER" | "RCBO";
+type Phase = "RED" | "WHITE" | "BLUE" | "NEUTRAL";
 
 type Summary = {
   count: number;
@@ -40,6 +41,7 @@ type Recording = {
   name: string;
   rating: number | null;
   device: Device | null;
+  phase: Phase | null;
   position: number;
   summary: Summary | null;
   file: { id: string; originalName: string } | null;
@@ -65,11 +67,27 @@ type Report = {
 type Instrument = { id: string; name: string; modelNo: string | null; serialNo: string | null };
 
 /** A recording that has been chosen but not yet named, rated and added. */
-type Pending = { fileName: string; name: string; rating: string; device: Device | null };
+type Pending = {
+  fileName: string;
+  name: string;
+  rating: string;
+  device: Device | null;
+  phase: Phase | null;
+};
 
 const DEVICE_LABELS: Record<Device, string> = {
   BREAKER: "Circuit breaker",
-  RCBO: "RCBO / RCD",
+  RCBO: "RCBO",
+};
+
+/** Named as they are called on site, in the order they are worked. */
+const PHASES: Phase[] = ["RED", "WHITE", "BLUE", "NEUTRAL"];
+
+const PHASE_LABELS: Record<Phase, string> = {
+  RED: "Red phase",
+  WHITE: "White phase",
+  BLUE: "Blue phase",
+  NEUTRAL: "Neutral",
 };
 
 export function AmpsDialog({
@@ -187,6 +205,7 @@ export function AmpsDialog({
           name: pending.name,
           rating: pending.rating,
           device: pending.device,
+          phase: pending.phase,
         }),
       });
       if (!response.ok) {
@@ -348,6 +367,29 @@ export function AmpsDialog({
                       <p className="amp-warning">{recording.summary.notes[0]}</p>
                     ) : null}
 
+                    <div className="amp-phase">
+                      <span className="dialog-label">Which phase was it on?</span>
+                      <div className="issue-picks is-row">
+                        {PHASES.map((phase) => (
+                          <button
+                            key={phase}
+                            type="button"
+                            className={`issue-pick is-phase ${recording.phase === phase ? "is-on" : ""}`}
+                            onClick={() =>
+                              void patchRecording(recording.id, {
+                                phase: recording.phase === phase ? null : phase,
+                              })
+                            }
+                          >
+                            <span className="issue-pick-mark is-one" aria-hidden />
+                            <span className="issue-pick-body">
+                              <span className="issue-pick-label">{PHASE_LABELS[phase]}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="amp-device">
                       <label className="dialog-field amp-rating">
                         <span className="dialog-label">Device rating (A)</span>
@@ -397,10 +439,9 @@ export function AmpsDialog({
 
             <p className="amp-hint is-standalone">
               A device rating is the stated current rating in amps — the number on the front of
-              the breaker or RCBO. Not its trip setting, and for an RCBO or RCD not the
-              residual-current rating in mA, which is a different thing entirely. Leave it empty
-              and the report gives that recording&rsquo;s measurements without drawing any
-              conclusion about them.
+              the breaker or RCBO. Not its trip setting, and for an RCBO not the residual-current
+              rating in mA, which is a different thing entirely. Leave it empty and the report
+              gives that recording&rsquo;s measurements without drawing any conclusion about them.
             </p>
 
             {/* --- adding one --------------------------------------------- */}
@@ -419,6 +460,29 @@ export function AmpsDialog({
                     }
                   />
                 </label>
+                <div className="amp-phase">
+                  <span className="dialog-label">Which phase was it on?</span>
+                  <div className="issue-picks is-row">
+                    {PHASES.map((phase) => (
+                      <button
+                        key={phase}
+                        type="button"
+                        className={`issue-pick is-phase ${pending.phase === phase ? "is-on" : ""}`}
+                        onClick={() =>
+                          setPending({
+                            ...pending,
+                            phase: pending.phase === phase ? null : phase,
+                          })
+                        }
+                      >
+                        <span className="issue-pick-mark is-one" aria-hidden />
+                        <span className="issue-pick-body">
+                          <span className="issue-pick-label">{PHASE_LABELS[phase]}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="amp-device">
                   <label className="dialog-field amp-rating">
                     <span className="dialog-label">Device rating (A), if known</span>
@@ -495,6 +559,7 @@ export function AmpsDialog({
                       name: stem(file.name),
                       rating: "",
                       device: null,
+                      phase: null,
                     });
                   }}
                 />

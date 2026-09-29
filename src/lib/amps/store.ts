@@ -1,5 +1,5 @@
 import type { AmpReading, Check } from "@/lib/amps/parse";
-import { DEVICES, summariseAmps, type Device } from "@/lib/amps/summary";
+import { DEVICES, PHASES, summariseAmps, type Device, type Phase } from "@/lib/amps/summary";
 
 /**
  * What is kept about a recording once it has been read.
@@ -71,4 +71,9 @@ export function readRating(value: unknown): number | null {
 export function readDevice(value: unknown): Device | null {
   const text = String(value ?? "");
   return (DEVICES as readonly string[]).includes(text) ? (text as Device) : null;
+}
+
+export function readPhase(value: unknown): Phase | null {
+  const text = String(value ?? "");
+  return (PHASES as readonly string[]).includes(text) ? (text as Phase) : null;
 }

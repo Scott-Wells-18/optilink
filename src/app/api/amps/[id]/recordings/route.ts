@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { badRequest, notFound, readJson, serverError } from "@/lib/api";
 import { readUpload } from "@/lib/storage";
 import { readAmpRecording } from "@/lib/amps/parse";
-import { readDevice, readRating, storedSummary } from "@/lib/amps/store";
+import { readDevice, readPhase, readRating, storedSummary } from "@/lib/amps/store";
 
 export const runtime = "nodejs";
 
@@ -27,6 +27,7 @@ export async function POST(
       name?: string;
       rating?: number | string | null;
       device?: string | null;
+      phase?: string | null;
     };
     if (!body.fileId) return badRequest("No recording was supplied.");
 
@@ -71,6 +72,7 @@ export async function POST(
         name: body.name?.trim().slice(0, 120) || stem(file.originalName),
         rating: readRating(body.rating),
         device: readDevice(body.device),
+        phase: readPhase(body.phase),
         position: (last?.position ?? -1) + 1,
         summary: JSON.parse(JSON.stringify(summary)),
       },
