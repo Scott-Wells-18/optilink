@@ -29,6 +29,7 @@ export type StoredSummary = {
   heading: string | null;
   checks: Check[];
   notes: string[];
+  remarks: string[];
 };
 
 export function storedSummary(reading: AmpReading): StoredSummary | null {
@@ -49,6 +50,7 @@ export function storedSummary(reading: AmpReading): StoredSummary | null {
     heading: reading.heading,
     checks: reading.checks,
     notes: reading.notes,
+    remarks: reading.remarks,
   };
 }
 

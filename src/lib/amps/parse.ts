@@ -61,6 +61,8 @@ export type AmpReading = {
   checks: Check[];
   /** Anything that could not be read, a line each, in the file's own order. */
   notes: string[];
+  /** Things worth saying about how the file was read, rather than faults. */
+  remarks: string[];
   /** The usual gap between samples, in seconds. Zero where it varied. */
   intervalSeconds: number;
   /** False where the file timed its samples without dating them. */
@@ -88,7 +90,18 @@ export function readAmpRecording(bytes: Buffer, name: string): AmpReading {
 
 /* --- finding the readings ------------------------------------------------- */
 
-const TIME = /\b(?:time|date|timestamp|date\s*\/?\s*time|clock|when|elapsed)\b/i;
+/**
+ * The columns that say when a reading was taken.
+ *
+ * Some meters write one column — "Time", holding "7/09/2026 11:55" — and some
+ * write two, a date beside a clock. Both are read, because a clamp meter that
+ * splits them is not writing half a timestamp: it is writing a whole one in
+ * two cells, and taking only the first of them puts every reading of a minute
+ * on the same midnight.
+ */
+const DATE_HEAD = /\b(?:date|day)\b/i;
+const CLOCK_HEAD = /\b(?:time|clock|timestamp|when|elapsed)\b/i;
+const TIME = /\b(?:time|date|day|timestamp|clock|when|elapsed)\b/i;
 
 /**
  * A column of current.
@@ -107,6 +120,7 @@ function fromRows(rows: string[][]): AmpReading {
       timeHeading: null,
       declared: EMPTY_DECLARED,
       checks: [],
+      remarks: [],
       notes: [
         "No timestamped current readings could be found in this file. It needs a row of headings with a time column and a current column, and the readings under it.",
       ],
@@ -115,9 +129,16 @@ function fromRows(rows: string[][]): AmpReading {
     };
   }
 
-  const { at: headerAt, timeColumn, ampsColumn } = chosen;
+  const { at: headerAt, stampColumns, ampsColumn } = chosen;
   const header = rows[headerAt];
   const declared = readDeclared(rows.slice(0, headerAt));
+  const monthFirst = readsMonthFirst(rows, headerAt, stampColumns[0]);
+  const remarks: string[] = [];
+  if (monthFirst) {
+    remarks.push(
+      "Dates in this file are written month first, in the American order. They have been read that way.",
+    );
+  }
 
   const samples: AmpSample[] = [];
   const notes: string[] = [];
@@ -134,13 +155,14 @@ function fromRows(rows: string[][]): AmpReading {
     if (!row.some((cell) => cell.trim())) continue;
     const line = index + 1;
 
-    const stamp = readStamp(row[timeColumn] ?? "", day, previous);
+    const when = stampText(row, stampColumns);
+    const stamp = readStamp(when, day, previous, monthFirst);
     if (!stamp) {
       // A second header partway down — some meters repeat it — is not a fault.
       if (looksLikeHeader(row)) continue;
       unreadable += 1;
       notes.push(
-        `Line ${line}: "${show(row[timeColumn])}" is not a time this could read, so that row was left out.`,
+        `Line ${line}: "${show(when)}" is not a time this could read, so that row was left out.`,
       );
       continue;
     }
@@ -204,16 +226,29 @@ function fromRows(rows: string[][]): AmpReading {
   return {
     samples: ordered,
     heading: header[ampsColumn]?.trim() || null,
-    timeHeading: header[timeColumn]?.trim() || null,
+    timeHeading:
+      stampColumns
+        .map((column) => header[column]?.trim())
+        .filter(Boolean)
+        .join(" + ") || null,
     declared,
     checks: check(declared, ordered),
     notes,
+    remarks,
     intervalSeconds: interval(ordered),
     dated,
   };
 }
 
-type Header = { at: number; timeColumn: number; ampsColumn: number; readings: number };
+/** The cells that make up one timestamp, as one string to be read. */
+function stampText(row: string[], columns: number[]): string {
+  return columns
+    .map((column) => (row[column] ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+type Header = { at: number; stampColumns: number[]; ampsColumn: number; readings: number };
 
 /**
  * Which row is the header over the readings.
@@ -228,11 +263,16 @@ function chooseHeader(rows: string[][]): Header | null {
 
   rows.forEach((row, at) => {
     if (!looksLikeHeader(row)) return;
-    const timeColumn = row.findIndex((cell) => TIME.test(cell));
-    if (timeColumn < 0) return;
-    const ampsColumn = findAmps(rows, at, timeColumn);
+    const stampColumns = whenColumns(row);
+    if (stampColumns.length === 0) return;
+    const ampsColumn = findAmps(rows, at, stampColumns);
     if (ampsColumn < 0) return;
-    candidates.push({ at, timeColumn, ampsColumn, readings: countReadings(rows, at, timeColumn) });
+    candidates.push({
+      at,
+      stampColumns,
+      ampsColumn,
+      readings: countReadings(rows, at, stampColumns),
+    });
   });
 
   if (candidates.length === 0) return null;
@@ -255,6 +295,19 @@ function looksLikeHeader(row: string[]): boolean {
 }
 
 /**
+ * The columns that carry the moment a reading was taken.
+ *
+ * A date column and a clock column where the meter wrote both, and the one
+ * column where it wrote the lot. A single heading that says both — "Date/Time"
+ * — is one column and is read as one.
+ */
+function whenColumns(row: string[]): number[] {
+  const date = row.findIndex((cell) => DATE_HEAD.test(cell));
+  const clock = row.findIndex((cell, index) => index !== date && CLOCK_HEAD.test(cell));
+  return [date, clock].filter((index) => index >= 0);
+}
+
+/**
  * How many readings follow a header, without a break.
  *
  * The run stops at the next header rather than running to the end of the file,
@@ -263,16 +316,40 @@ function looksLikeHeader(row: string[]): boolean {
  * under it, not forty-one. Blank rows are stepped over — these files are padded
  * with them — and neither open nor close a run.
  */
-function countReadings(rows: string[][], headerAt: number, timeColumn: number): number {
+function countReadings(rows: string[][], headerAt: number, columns: number[]): number {
   let count = 0;
   for (let index = headerAt + 1; index < rows.length; index += 1) {
     const row = rows[index];
     if (!row.some((cell) => cell.trim())) continue;
     if (looksLikeHeader(row)) break;
-    const cell = row[timeColumn];
-    if (cell !== undefined && readStamp(cell, NO_DATE_DAY, null)) count += 1;
+    if (readStamp(stampText(row, columns), NO_DATE_DAY, null, false)) count += 1;
   }
   return count;
+}
+
+/**
+ * Which way round the file writes its dates.
+ *
+ * "09-28-2026" can only be month first, because there is no twenty-eighth
+ * month; "28/09/2026" can only be day first. So the whole column is looked at
+ * and the answer is taken from whichever rows settle it. Nothing settles it —
+ * every date in the file is ambiguous — and it is read day first, which is how
+ * it is written here.
+ */
+function readsMonthFirst(rows: string[][], headerAt: number, column: number): boolean {
+  let dayFirst = false;
+  let monthFirst = false;
+
+  for (let index = headerAt + 1; index < rows.length; index += 1) {
+    const parts = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/.exec((rows[index][column] ?? "").trim());
+    if (!parts) continue;
+    if (Number(parts[1]) > 12) dayFirst = true;
+    if (Number(parts[2]) > 12) monthFirst = true;
+  }
+
+  // A file that says both is a file that cannot be trusted either way; each
+  // date is then read on its own terms, and an impossible month is swapped.
+  return monthFirst && !dayFirst;
 }
 
 /**
@@ -282,21 +359,33 @@ function countReadings(rows: string[][], headerAt: number, timeColumn: number): 
  * the column: a meter that labels its one column "[A]" and a meter that labels
  * it nothing at all both have to be read.
  */
-function findAmps(rows: string[][], headerAt: number, timeColumn: number): number {
+function findAmps(rows: string[][], headerAt: number, stampColumns: number[]): number {
   const header = rows[headerAt];
+  const taken = new Set(stampColumns);
   const named = header.findIndex(
-    (cell, index) => index !== timeColumn && cell.trim() !== "" && AMPS.test(strip(cell)),
+    (cell, index) => !taken.has(index) && cell.trim() !== "" && AMPS.test(strip(cell)),
   );
   if (named >= 0) return named;
 
+  const body = rows.slice(headerAt + 1, headerAt + 12);
   for (let index = 0; index < header.length; index += 1) {
-    if (index === timeColumn) continue;
-    const numbers = rows
-      .slice(headerAt + 1, headerAt + 12)
-      .filter((row) => readAmps(row[index]) !== null).length;
-    if (numbers >= 2) return index;
+    if (taken.has(index)) continue;
+    const values = body.map((row) => readAmps(row[index]));
+    if (values.filter((value) => value !== null).length < 2) continue;
+    // 1, 2, 3, 4 is the meter numbering its samples, not measuring anything.
+    if (looksLikeIndex(values)) continue;
+    return index;
   }
   return -1;
+}
+
+/** A column that just counts the rows. */
+function looksLikeIndex(values: (number | null)[]): boolean {
+  const run = values.filter((value): value is number => value !== null);
+  if (run.length < 3) return false;
+  return run.every(
+    (value, index) => Number.isInteger(value) && (index === 0 || value === run[index - 1] + 1),
+  );
 }
 
 /** The heading without its unit, so "I1_Max [A]" tests as "i1 max". */
@@ -333,11 +422,16 @@ type Stamp = { at: number; day: number; dated: boolean };
  * through midnight is rare and a recording that silently folds its second half
  * back over its first is worse.
  */
-function readStamp(cell: string, day: number, previous: number | null): Stamp | null {
+function readStamp(
+  cell: string,
+  day: number,
+  previous: number | null,
+  monthFirst: boolean,
+): Stamp | null {
   const text = cell.trim();
   if (text === "") return null;
 
-  const full = readDateTime(text);
+  const full = readDateTime(text, monthFirst);
   if (full !== null) return { at: full, day: Math.floor(full / 86_400_000) * 86_400_000, dated: true };
 
   const time = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?\s*([AaPp])\.?[Mm]?\.?$/.exec(text)
@@ -360,22 +454,38 @@ function readStamp(cell: string, day: number, previous: number | null): Stamp | 
   return { at, day, dated: false };
 }
 
-/** A dated timestamp, day-first as Australian meters write it, or ISO. */
-function readDateTime(text: string): number | null {
+/**
+ * A dated timestamp: day-first as Australian meters write it, month-first
+ * where the file has been shown to write it that way, or ISO.
+ *
+ * Whichever way round it is read, an impossible month is a month in the wrong
+ * place rather than a date to be believed — `Date.UTC` would take month 28 and
+ * roll it cheerfully into 2028, which is how a minute of readings ends up
+ * spread over two years or, worse, all on the same midnight. So the two are
+ * swapped where only one order can be a real date, and a date that cannot be
+ * one either way round is not read at all.
+ */
+function readDateTime(text: string, monthFirst = false): number | null {
   const dmy =
     /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?\s*([AaPp])?\.?[Mm]?\.?)?$/.exec(
       text,
     );
   if (dmy) {
-    const [, day, month, year, hour = "0", minute = "0", second = "0", fraction = "0", half] = dmy;
+    const [, first, second, year, hour = "0", minute = "0", second_ = "0", fraction = "0", half] =
+      dmy;
+    let day = Number(monthFirst ? second : first);
+    let month = Number(monthFirst ? first : second);
+    if (month > 12 && day <= 12) [day, month] = [month, day];
+    if (month > 12 || month < 1 || day > 31 || day < 1) return null;
+
     const full = year.length === 2 ? 2000 + Number(year) : Number(year);
     return Date.UTC(
       full,
-      Number(month) - 1,
-      Number(day),
+      month - 1,
+      day,
       hourOf(hour, half),
       Number(minute),
-      Number(second),
+      Number(second_),
       Number(fraction.padEnd(3, "0")),
     );
   }

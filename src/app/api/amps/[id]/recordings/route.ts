@@ -51,6 +51,17 @@ export async function POST(
       select: { position: true },
     });
 
+    // The first recording dates the report. A meter that writes the date into
+    // its file knows when the readings were taken better than the day somebody
+    // got around to uploading them does; a later recording does not move it,
+    // because by then the date may have been set by hand.
+    if (last === null && summary.dated) {
+      await prisma.ampReport.update({
+        where: { id },
+        data: { date: new Date(Math.floor(summary.from / 86_400_000) * 86_400_000) },
+      });
+    }
+
     const recording = await prisma.ampRecording.create({
       data: {
         reportId: id,

@@ -1,3 +1,4 @@
+import PDFDocument from "pdfkit";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
@@ -15,18 +16,9 @@ import {
 } from "@/lib/amps/summary";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { expiry } from "@/lib/report/calibration";
-import {
-  bar,
-  coverPage,
-  footer,
-  newDocument,
-  sectionBar,
-  stampPageNumbers,
-  type Doc,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import type { PageMeta } from "@/lib/report/furniture";
 import { ampScaleTop, drawAmpChart } from "@/lib/report/ampChart";
-import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
+import { COLOURS, longDate, safe, shortDate } from "@/lib/report/theme";
 
 /**
  * The amp reading report.
@@ -43,7 +35,19 @@ import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib
  * a question about the device's characteristic, the cable, the installation and
  * the duration, and this report holds the measurements rather than the verdict.
  * Where no rating was given it draws no conclusion at all.
+ *
+ * Landscape throughout, the way the power analysis is. A minute of readings a
+ * second apart is a wide thing: given the width of the page the line has room
+ * to show every sample it was drawn from, and the panels that read it sit side
+ * by side underneath rather than stacked down a column.
  */
+
+const PAGE = { width: 841.89, height: 595.28 };
+const MARGIN = 34;
+const CONTENT = PAGE.width - MARGIN * 2;
+
+/** The foot of the page: where content stops and the page furniture starts. */
+const FLOOR = PAGE.height - 54;
 
 export type Entry = {
   id: string;
@@ -217,13 +221,41 @@ const LIMITATIONS: Block[] = [
   },
 ];
 
+const HOW_TO_READ: [string, string][] = [
+  [
+    "Every sample",
+    "Each chart shows every reading the instrument recorded. Nothing is grouped or averaged into intervals, so a peak of one second is on the page at full height.",
+  ],
+  [
+    "Blue and red",
+    "The line is blue at or below the stated rating and red above it, with the change drawn where the readings cross the rating rather than at the next sample. Stretches above the rating are also banded, so a single second is visible.",
+  ],
+  [
+    "The figures",
+    "The highest reading is ringed and labelled with its time. The average is the dashed line, taken across every reading in that recording including recorded zeros.",
+  ],
+  [
+    "What was imported",
+    "Each page states what the instrument's own summary said and what was actually imported from the file, and lists anything that could not be read.",
+  ],
+];
+
 /* --- the document --------------------------------------------------------- */
 
 /** Cover, summary and contents, then what the readings are. */
 const FIRST_RECORDING = 4;
 
 export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
-  const { doc, done } = newDocument();
+  const doc = new PDFDocument({
+    size: [PAGE.width, PAGE.height],
+    margin: MARGIN,
+    bufferPages: true,
+  });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const done = new Promise<Buffer>((resolve) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+  });
 
   // How many pages each recording runs to has to be known before the contents
   // is drawn: a file with a page of unreadable rows carries them with it, and
@@ -240,7 +272,7 @@ export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
 
   limitations(doc, data);
 
-  stampPageNumbers(doc, 0);
+  stampPages(doc, data);
   doc.end();
   return done;
 }
@@ -252,48 +284,168 @@ function cover(doc: Doc, data: AmpReport) {
   const rated = data.entries.filter((entry) => entry.rating !== null).length;
   const where = [data.boardName, data.location].filter(Boolean).join(", ");
 
-  coverPage(doc, data, {
-    title: "Amp Reading Report",
-    eyebrow: "Current recording",
-    subtitle: data.siteLocation || data.siteName,
-    dateLabel: "Readings taken",
-    date: data.takenOn,
-    scopeLabel: data.entries.length === 1 ? "Circuit recorded" : "Circuits recorded",
-    scope: data.entries.map(describeEntry).join("; "),
-    scopeList: data.entries.map(describeEntry),
-    rows: [
-      ["Report date", shortDate(data.reportDate)],
-      ["Site contact", data.contactName ?? data.clientName],
-      ...(where ? ([["Recorded at", where]] as [string, string][]) : []),
-      [
-        "Recordings",
-        `${data.entries.length} ${data.entries.length === 1 ? "recording" : "recordings"}, ${readings.toLocaleString("en-AU")} readings in all`,
-      ],
-      [
-        "Device ratings",
-        rated === data.entries.length
-          ? "Entered for every recording"
-          : rated === 0
-            ? "None entered — measurements only"
-            : `Entered for ${rated} of ${data.entries.length}`,
-      ],
-      ["Instrument", instrumentLine(data.instrument)],
-      ["Recorded by", `${THERMOGRAPHER.name} · ${COMPANY.name} · Lic ${COMPANY.licence}`],
-    ],
-    note:
-      "This report records the current measured on the circuits listed above during the short periods stated inside. " +
-      "It is issued to the addressee named above. It is a record of what was measured while the readings were being " +
-      "taken; it does not establish maximum demand, and it does not confirm the adequacy of any cable or protective " +
-      "device. The limitations at the back form part of it.",
-    marks: [],
+  /* --- masthead ---------------------------------------------------------- */
+  if (data.logo) doc.image(data.logo, MARGIN, 34, { fit: [158, 50] });
+  const trading = [COMPANY.addressLine1, COMPANY.addressLine2, COMPANY.phone, COMPANY.email];
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  trading.forEach((line, index) => {
+    doc.text(line, MARGIN + CONTENT - 220, 36 + index * 11.5, { width: 220, align: "right" });
   });
+
+  doc.rect(MARGIN, 100, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, 99, 64, 2.6).fill(COLOURS.accent);
+
+  /* --- left: what it is, and who for ------------------------------------- */
+  const left = 430;
+  let y = 132;
+
+  doc.fillColor(COLOURS.accent).font("Helvetica-Bold").fontSize(8.5);
+  doc.text("CURRENT RECORDING", MARGIN, y, { width: left, characterSpacing: 2.2 });
+
+  y += 18;
+  doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(26);
+  doc.text("Amp Reading Report", MARGIN, y, { width: left, lineGap: 2 });
+  y += doc.heightOfString("Amp Reading Report", { width: left }) + 30;
+
+  label(doc, "Prepared for", MARGIN, y);
+  y += 15;
+  doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(18);
+  doc.text(data.clientName, MARGIN, y, { width: left });
+  y += doc.heightOfString(data.clientName, { width: left }) + 5;
+  doc.font("Helvetica-Bold").fontSize(11.5).fillColor(COLOURS.bar);
+  doc.text(data.siteName, MARGIN, y, { width: left });
+  y += 15;
+  if (data.siteLocation && data.siteLocation !== data.siteName) {
+    doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.inkSoft);
+    doc.text(data.siteLocation, MARGIN, y, { width: left });
+  }
+
+  recordedBy(doc, data);
+
+  /* --- right: what was recorded, and the facts --------------------------- */
+  const x = MARGIN + left + 40;
+  const width = CONTENT - left - 40;
+  let at = 132;
+
+  const listed = data.entries.slice(0, COVER_LIST);
+  const spare = data.entries.length - listed.length;
+  const cardHeight = 40 + listed.length * 13 + (spare > 0 ? 13 : 0) + 8;
+  doc.rect(x, at, width, cardHeight).fill(COLOURS.soft);
+  doc.rect(x, at, 3, cardHeight).fill(COLOURS.accent);
+  label(doc, data.entries.length === 1 ? "Circuit recorded" : "Circuits recorded", x + 18, at + 13);
+
+  let line = at + 30;
+  for (const entry of listed) {
+    doc.fillColor(COLOURS.accent).font("Helvetica-Bold").fontSize(8.5);
+    doc.text("•", x + 18, line + 1, { width: 8, lineBreak: false });
+    doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9.5);
+    doc.text(safe(describeEntry(entry)), x + 29, line, {
+      width: width - 47,
+      height: 12,
+      ellipsis: true,
+      lineBreak: false,
+    });
+    line += 13;
+  }
+  if (spare > 0) {
+    doc.fillColor(COLOURS.inkSoft).font("Helvetica-Oblique").fontSize(9);
+    doc.text(`and ${spare} more, listed inside`, x + 29, line, { width: width - 47 });
+  }
+  at += cardHeight + 20;
+
+  const facts: [string, string][] = [
+    ["Readings taken", shortDate(data.takenOn)],
+    ["Report date", shortDate(data.reportDate)],
+    ["Site contact", data.contactName ?? data.clientName],
+    ...(where ? ([["Recorded at", where]] as [string, string][]) : []),
+    [
+      "Recordings",
+      `${data.entries.length} ${data.entries.length === 1 ? "recording" : "recordings"}, ${readings.toLocaleString("en-AU")} readings in all`,
+    ],
+    [
+      "Device ratings",
+      rated === data.entries.length
+        ? "Entered for every recording"
+        : rated === 0
+          ? "None entered — measurements only"
+          : `Entered for ${rated} of ${data.entries.length}`,
+    ],
+    ["Instrument", instrumentLine(data.instrument)],
+  ];
+
+  const labelWidth = 116;
+  for (const [name, value] of facts) {
+    doc.font("Helvetica").fontSize(9);
+    const height = Math.max(24, doc.heightOfString(name, { width: labelWidth }) + 13);
+    doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+    doc.fillColor(COLOURS.inkSoft);
+    doc.text(name, x, at + 7, { width: labelWidth });
+    doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9.5);
+    doc.text(safe(value), x + labelWidth + 8, at + 6.5, {
+      width: width - labelWidth - 8,
+      height: 12,
+      ellipsis: true,
+    });
+    at += height;
+  }
+  doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
+
+  at += 14;
+  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe(
+      "This report records the current measured on the circuits listed above during the short periods stated " +
+        "inside. It is a record of what was measured while the readings were being taken; it does not establish " +
+        "maximum demand, and it does not confirm the adequacy of any cable or protective device. The limitations " +
+        "at the back form part of it.",
+    ),
+    x,
+    at,
+    { width, lineGap: 1.6 },
+  );
+
+  /* --- the foot ---------------------------------------------------------- */
+  const footY = PAGE.height - MARGIN - 32;
+  doc.rect(MARGIN, footY, CONTENT, 32).fill(COLOURS.bar);
+  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
+  doc.text(COMPANY.name, MARGIN + 14, footY + 11.5, { width: 120 });
+  doc.font("Helvetica").fontSize(8.5);
+  doc.text(
+    `ABN ${COMPANY.abn}   ·   Contractor Licence ${COMPANY.licence}   ·   Qualified Supervisor ${COMPANY.supervisor}`,
+    MARGIN + 14,
+    footY + 12,
+    { width: CONTENT - 28, align: "right" },
+  );
+  doc.fillColor(COLOURS.ink).font("Helvetica");
+}
+
+/** How many circuits the cover card lists before it says "and N more". */
+const COVER_LIST = 9;
+
+/** Who took the readings, signed, at the foot of the cover's left column. */
+function recordedBy(doc: Doc, data: AmpReport) {
+  const y = PAGE.height - MARGIN - 170;
+
+  label(doc, "Recorded by", MARGIN, y);
+  if (data.signature) doc.image(data.signature, MARGIN + 6, y + 18, { fit: [170, 46] });
+  doc.rect(MARGIN, y + 66, 220, 0.8).fill(COLOURS.inkSoft);
+
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
+  doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
+  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
+  doc.text(COMPANY.name, MARGIN, y + 91, { lineBreak: false });
+  doc.text(
+    `Contractor Licence ${COMPANY.licence}  ·  Qualified Supervisor ${COMPANY.supervisor}`,
+    MARGIN,
+    y + 105,
+    { lineBreak: false },
+  );
+  doc.fillColor(COLOURS.ink);
 }
 
 /** "A-Phase PIT JACKS — 20 A circuit breaker" */
 function describeEntry(entry: Entry): string {
-  return entry.rating === null
-    ? entry.name
-    : `${entry.name} — ${ratingLine(entry)}`;
+  return entry.rating === null ? entry.name : `${entry.name} — ${ratingLine(entry)}`;
 }
 
 /** "20 A circuit breaker", or "20 A protective device" where it was not said. */
@@ -333,7 +485,7 @@ function instrumentLine(instrument: Instrument | null): string {
 
 function summary(doc: Doc, data: AmpReport, plans: Plan[]) {
   doc.addPage();
-  sectionBar(doc, "Summary of Recordings", MARGIN);
+  head(doc, data, "Summary of Recordings");
 
   const readings = data.entries.reduce((total, entry) => total + entry.figures.count, 0);
   const where = data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName;
@@ -349,49 +501,53 @@ function summary(doc: Doc, data: AmpReport, plans: Plan[]) {
     } Each recording is of a separate circuit and is reported on its own: the figures below belong to the recording they sit on, and no average is taken across recordings.`,
   );
 
-  let y = MARGIN + 30;
+  let y = 104;
   doc.font("Helvetica").fontSize(10).fillColor(COLOURS.ink);
   doc.text(opening, MARGIN, y, { width: CONTENT, lineGap: 2.4 });
-  y = doc.y + 18;
+  y = doc.y + 20;
 
-  /* --- one row per recording --------------------------------------------- */
-  const columns = [18, 126, 74, 52, 66, 60, 60, 55];
-  const titles = ["#", "Recording", "Device", "Samples", "Period", "Highest", "Average", "Above"];
-  y = table(doc, y, titles, columns, data);
+  y = table(doc, y, data);
 
   y += 10;
   doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-  const note = safe(
-    "“Average” is the mean of every reading in that recording, including any recorded zeros. " +
-      "“Above” counts the readings higher than the stated rating of the device entered for that recording; " +
-      "it is left blank where no rating was entered, and where none was entered no pass, fail or overload " +
-      "conclusion is drawn.",
+  doc.text(
+    safe(
+      "“Average” is the mean of every reading in that recording, including any recorded zeros. " +
+        "“Above” counts the readings higher than the stated rating of the device entered for that recording; " +
+        "it is left blank where no rating was entered, and where none was entered no pass, fail or overload " +
+        "conclusion is drawn.",
+    ),
+    MARGIN,
+    y,
+    { width: CONTENT, lineGap: 1.8 },
   );
-  doc.text(note, MARGIN, y, { width: CONTENT, lineGap: 1.8 });
-  y = doc.y + 22;
+  y = doc.y + 24;
 
-  /* --- what is in the report --------------------------------------------- */
   contents(doc, data, plans, y);
-  footer(doc, data);
 }
 
 function endStop(text: string): string {
   return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
 }
 
-function table(doc: Doc, y: number, titles: string[], columns: number[], data: AmpReport): number {
+/** The widths of the summary table, which add up to the page. */
+const COLUMNS = [26, 214, 118, 68, 100, 92, 86, 70];
+
+function table(doc: Doc, y: number, data: AmpReport): number {
+  const titles = ["#", "Recording", "Device", "Samples", "Period", "Highest", "Average", "Above"];
+
   doc.rect(MARGIN, y, CONTENT, 20).fill(COLOURS.bar);
   doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(7.5);
   let x = MARGIN;
   titles.forEach((title, index) => {
     const centred = index > 2;
     doc.text(title.toUpperCase(), centred ? x : x + 6, y + 7, {
-      width: centred ? columns[index] : columns[index] - 10,
+      width: centred ? COLUMNS[index] : COLUMNS[index] - 10,
       align: centred ? "center" : "left",
       characterSpacing: 0.6,
       lineBreak: false,
     });
-    x += columns[index];
+    x += COLUMNS[index];
   });
   y += 20;
 
@@ -405,7 +561,7 @@ function table(doc: Doc, y: number, titles: string[], columns: number[], data: A
       [String(index + 1), null],
       [entry.name, entry.fileName],
       entry.rating === null
-        ? ["\u2014", "no rating entered"]
+        ? ["—", "no rating entered"]
         : [`${trim(entry.rating)} A`, deviceWord(entry.device)],
       [figures.count.toLocaleString("en-AU"), null],
       [duration(figures.seconds), `${clock(figures.from)}–${clock(figures.to)}`],
@@ -420,7 +576,7 @@ function table(doc: Doc, y: number, titles: string[], columns: number[], data: A
     let at = MARGIN;
     cells.forEach(([value, note], column) => {
       const centred = column > 2;
-      const width = columns[column];
+      const width = COLUMNS[column];
       const highlight = column === 7 && entry.rating !== null && figures.above > 0;
       doc.font("Helvetica-Bold").fontSize(column === 1 ? 9 : 8.5);
       doc.fillColor(highlight ? COLOURS.alert : COLOURS.ink);
@@ -466,12 +622,12 @@ function contents(doc: Doc, data: AmpReport, plans: Plan[], y: number) {
   label(doc, "What is in this report", MARGIN, y);
   y += 17;
 
-  const columns = 2;
-  const width = (CONTENT - 36) / columns;
+  const columns = 3;
+  const width = (CONTENT - 40 * (columns - 1)) / columns;
   const perColumn = Math.ceil(rows.length / columns);
 
   rows.forEach(([title, at], index) => {
-    const x = MARGIN + Math.floor(index / perColumn) * (width + 36);
+    const x = MARGIN + Math.floor(index / perColumn) * (width + 40);
     const top = y + (index % perColumn) * 16;
     doc.rect(x, top + 13, width, 0.5).fill(COLOURS.hair);
     doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
@@ -486,30 +642,24 @@ function contents(doc: Doc, data: AmpReport, plans: Plan[], y: number) {
 
 function about(doc: Doc, data: AmpReport) {
   doc.addPage();
-  sectionBar(doc, "About These Readings", MARGIN);
+  head(doc, data, "About These Readings");
 
-  const gap = 34;
+  const gap = 46;
   const column = (CONTENT - gap) / 2;
 
-  label(doc, "What current is, and why it is measured", MARGIN, MARGIN + 34);
-  blocks(doc, MARGIN, MARGIN + 54, column, WHAT_CURRENT_IS);
+  label(doc, "What current is, and why it is measured", MARGIN, 104);
+  const leftEnd = blocks(doc, MARGIN, 124, column, WHAT_CURRENT_IS);
 
   const x = MARGIN + column + gap;
-  label(doc, "Readings above a device's rating", x, MARGIN + 34);
-  const right = blocks(doc, x, MARGIN + 54, column, WHAT_ABOVE_MEANS);
+  label(doc, "Readings above a device's rating", x, 104);
+  const rightEnd = blocks(doc, x, 124, column, WHAT_ABOVE_MEANS);
 
   /* --- how to read a page of readings ------------------------------------ */
-  const y = Math.max(right, doc.y) + 14;
+  const y = Math.min(Math.max(leftEnd, rightEnd) + 20, FLOOR - 92);
   label(doc, "How to read each recording", MARGIN, y);
-  const notes: [string, string][] = [
-    ["Every sample", "Each chart shows every reading the instrument recorded. Nothing is grouped or averaged into intervals, so a peak of one second is on the page at full height."],
-    ["Blue and red", "The line is blue at or below the stated rating and red above it, with the change drawn where the readings cross the rating rather than at the next sample. Stretches above the rating are also banded, so a single second is visible."],
-    ["The figures", "The highest reading is ringed and labelled with its time. The average is the dashed line, taken across every reading in that recording including recorded zeros."],
-    ["What was imported", "Each page states what the instrument's own summary said and what was actually imported from the file, and lists anything that could not be read."],
-  ];
 
-  const width = (CONTENT - 22 * (notes.length - 1)) / notes.length;
-  notes.forEach(([title, body], index) => {
+  const width = (CONTENT - 22 * (HOW_TO_READ.length - 1)) / HOW_TO_READ.length;
+  HOW_TO_READ.forEach(([title, body], index) => {
     const left = MARGIN + index * (width + 22);
     doc.rect(left, y + 19, width, 2.4).fill(COLOURS.accent);
     doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.ink);
@@ -519,165 +669,92 @@ function about(doc: Doc, data: AmpReport) {
   });
 
   doc.fillColor(COLOURS.ink);
-  footer(doc, data);
 }
 
 /* --- a recording to a page ------------------------------------------------ */
 
-/** Where the body of a recording's page begins and ends. */
-const BODY = { top: MARGIN + 82, bottom: PAGE.height - 86 };
-const CHART = { x: MARGIN + 36, y: MARGIN + 132, width: CONTENT - 46, height: 260 };
+/** The chart, and the two panels that read it, on a landscape page. */
+const CHART = { x: MARGIN + 40, y: 168, width: CONTENT - 58 };
+const PANEL = { gap: 30, left: 456 };
 
-type Plan = { pages: number; inline: string[]; overflow: string[] };
+/** How many stretches above the rating a page lists before it summarises. */
+const EXCURSION_ROWS = 4;
 
 /**
- * How much of a recording's account fits on its own page.
+ * How tall the chart is on a given recording's page.
  *
- * Measured rather than guessed, so the contents can cite the page the next
- * recording actually lands on. A file that read cleanly — which is nearly all
- * of them — is one page.
+ * A recording that crossed its rating once needs one row under the chart; one
+ * that crossed it four times needs four, and they come out of the chart rather
+ * than off the bottom of the page. The floor keeps a chart a chart.
+ */
+function chartHeight(entry: Entry): number {
+  const rows = Math.min(entry.figures.excursions.length, EXCURSION_ROWS);
+  return Math.max(172, 226 - Math.max(0, rows - 1) * 22);
+}
+
+/** Where the panels under the chart begin, for a given recording. */
+function panelTop(entry: Entry): number {
+  return CHART.y + chartHeight(entry) + 44;
+}
+
+type Plan = { pages: number; notes: string[] };
+
+/**
+ * How many pages a recording runs to.
+ *
+ * One, plus however many the readings that could not be read need behind it.
+ * A file that read cleanly — which is nearly all of them — is one page, and
+ * the notes only ever push the page count when there is something to say.
  */
 function plan(doc: Doc, entry: Entry): Plan {
   const notes = entry.reading.notes.slice(0, 200);
-  // The panel and the checks are measured rather than allowed for, because a
-  // stretch above the rating, a file with no summary and a file with four
-  // figures in it all take different amounts of the page.
-  const top = checksBottom(doc, entry) + 18;
-  const room = BODY.bottom - top;
+  if (notes.length === 0) return { pages: 1, notes };
 
-  const fitted: string[] = [];
-  let used = 0;
-  for (const note of notes) {
-    const height = noteHeight(doc, note);
-    if (used + height > room) break;
-    fitted.push(note);
-    used += height;
-  }
-
-  const overflow = notes.slice(fitted.length);
+  const column = (CONTENT - 40) / 2;
+  const room = FLOOR - (MARGIN + 74);
   let pages = 1;
-  let left = 0;
-  for (const note of overflow) {
-    const height = noteHeight(doc, note);
-    if (left === 0 || left + height > BODY.bottom - BODY.top) {
-      pages += 1;
-      left = height;
+  let used = 0;
+  let columnsLeft = 2;
+
+  for (const note of notes) {
+    const height = noteHeight(doc, note, column);
+    if (used + height <= room) {
+      used += height;
       continue;
     }
-    left += height;
+    columnsLeft -= 1;
+    used = height;
+    if (columnsLeft === 0) {
+      pages += 1;
+      columnsLeft = 2;
+    }
   }
 
-  return { pages, inline: fitted, overflow };
+  return { pages: pages + 1, notes };
 }
 
-function noteHeight(doc: Doc, note: string): number {
+function noteHeight(doc: Doc, note: string, width: number): number {
   doc.font("Helvetica").fontSize(8);
-  return doc.heightOfString(safe(note), { width: CONTENT - 14, lineGap: 1.6 }) + 6;
-}
-
-const EXCURSION_ROWS = 8;
-
-/* --- how tall each block of a recording's page turns out ------------------ */
-
-/** Where the threshold panel starts: under the chart and its time axis. */
-const PANEL_TOP = CHART.y + CHART.height + 46;
-
-const NO_RATING_NOTE =
-  "The readings above are reported as measured. Without the stated current rating of the device protecting " +
-  "this circuit there is nothing to compare them against, so no threshold is drawn on the chart and no " +
-  "pass, fail or overload conclusion is drawn here.";
-
-/** The footnote under a list of stretches above the rating. */
-function excursionNote(entry: Entry): string {
-  const rating = trim(entry.rating ?? 0);
-  return (
-    `Durations are measured between the points at which the readings crossed ${rating} A and are approximate: ` +
-    `the instrument sampled every ${everySeconds(entry)}, so what happened between two samples was not recorded. ` +
-    "A reading above a device's stated rating is a measurement, not a finding — see “About these readings”."
-  );
-}
-
-function noSummaryNote(entry: Entry): string {
-  return (
-    `${entry.figures.count.toLocaleString("en-AU")} readings were imported from ${entry.fileName}, from ` +
-    `${clock(entry.figures.from)} to ${clock(entry.figures.to)}. The file carried no summary of its own for ` +
-    "those figures to be checked against."
-  );
-}
-
-function checkNote(entry: Entry): string {
-  const disagreed = entry.reading.checks.filter((row) => !row.agrees);
-  if (disagreed.length === 0) {
-    return "Every figure the file states about itself matches what was imported from it.";
-  }
-  return (
-    `${disagreed.map((row) => row.what.toLowerCase()).join(", ")} differ${
-      disagreed.length === 1 ? "s" : ""
-    } from what the file states about itself. What is shown above, on the chart and in the figures is what was ` +
-    "imported from the readings themselves; the file's own figure is given beside it in brackets. Nothing has " +
-    "been adjusted to make the two agree."
-  );
-}
-
-function height(doc: Doc, text: string, size: number, width: number, gap: number): number {
-  doc.font("Helvetica").fontSize(size);
-  return doc.heightOfString(safe(text), { width, lineGap: gap });
-}
-
-/** How much of the page the threshold panel takes. */
-function panelHeight(doc: Doc, entry: Entry): number {
-  if (entry.rating === null) return 26 + height(doc, NO_RATING_NOTE, 8.5, CONTENT, 1.8) + 12;
-  if (entry.figures.excursions.length === 0) return 20 + 22 + 12;
-
-  const rows = Math.min(entry.figures.excursions.length, EXCURSION_ROWS);
-  const spare = entry.figures.excursions.length - rows;
-  return (
-    20 +
-    16 +
-    rows * 22 +
-    (spare > 0 ? 16 : 0) +
-    6 +
-    height(doc, excursionNote(entry), 7.5, CONTENT, 1.6) +
-    12
-  );
-}
-
-/** And the block that says what was imported against what the file claimed. */
-function checksHeight(doc: Doc, entry: Entry): number {
-  if (entry.reading.checks.length === 0) {
-    return 16 + height(doc, noSummaryNote(entry), 8, CONTENT, 1.6) + 12;
-  }
-  return 16 + 40 + height(doc, checkNote(entry), 7.5, CONTENT, 1.6) + 12;
-}
-
-function checksBottom(doc: Doc, entry: Entry): number {
-  return PANEL_TOP + panelHeight(doc, entry) + 18 + checksHeight(doc, entry);
+  return doc.heightOfString(safe(note), { width: width - 14, lineGap: 1.6 }) + 7;
 }
 
 function recordingPages(doc: Doc, data: AmpReport, entry: Entry, index: number, laid: Plan) {
   doc.addPage();
-  sectionBar(doc, `${index + 1}. ${entry.name}`, MARGIN);
-
-  /* --- what it is -------------------------------------------------------- */
-  doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-  doc.text(
-    safe(
-      [
-        entry.rating === null ? "No protective-device rating entered" : ratingLine(entry),
-        data.boardName,
-        `From ${entry.fileName}`,
-      ]
-        .filter(Boolean)
-        .join("  ·  "),
-    ),
-    MARGIN,
-    MARGIN + 28,
-    { width: CONTENT, height: 12, ellipsis: true },
+  head(
+    doc,
+    data,
+    `${index + 1}. ${entry.name}`,
+    [
+      entry.rating === null ? "No protective-device rating entered" : ratingLine(entry),
+      `From ${entry.fileName}`,
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
   );
 
   /* --- the figures, before the chart that shows them --------------------- */
   const figures = entry.figures;
-  tiles(doc, MARGIN + 46, [
+  tiles(doc, 90, [
     ["Samples", figures.count.toLocaleString("en-AU"), `every ${everySeconds(entry)}`],
     ["Recording", duration(figures.seconds), `${clock(figures.from)} to ${clock(figures.to)}`],
     ["Highest", `${trim(figures.max)} A`, `at ${clock(figures.maxAt)}`],
@@ -694,53 +771,27 @@ function recordingPages(doc: Doc, data: AmpReport, entry: Entry, index: number, 
   ]);
 
   /* --- the chart --------------------------------------------------------- */
-  drawAmpChart(doc, CHART, {
+  drawAmpChart(doc, { ...CHART, height: chartHeight(entry) }, {
     samples: entry.reading.samples,
     from: figures.from,
     to: figures.to,
     maxAmps: ampScaleTop(figures.max, entry.rating),
     rating: entry.rating,
-    ratingLabel: entry.rating === null ? undefined : `${ratingLine(entry).toUpperCase()}`,
+    ratingLabel: entry.rating === null ? undefined : ratingLine(entry).toUpperCase(),
     average: figures.average,
     peak: { amps: figures.max, at: figures.maxAt },
     excursions: figures.excursions,
   });
 
-  /* --- what went above the rating ---------------------------------------- */
+  /* --- what went above the rating, and what was imported ----------------- */
   threshold(doc, entry);
+  checks(doc, entry);
 
-  /* --- what was imported, and what was not ------------------------------- */
-  let y = PANEL_TOP + panelHeight(doc, entry) + 18;
-  y = checks(doc, entry, y);
-  if (laid.inline.length > 0) y = noteList(doc, laid.inline, y, laid.overflow.length > 0);
-
-  footer(doc, data);
-
-  /* --- anything the page could not hold ---------------------------------- */
-  let rest = laid.overflow;
-  while (rest.length > 0) {
-    doc.addPage();
-    sectionBar(doc, `${index + 1}. ${entry.name}`, MARGIN);
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
-    doc.text("Readings that could not be read, continued", MARGIN, MARGIN + 28, {
-      width: CONTENT,
-    });
-
-    let at = BODY.top;
-    const fitted: string[] = [];
-    for (const note of rest) {
-      const height = noteHeight(doc, note);
-      if (at + height > BODY.bottom) break;
-      fitted.push(note);
-      at += height;
-    }
-    noteList(doc, fitted, BODY.top - 24, rest.length > fitted.length, true);
-    rest = rest.slice(Math.max(1, fitted.length));
-    footer(doc, data);
-  }
+  /* --- anything the file could not give ---------------------------------- */
+  if (laid.notes.length > 0) notePages(doc, data, entry, index, laid.notes);
 }
 
-/** "every 1 s", or the plain truth where the instrument varied. */
+/** "1 second", or the plain truth where the instrument varied. */
 function everySeconds(entry: Entry): string {
   const seconds = entry.reading.intervalSeconds;
   if (seconds <= 0) return "interval varied";
@@ -749,7 +800,7 @@ function everySeconds(entry: Entry): string {
 
 /** The five figures the page is about, across the top of it. */
 function tiles(doc: Doc, y: number, items: [string, string, string][]) {
-  const gap = 10;
+  const gap = 12;
   const width = (CONTENT - gap * (items.length - 1)) / items.length;
 
   items.forEach(([name, value, note], index) => {
@@ -757,86 +808,103 @@ function tiles(doc: Doc, y: number, items: [string, string, string][]) {
     doc.rect(x, y, width, 56).fill(COLOURS.soft);
     doc.rect(x, y, width, 2.4).fill(COLOURS.accent);
     doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
-    doc.text(name.toUpperCase(), x + 9, y + 11, { width: width - 18, characterSpacing: 1 });
-    doc.font("Helvetica-Bold").fontSize(14).fillColor(COLOURS.ink);
-    doc.text(safe(value), x + 9, y + 23, { width: width - 18, height: 17, ellipsis: true });
-    doc.font("Helvetica").fontSize(7).fillColor(COLOURS.inkSoft);
-    doc.text(safe(note), x + 9, y + 41, { width: width - 18, height: 10, ellipsis: true });
+    doc.text(name.toUpperCase(), x + 10, y + 11, { width: width - 20, characterSpacing: 1 });
+    doc.font("Helvetica-Bold").fontSize(15).fillColor(COLOURS.ink);
+    doc.text(safe(value), x + 10, y + 23, { width: width - 20, height: 18, ellipsis: true });
+    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(note), x + 10, y + 42, { width: width - 20, height: 10, ellipsis: true });
   });
   doc.fillColor(COLOURS.ink);
 }
 
+const NO_RATING_NOTE =
+  "The readings above are reported as measured. Without the stated current rating of the device protecting " +
+  "this circuit there is nothing to compare them against, so no threshold is drawn on the chart and no " +
+  "pass, fail or overload conclusion is drawn here.";
+
 /** What ran above the rating, or why there is nothing to say about it. */
 function threshold(doc: Doc, entry: Entry) {
-  const y = PANEL_TOP;
+  const y = panelTop(entry);
+  const width = PANEL.left;
   const figures = entry.figures;
 
   if (entry.rating === null) {
-    bar(doc, MARGIN, y, CONTENT, "No device rating was entered for this recording");
+    panelBar(doc, MARGIN, y, width, "No device rating was entered for this recording", COLOURS.bar);
     doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(safe(NO_RATING_NOTE), MARGIN, y + 26, { width: CONTENT, lineGap: 1.8 });
+    doc.text(safe(NO_RATING_NOTE), MARGIN, y + 26, { width, lineGap: 1.8 });
     doc.fillColor(COLOURS.ink);
     return;
   }
 
   const rating = entry.rating;
-  bar(
+  panelBar(
     doc,
     MARGIN,
     y,
-    CONTENT,
+    width,
     `Readings above ${trim(rating)} A`,
-    "left",
     figures.above > 0 ? COLOURS.alert : COLOURS.bar,
   );
 
   let at = y + 20;
   if (figures.excursions.length === 0) {
-    doc.rect(MARGIN, at, CONTENT, 22).fill(COLOURS.soft);
+    doc.rect(MARGIN, at, width, 22).fill(COLOURS.soft);
     doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
     doc.text(
       safe(
-        `No reading in this recording was above ${trim(rating)} A. The highest was ${trim(figures.max)} A at ${clock(figures.maxAt)}.`,
+        `No reading was above ${trim(rating)} A. The highest was ${trim(figures.max)} A at ${clock(figures.maxAt)}.`,
       ),
       MARGIN + 8,
       at + 6.5,
-      { width: CONTENT - 16, height: 11, ellipsis: true },
+      { width: width - 16, height: 11, ellipsis: true },
     );
     doc.fillColor(COLOURS.ink);
     return;
   }
 
-  const columns = [130, 96, 90, 90, CONTENT - 406];
-  const titles = ["When", "Observed for", "Peak", "Samples above", "How far above"];
+  const columns = [112, 84, 104, 72, width - 372];
+  const titles = ["When", "Observed for", "Peak", "Samples", "How far above"];
   doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
   let x = MARGIN;
   titles.forEach((title, index) => {
     doc.text(title.toUpperCase(), x + 6, at + 4, {
       width: columns[index] - 8,
       characterSpacing: 0.8,
+      lineBreak: false,
     });
     x += columns[index];
   });
   at += 16;
 
   for (const run of figures.excursions.slice(0, EXCURSION_ROWS)) {
-    doc.rect(MARGIN, at, CONTENT, 0.5).fill(COLOURS.hair);
-    const cells = [
-      `${clock(run.from)} – ${clock(run.to)}`,
-      `${duration(run.seconds)} (approx.)`,
-      `${trim(run.peak)} A at ${clock(run.peakAt)}`,
-      `${run.samples} of ${figures.count}`,
-      `${trim(Math.round((run.peak - rating) * 100) / 100)} A over, ${Math.round((run.peak / rating) * 100)}% of rating`,
+    doc.rect(MARGIN, at, width, 0.5).fill(COLOURS.hair);
+    const cells: [string, string | null][] = [
+      [`${clock(run.from)} – ${clock(run.to)}`, null],
+      [duration(run.seconds), "approx."],
+      [`${trim(run.peak)} A`, `at ${clock(run.peakAt)}`],
+      [`${run.samples} of ${figures.count}`, null],
+      [
+        `${trim(Math.round((run.peak - rating) * 100) / 100)} A over`,
+        `${Math.round((run.peak / rating) * 100)}% of rating`,
+      ],
     ];
     let left = MARGIN;
-    cells.forEach((value, index) => {
+    cells.forEach(([value, note], index) => {
       doc.font(index === 2 ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
       doc.fillColor(index === 2 ? COLOURS.alert : COLOURS.ink);
-      doc.text(safe(value), left + 6, at + 6, {
+      doc.text(safe(value), left + 6, at + (note ? 3.5 : 6), {
         width: columns[index] - 10,
         height: 11,
         ellipsis: true,
       });
+      if (note) {
+        doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
+        doc.text(safe(note), left + 6, at + 13, {
+          width: columns[index] - 10,
+          height: 9,
+          ellipsis: true,
+        });
+      }
       left += columns[index];
     });
     at += 22;
@@ -849,15 +917,25 @@ function threshold(doc: Doc, entry: Entry) {
       `and ${spare} further ${spare === 1 ? "stretch" : "stretches"} above the rating, all shown on the chart.`,
       MARGIN + 6,
       at + 4,
-      { width: CONTENT - 12, height: 11, ellipsis: true },
+      { width: width - 12, height: 11, ellipsis: true },
     );
     at += 16;
   }
 
-  doc.rect(MARGIN, at, CONTENT, 0.5).fill(COLOURS.hair);
+  doc.rect(MARGIN, at, width, 0.5).fill(COLOURS.hair);
   doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
-  doc.text(safe(excursionNote(entry)), MARGIN, at + 6, { width: CONTENT, lineGap: 1.6 });
+  doc.text(safe(excursionNote(entry)), MARGIN, at + 6, { width, lineGap: 1.6 });
   doc.fillColor(COLOURS.ink);
+}
+
+/** The footnote under a list of stretches above the rating. */
+function excursionNote(entry: Entry): string {
+  const rating = trim(entry.rating ?? 0);
+  return (
+    `Durations are measured between the points at which the readings crossed ${rating} A and are approximate: ` +
+    `the instrument sampled every ${everySeconds(entry)}, so what happened between two samples was not recorded. ` +
+    "A reading above a device's stated rating is a measurement, not a finding — see “About these readings”."
+  );
 }
 
 /**
@@ -868,115 +946,190 @@ function threshold(doc: Doc, entry: Entry) {
  * instrument counting something differently — an average over its non-zero
  * samples, say — and that is worth a reader knowing.
  */
-function checks(doc: Doc, entry: Entry, y: number): number {
-  const rows: Check[] = entry.reading.checks;
-  label(doc, "Checked against the file", MARGIN, y);
-  y += 16;
+function checks(doc: Doc, entry: Entry) {
+  const x = MARGIN + PANEL.left + PANEL.gap;
+  const width = CONTENT - PANEL.left - PANEL.gap;
+  let y = panelTop(entry);
 
+  label(doc, "Checked against the file", x, y);
+  y += 17;
+
+  const rows: Check[] = entry.reading.checks;
   if (rows.length === 0) {
     doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-    doc.text(safe(noSummaryNote(entry)), MARGIN, y, { width: CONTENT, lineGap: 1.6 });
-    doc.fillColor(COLOURS.ink);
-    return doc.y + 12;
+    doc.text(
+      safe(
+        `${entry.figures.count.toLocaleString("en-AU")} readings were imported from this file, from ` +
+          `${clock(entry.figures.from)} to ${clock(entry.figures.to)}. It carried no summary of its own for ` +
+          "those figures to be checked against.",
+      ),
+      x,
+      y,
+      { width, lineGap: 1.6 },
+    );
+    y = doc.y + 8;
+  } else {
+    for (const row of rows) {
+      doc.rect(x, y, width, 17).fill(row.agrees ? COLOURS.soft : "#fdeceb");
+      doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+      doc.text(row.what, x + 7, y + 5, { width: width * 0.45, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(row.agrees ? COLOURS.ink : COLOURS.alert);
+      doc.text(
+        `${row.imported}${row.agrees ? "" : `  (file: ${row.declared})`}`,
+        x + width * 0.45,
+        y + 4.5,
+        { width: width * 0.55 - 8, align: "right", height: 10, ellipsis: true },
+      );
+      y += 19;
+    }
+
+    const disagreed = rows.filter((row) => !row.agrees);
+    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(
+      safe(
+        disagreed.length === 0
+          ? "Every figure the file states about itself matches what was imported from it."
+          : `${disagreed.map((row) => row.what.toLowerCase()).join(", ")} differ${
+              disagreed.length === 1 ? "s" : ""
+            } from what the file states about itself. What is shown on this page is what was imported from the ` +
+              "readings themselves, with the file's own figure beside it in brackets. Nothing has been adjusted " +
+              "to make the two agree.",
+      ),
+      x,
+      y + 4,
+      { width, lineGap: 1.5 },
+    );
+    y = doc.y + 8;
   }
 
-  const width = (CONTENT - 8 * (rows.length - 1)) / rows.length;
-  rows.forEach((row, index) => {
-    const x = MARGIN + index * (width + 8);
-    doc.rect(x, y, width, 34).fill(row.agrees ? COLOURS.soft : "#fdeceb");
-    doc.font("Helvetica-Bold").fontSize(6.5).fillColor(COLOURS.inkSoft);
-    doc.text(row.what.toUpperCase(), x + 7, y + 6, { width: width - 14, characterSpacing: 0.8 });
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(row.agrees ? COLOURS.ink : COLOURS.alert);
-    doc.text(
-      `${row.imported}${row.agrees ? "" : `  (file: ${row.declared})`}`,
-      x + 7,
-      y + 18,
-      { width: width - 14, height: 11, ellipsis: true },
-    );
-  });
-  y += 40;
+  /* --- how the file had to be read --------------------------------------- */
+  for (const remark of entry.reading.remarks) {
+    doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(remark), x, y, { width, lineGap: 1.5 });
+    y = doc.y + 4;
+  }
 
-  doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
-  doc.text(safe(checkNote(entry)), MARGIN, y, { width: CONTENT, lineGap: 1.6 });
+  if (entry.reading.notes.length > 0) {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(COLOURS.alert);
+    doc.text(
+      `${entry.reading.notes.length} ${
+        entry.reading.notes.length === 1 ? "note" : "notes"
+      } on readings that could not be read — overleaf.`,
+      x,
+      y + 2,
+      { width, lineGap: 1.5 },
+    );
+  }
+
   doc.fillColor(COLOURS.ink);
-  return doc.y + 12;
 }
 
-/** Anything in the file that could not be read, said plainly. */
-function noteList(
-  doc: Doc,
-  notes: string[],
-  y: number,
-  more: boolean,
-  bare = false,
-): number {
-  let at = y;
-  if (!bare) {
-    label(doc, "Readings that could not be read", MARGIN, at);
-    at += 18;
-  } else {
-    at += 24;
-  }
+/** Anything in the file that could not be read, said plainly, two columns. */
+function notePages(doc: Doc, data: AmpReport, entry: Entry, index: number, notes: string[]) {
+  const column = (CONTENT - 40) / 2;
+  let at = 0;
+  let side = 0;
+  let fresh = true;
+  let y = 0;
+
+  const start = () => {
+    doc.addPage();
+    head(
+      doc,
+      data,
+      `${index + 1}. ${entry.name}`,
+      "Readings that could not be read, and what was done about them",
+    );
+    y = MARGIN + 74;
+    side = 0;
+    fresh = false;
+  };
 
   for (const note of notes) {
+    if (fresh) start();
+    const height = noteHeight(doc, note, column);
+    if (y + height > FLOOR) {
+      side += 1;
+      y = MARGIN + 74;
+      if (side > 1) {
+        fresh = true;
+        start();
+      }
+    }
+    const x = MARGIN + side * (column + 40);
     doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.alert);
-    doc.text("•", MARGIN, at, { lineBreak: false });
+    doc.text("•", x, y, { lineBreak: false });
     doc.font("Helvetica").fontSize(8).fillColor(COLOURS.ink);
-    doc.text(safe(note), MARGIN + 14, at, { width: CONTENT - 14, lineGap: 1.6 });
-    at = doc.y + 6;
+    doc.text(safe(note), x + 14, y, { width: column - 14, lineGap: 1.6 });
+    y = doc.y + 7;
+    at += 1;
   }
 
-  if (more) {
-    doc.font("Helvetica-Oblique").fontSize(8).fillColor(COLOURS.inkSoft);
-    doc.text("Continued overleaf.", MARGIN + 14, at, { width: CONTENT - 14 });
-    at = doc.y + 6;
-  }
-
+  // Every note is on the page, or there were none to put there.
+  if (at === 0) start();
   doc.fillColor(COLOURS.ink);
-  return at;
 }
 
 /* --- the limitations, and who recorded it --------------------------------- */
 
 function limitations(doc: Doc, data: AmpReport) {
   doc.addPage();
-  sectionBar(doc, "Limitations", MARGIN);
+  head(doc, data, "Limitations");
 
-  let y = blocks(doc, MARGIN, MARGIN + 36, CONTENT, LIMITATIONS, 9.5);
+  const gap = 46;
+  const column = (CONTENT - gap) / 2;
 
+  const left = blocks(doc, MARGIN, 104, column, LIMITATIONS, 9.5);
+
+  const x = MARGIN + column + gap;
+  let y = 104;
   if (data.instrument) {
-    y += 8;
-    label(doc, "Recorded with", MARGIN, y);
+    label(doc, "Recorded with", x, y);
     y += 16;
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(instrumentLine(data.instrument), MARGIN, y, { width: CONTENT, lineGap: 1.8 });
+    doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+    doc.text(instrumentLine(data.instrument), x, y, { width: column, lineGap: 1.8 });
     y = doc.y + 6;
-    const due = expiry(data.instrument.calibration);
-    doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
     doc.text(
-      due
-        ? `The instrument's calibration certificate is held on file and is available on request.`
-        : `No calibration certificate is recorded against this instrument.`,
-      MARGIN,
+      expiry(data.instrument.calibration)
+        ? "The instrument's calibration certificate is held on file and is available on request."
+        : "No calibration certificate is recorded against this instrument.",
+      x,
       y,
-      { width: CONTENT },
+      { width: column, lineGap: 1.6 },
     );
-    y = doc.y;
+    y = doc.y + 24;
+  }
+
+  label(doc, "What was recorded", x, y);
+  y += 16;
+  doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
+  for (const entry of data.entries) {
+    doc.fillColor(COLOURS.accent).font("Helvetica-Bold").fontSize(8.5);
+    doc.text("•", x, y + 1, { width: 8, lineBreak: false });
+    doc.fillColor(COLOURS.ink).font("Helvetica").fontSize(9);
+    doc.text(safe(describeEntry(entry)), x + 12, y, {
+      width: column - 12,
+      height: 12,
+      ellipsis: true,
+      lineBreak: false,
+    });
+    y += 14;
   }
 
   /* --- signed ------------------------------------------------------------ */
-  const at = Math.max(y + 40, PAGE.height - 250);
+  const at = Math.max(Math.max(left, y) + 30, PAGE.height - MARGIN - 150);
   label(doc, "Recorded by", MARGIN, at);
-  if (data.signature) doc.image(data.signature, MARGIN + 6, at + 18, { fit: [170, 46] });
-  doc.rect(MARGIN, at + 66, 220, 0.8).fill(COLOURS.inkSoft);
+  if (data.signature) doc.image(data.signature, MARGIN + 6, at + 16, { fit: [170, 44] });
+  doc.rect(MARGIN, at + 62, 220, 0.8).fill(COLOURS.inkSoft);
   doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
-  doc.text(THERMOGRAPHER.name, MARGIN, at + 74, { lineBreak: false });
+  doc.text(THERMOGRAPHER.name, MARGIN, at + 70, { lineBreak: false });
   doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(COMPANY.name, MARGIN, at + 91, { lineBreak: false });
+  doc.text(COMPANY.name, MARGIN, at + 86, { lineBreak: false });
   doc.text(
     `Contractor Licence ${COMPANY.licence}  ·  Qualified Supervisor ${COMPANY.supervisor}`,
     MARGIN,
-    at + 105,
+    at + 99,
     { lineBreak: false },
   );
 
@@ -987,13 +1140,69 @@ function limitations(doc: Doc, data: AmpReport) {
         data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName
       }.`,
     ),
-    MARGIN + 260,
-    at + 74,
-    { width: CONTENT - 260, lineGap: 1.8 },
+    MARGIN + 280,
+    at + 70,
+    { width: 300, lineGap: 1.8 },
   );
 
   doc.fillColor(COLOURS.ink);
-  footer(doc, data);
+}
+
+/* --- page furniture ------------------------------------------------------- */
+
+function head(doc: Doc, data: AmpReport, title: string, note?: string) {
+  if (data.logo) doc.image(data.logo, MARGIN, 24, { fit: [118, 38] });
+
+  doc.font("Helvetica-Bold").fontSize(14).fillColor(COLOURS.ink);
+  doc.text(safe(title), MARGIN + 136, 28, { width: CONTENT - 136, height: 18, ellipsis: true });
+  doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe([note, data.boardName, data.siteName, data.clientName].filter(Boolean).join("  ·  ")),
+    MARGIN + 136,
+    46,
+    { width: CONTENT - 136, height: 11, ellipsis: true },
+  );
+
+  doc.rect(MARGIN, 72, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, 71, 54, 2.4).fill(COLOURS.accent);
+  doc.fillColor(COLOURS.ink);
+}
+
+/** A panel's own heading bar, narrower than the page. */
+function panelBar(doc: Doc, x: number, y: number, width: number, title: string, colour: string) {
+  doc.rect(x, y, width, 19).fill(colour);
+  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9.5);
+  doc.text(safe(title), x + 8, y + 5.5, { width: width - 16, height: 12, ellipsis: true });
+  doc.fillColor(COLOURS.ink);
+}
+
+function stampPages(doc: Doc, data: AmpReport) {
+  const range = doc.bufferedPageRange();
+  // From page two: the cover has its own foot bar carrying the same details.
+  for (let index = 1; index < range.count; index += 1) {
+    doc.switchToPage(range.start + index);
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+
+    const y = PAGE.height - 26;
+    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(`${data.clientName}  ·  ${data.siteName}`), MARGIN, y, {
+      width: CONTENT - 140,
+    });
+    doc.text(`Page ${index + 1} of ${range.count}`, MARGIN + CONTENT - 140, y, {
+      width: 140,
+      align: "right",
+    });
+    doc.text(
+      `${COMPANY.name} · Lic ${COMPANY.licence} · Supervisor ${COMPANY.supervisor}`,
+      MARGIN,
+      y + 10,
+      { width: CONTENT },
+    );
+
+    doc.page.margins.bottom = bottom;
+  }
+  doc.fillColor(COLOURS.ink);
 }
 
 /* --- small things --------------------------------------------------------- */
@@ -1026,3 +1235,5 @@ function label(doc: Doc, text: string, x: number, y: number) {
   doc.text(text.toUpperCase(), x, y, { characterSpacing: 1.6, lineBreak: false });
   doc.fillColor(COLOURS.ink);
 }
+
+type Doc = PDFKit.PDFDocument;
