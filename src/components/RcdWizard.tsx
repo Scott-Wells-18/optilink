@@ -11,7 +11,7 @@ import {
 } from "@/lib/board";
 import { BoardPicker } from "@/components/BoardPicker";
 import { FreeBoardView } from "@/components/FreeBoardEditor";
-import { CHECKLIST, checklistComplete } from "@/lib/rcd/checklist";
+import { checklistComplete, checklistFor } from "@/lib/rcd/checklist";
 import {
   boardDevices,
   countRcds,
@@ -20,6 +20,7 @@ import {
   walkPositions,
   type Device,
   type Place,
+  type Scope,
 } from "@/lib/rcd/map";
 import type { RcdRow } from "@/lib/rcd/parse";
 import { uploadFile } from "@/components/ImageUpload";
@@ -79,6 +80,7 @@ export function RcdWizard({
   const [run, setRun] = useState<Run | null>(null);
   const [step, setStep] = usePersisted<Step>(`${key}:step`, "upload");
   const [equipmentId, setEquipmentId] = usePersisted<string>(`${key}:board`, "");
+  const [scope, setScope] = usePersisted<Scope>(`${key}:scope`, "BOARD");
   const [order, setOrder] = usePersisted<"COLUMNS" | "ROWS">(`${key}:order`, "COLUMNS");
   const [extrasFirst, setExtrasFirst] = usePersisted(`${key}:extrasfirst`, true);
   const [extraOrder] = usePersisted<string[]>(`${key}:extraorder`, []);
@@ -121,16 +123,56 @@ export function RcdWizard({
   const chosen = boards.find((board) => board.id === equipmentId) ?? null;
   const board: Board | null = chosen ? normaliseBoard(chosen.board) : null;
   const realTests = parsed ? parsed.rows.length - parsed.emptyCount : 0;
-  const rcdTests = board ? countRcdTests(board) : 0;
+  /** Every record the board would account for if the whole of it were tested. */
+  const boardTests = board ? countRcdTests(board) : 0;
 
   /**
    * Every RCD on the board, in the run as it stands: the ones clicked into an
    * order first, then whatever is left in the order it is drawn.
    */
   const devices = useMemo<Device[]>(
-    () => (board ? boardDevices(board, { order, extrasFirst, extraOrder, sequence }) : []),
-    [board, order, extrasFirst, extraOrder, sequence],
+    () => (board ? boardDevices(board, { scope, order, extrasFirst, extraOrder, sequence }) : []),
+    [board, scope, order, extrasFirst, extraOrder, sequence],
   );
+
+  /**
+   * Every RCD drawn on the board, whether it is in this run or not.
+   *
+   * On a run of particular breakers the list above holds only the ones that
+   * were picked, and there would be nothing left to pick the others from.
+   */
+  const drawn = useMemo<Device[]>(
+    () =>
+      board
+        ? boardDevices(board, {
+            scope: "BOARD",
+            order,
+            extrasFirst,
+            extraOrder,
+            sequence: [],
+          })
+        : [],
+    [board, order, extrasFirst, extraOrder],
+  );
+
+  /** The ones that were picked, in the order they were picked. */
+  const picked = useMemo<Device[]>(() => {
+    const bySlot = new Map(drawn.map((device) => [device.slot, device]));
+    return sequence
+      .map((slot) => bySlot.get(slot))
+      .filter((device): device is Device => Boolean(device));
+  }, [drawn, sequence]);
+
+  /**
+   * How many of the instrument's records this run should account for.
+   *
+   * The whole board on a whole-board run; only what was picked on a run of
+   * particular breakers, counting a three-phase device as three.
+   */
+  const rcdTests =
+    scope === "PICKED"
+      ? picked.reduce((total, device) => total + device.tests, 0)
+      : boardTests;
 
   async function upload(files: FileList | null) {
     const file = files?.[0];
@@ -195,7 +237,7 @@ export function RcdWizard({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          walk: { order, extrasFirst, extraOrder, sequence },
+          walk: { scope, order, extrasFirst, extraOrder, sequence },
           extras,
           checklist: answers,
           mismatches,
@@ -208,6 +250,7 @@ export function RcdWizard({
       for (const part of [
         "step",
         "board",
+        "scope",
         "order",
         "extrasfirst",
         "extraorder",
@@ -233,9 +276,9 @@ export function RcdWizard({
    */
   const mapping = useMemo(() => {
     if (!board || !parsed) return null;
-    const positions = walkPositions(board, { order, extrasFirst, extraOrder, sequence });
+    const positions = walkPositions(board, { scope, order, extrasFirst, extraOrder, sequence });
     return mapTests(parsed.rows as RcdRow[], positions, extras);
-  }, [board, parsed, order, extrasFirst, extraOrder, sequence, extras]);
+  }, [board, parsed, scope, order, extrasFirst, extraOrder, sequence, extras]);
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="RCD test">
@@ -380,7 +423,51 @@ export function RcdWizard({
                   ) : null}
                 </div>
 
-                {board && isFreeBoard(board) ? (
+                {board ? (
+                  <>
+                    <div className="board-section-head rcd-subhead">
+                      <h3 className="board-section-title">What did you test?</h3>
+                      <p className="board-section-note">
+                        A whole-board test walks every RCD drawn on it. A test of
+                        particular circuit breakers covers only the ones you pick, in
+                        the order you picked them, and says so on the report.
+                      </p>
+                    </div>
+                    <div className="issue-picks">
+                      {(
+                        [
+                          [
+                            "BOARD",
+                            "The whole switchboard",
+                            `Every RCD on this board \u2014 ${boardTests} ${
+                              boardTests === 1 ? "record" : "records"
+                            }, counting a three-phase device as three.`,
+                          ],
+                          [
+                            "PICKED",
+                            "Specific circuit breakers",
+                            "Pick them on the board below. The first one you pick takes the instrument's first test, the second its second, and so on.",
+                          ],
+                        ] as [Scope, string, string][]
+                      ).map(([id, label, note]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className={`issue-pick ${scope === id ? "is-on" : ""}`}
+                          onClick={() => setScope(id)}
+                        >
+                          <span className="issue-pick-mark is-one" aria-hidden />
+                          <span className="issue-pick-body">
+                            <span className="issue-pick-label">{label}</span>
+                            <span className="issue-pick-note">{note}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+
+                {board && isFreeBoard(board) && scope === "BOARD" ? (
                   <>
                     <div className="board-section-head rcd-subhead">
                       <h3 className="board-section-title">The order you set</h3>
@@ -394,6 +481,47 @@ export function RcdWizard({
                     </div>
                     <FreeBoardView board={board} showOrder />
                   </>
+                ) : board && isFreeBoard(board) ? (
+                  <>
+                    <div className="board-section-head rcd-subhead">
+                      <h3 className="board-section-title">
+                        Which ones you tested, in order
+                      </h3>
+                      <p className="board-section-note rcd-order-note">
+                        Click the RCDs you tested, in the order you tested them. Only
+                        these go on the report.
+                        {sequence.length > 0 ? (
+                          <button
+                            type="button"
+                            className="rcd-order-clear"
+                            onClick={() => setSequence([])}
+                          >
+                            Start again
+                          </button>
+                        ) : null}
+                      </p>
+                    </div>
+                    <FreeBoardView
+                      board={board}
+                      selectable={(item) => isRcd(item.state)}
+                      marks={Object.fromEntries(
+                        (board.items ?? [])
+                          .filter((item) => sequence.includes(freeSlotKey(item.id)))
+                          .map((item) => [
+                            item.id,
+                            String(sequence.indexOf(freeSlotKey(item.id)) + 1),
+                          ]),
+                      )}
+                      onPick={(item) =>
+                        setSequence((current) => {
+                          const slot = freeSlotKey(item.id);
+                          return current.includes(slot)
+                            ? current.filter((other) => other !== slot)
+                            : [...current, slot];
+                        })
+                      }
+                    />
+                  </>
                 ) : (
                 <>
                 {/*
@@ -401,13 +529,14 @@ export function RcdWizard({
                   * the whole board has been put in an order by hand there is
                   * nothing left for a default to decide.
                   */}
-                {devices.some((device) => !sequence.includes(device.slot)) ? (
+                {scope === "BOARD" &&
+                devices.some((device) => !sequence.includes(device.slot)) ? (
                   <>
                     <div className="board-section-head rcd-subhead">
                       <h3 className="board-section-title">The default run</h3>
                       <p className="board-section-note">
                         How the ways are read for anything you do not put in an
-                        order below. Only the RCDs take a test — {rcdTests}{" "}
+                        order below. Only the RCDs take a test — {boardTests}{" "}
                         records on this board, counting a three-phase device as
                         three.
                       </p>
@@ -461,12 +590,15 @@ export function RcdWizard({
                   * three in one picture.
                   */}
                 <div className="board-section-head rcd-subhead">
-                  <h3 className="board-section-title">The order you tested them</h3>
+                  <h3 className="board-section-title">
+                    {scope === "PICKED"
+                      ? "Which circuit breakers, in order"
+                      : "The order you tested them"}
+                  </h3>
                   <p className="board-section-note rcd-order-note">
-                    Click the RCDs on the board in the order you worked them —
-                    the grid, the additionals and any sub-board in one run. The
-                    number on a device is where it falls; a faded one is where
-                    it would fall if you left it as drawn.
+                    {scope === "PICKED"
+                      ? "Click the circuit breakers you tested, in the order you tested them. The number on a device is where it falls in the instrument's run; nothing else on this board goes on the report."
+                      : "Click the RCDs on the board in the order you worked them — the grid, the additionals and any sub-board in one run. The number on a device is where it falls; a faded one is where it would fall if you left it as drawn."}
                     {sequence.length > 0 ? (
                       <button
                         type="button"
@@ -483,7 +615,10 @@ export function RcdWizard({
                   <BoardPicker
                     board={board}
                     marks={Object.fromEntries(
-                      devices.map((device, at) => [device.slot, String(at + 1)]),
+                      (scope === "PICKED" ? picked : devices).map((device, at) => [
+                        device.slot,
+                        String(at + 1),
+                      ]),
                     )}
                     dim={(slot) => !sequence.includes(slot)}
                     onPick={(pick) =>
@@ -496,7 +631,12 @@ export function RcdWizard({
                   />
                 ) : null}
 
-                <TestOrder devices={devices} picked={sequence} onChange={setSequence} />
+                <TestOrder
+                  devices={scope === "PICKED" ? drawn : devices}
+                  picked={sequence}
+                  scope={scope}
+                  onChange={setSequence}
+                />
                 </>
                 )}
               </section>
@@ -577,10 +717,19 @@ export function RcdWizard({
                     is exactly what goes on the report.
                   </p>
                 </div>
+                {scope === "PICKED" && sequence.length === 0 ? (
+                  <p className="board-warning">
+                    No circuit breakers have been picked yet. Go back to the board and
+                    click the ones you tested, in the order you tested them.
+                  </p>
+                ) : null}
                 {mapping && board ? (
                   <>
                     <p className="issue-empty">
-                      {countRcds(board)} RCDs · {rcdTests} tests expected ·{" "}
+                      {scope === "PICKED"
+                        ? `${picked.length} of ${countRcds(board)} RCDs picked`
+                        : `${countRcds(board)} RCDs`}{" "}
+                      · {rcdTests} tests expected ·{" "}
                       {mapping.pairs.filter((pair) => pair.position).length} matched
                       {mapping.duplicates.length > 0
                         ? ` · ${mapping.duplicates.length} set aside as repeats`
@@ -675,7 +824,7 @@ export function RcdWizard({
                   </p>
                 </div>
                 <div className="issue-picks">
-                  {CHECKLIST.map((item) =>
+                  {checklistFor(scope === "BOARD").map((item) =>
                     item.freeText ? (
                       <label className="issue-note" key={item.key}>
                         <span className="board-section-title">{item.question}</span>
@@ -738,7 +887,14 @@ export function RcdWizard({
               <button
                 type="button"
                 className="dialog-confirm"
-                disabled={!parsed || (step === "board" && !equipmentId)}
+                // A run of particular breakers cannot move on until at least
+                // one has been picked: there would be nothing to deal the
+                // instrument's tests onto.
+                disabled={
+                  !parsed ||
+                  (step === "board" &&
+                    (!equipmentId || (scope === "PICKED" && sequence.length === 0)))
+                }
                 onClick={() =>
                   setStep(
                     step === "upload"
@@ -786,10 +942,12 @@ const PLACES: Record<Place, string> = {
 function TestOrder({
   devices,
   picked,
+  scope,
   onChange,
 }: {
   devices: Device[];
   picked: string[];
+  scope: Scope;
   onChange: (next: string[]) => void;
 }) {
   const known = picked.filter((slot) => devices.some((device) => device.slot === slot));
@@ -806,11 +964,13 @@ function TestOrder({
   return (
     <>
       <div className="board-section-head rcd-subhead">
-        <h3 className="board-section-title">The order you tested them</h3>
+        <h3 className="board-section-title">
+          {scope === "PICKED" ? "Which ones you tested" : "The order you tested them"}
+        </h3>
         <p className="board-section-note rcd-order-note">
-          Every RCD on this board, wherever it is drawn. Click them in the order
-          you worked them — the grid, the additionals and any sub-board in one
-          run. Anything you leave unclicked follows on as drawn.
+          {scope === "PICKED"
+            ? "Every RCD on this board, wherever it is drawn. Click the ones you tested, in the order you tested them; the rest are not part of this test."
+            : "Every RCD on this board, wherever it is drawn. Click them in the order you worked them — the grid, the additionals and any sub-board in one run. Anything you leave unclicked follows on as drawn."}
           {known.length > 0 ? (
             <button type="button" className="rcd-order-clear" onClick={() => onChange([])}>
               Start again
@@ -821,6 +981,10 @@ function TestOrder({
       <ol className="rcd-run">
         {devices.map((device, place) => {
           const at = known.indexOf(device.slot);
+          // On a whole-board run every device has a place, whether it was
+          // clicked or not. On a run of particular breakers only the ones
+          // picked have one, and the rest are not in the run to be numbered.
+          const rank = scope === "PICKED" ? (at >= 0 ? at + 1 : null) : place + 1;
           return (
             <li key={device.slot}>
               <button
@@ -828,7 +992,7 @@ function TestOrder({
                 className={`rcd-run-item ${at >= 0 ? "is-ranked" : ""}`}
                 onClick={() => toggle(device.slot)}
               >
-                <span className="rcd-run-no">{place + 1}</span>
+                <span className="rcd-run-no">{rank ?? "\u2013"}</span>
                 <span className={`board-cell is-${device.state.toLowerCase()} is-chip`}>
                   {STATE_SHORT[device.state]}
                 </span>
@@ -845,7 +1009,9 @@ function TestOrder({
                     {device.tests > 1 ? ` · ${device.tests} records` : ""}
                   </span>
                 </span>
-                <span className="rcd-run-mark">{at >= 0 ? "Picked" : "As drawn"}</span>
+                <span className="rcd-run-mark">
+                  {at >= 0 ? "Picked" : scope === "PICKED" ? "Not tested" : "As drawn"}
+                </span>
               </button>
             </li>
           );

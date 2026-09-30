@@ -10,6 +10,12 @@
 export type ChecklistItem = {
   key: string;
   question: string;
+  /**
+   * How the same question is put where only particular circuit breakers were
+   * tested. Asking whether every RCD on the board was tested, on a test that
+   * never set out to cover the board, is a question with no honest answer.
+   */
+  picked?: string;
   /** A note rather than a yes/no. */
   freeText?: boolean;
 };
@@ -27,6 +33,7 @@ export const CHECKLIST: ChecklistItem[] = [
   {
     key: "allTested",
     question: "Every accessible RCD on this board was tested.",
+    picked: "Every circuit breaker selected for this test was tested.",
   },
   {
     key: "notTested",
@@ -34,6 +41,19 @@ export const CHECKLIST: ChecklistItem[] = [
     freeText: true,
   },
 ];
+
+/**
+ * The checks, worded for the test that was actually carried out.
+ *
+ * The keys do not change, so an answer given before the scope was settled
+ * still stands against the question it answered.
+ */
+export function checklistFor(wholeBoard: boolean): ChecklistItem[] {
+  if (wholeBoard) return CHECKLIST;
+  return CHECKLIST.map((item) =>
+    item.picked ? { ...item, question: item.picked } : item,
+  );
+}
 
 /** Every yes/no has to be answered before a report can be issued. */
 export function checklistComplete(answers: Record<string, boolean | string>): boolean {

@@ -35,6 +35,17 @@ import { isEmptyRow, type RcdRow } from "@/lib/rcd/parse";
  * rows left behind when a way was tested more than once.
  */
 
+/**
+ * What was tested: the whole board, or particular circuit breakers.
+ *
+ * A whole-board run walks every RCD drawn on the board and expects the
+ * instrument's records to cover them all. A run of particular breakers covers
+ * only the ones the operator picked, in the order they picked them — the first
+ * one picked takes the instrument's first test, the second its second, and so
+ * on — and the rest of the board is not part of the test at all.
+ */
+export type Scope = "BOARD" | "PICKED";
+
 /** How the board was worked through where nothing was said otherwise. */
 export type WalkOrder =
   /** Down the first column, then down the second — 1, 3, 5 … or 1, 2, 3 … */
@@ -43,6 +54,8 @@ export type WalkOrder =
   | "ROWS";
 
 export type Walk = {
+  /** Whether this run covers the board or only the breakers that were picked. */
+  scope: Scope;
   order: WalkOrder;
   /** Whether the devices outside the grid were worked before the grid or after. */
   extrasFirst: boolean;
@@ -60,6 +73,7 @@ export type Walk = {
 };
 
 export const DEFAULT_WALK: Walk = {
+  scope: "BOARD",
   order: "COLUMNS",
   extrasFirst: true,
   extraOrder: [],
@@ -72,6 +86,9 @@ export function normaliseWalk(value: unknown): Walk {
   const slots = (given: unknown): string[] =>
     Array.isArray(given) ? given.filter((slot): slot is string => typeof slot === "string") : [];
   return {
+    // A run saved before this choice existed was a whole-board run, because
+    // that was the only kind there was.
+    scope: raw.scope === "PICKED" ? "PICKED" : "BOARD",
     order: raw.order === "ROWS" ? "ROWS" : "COLUMNS",
     extrasFirst: raw.extrasFirst !== false,
     extraOrder: slots(raw.extraOrder),
@@ -136,7 +153,7 @@ export type Place =
  */
 export function boardDevices(board: Board, walk: Walk = DEFAULT_WALK): Device[] {
   const drawn = devicesAsDrawn(board, walk);
-  if (walk.sequence.length === 0) return drawn;
+  if (walk.sequence.length === 0) return walk.scope === "PICKED" ? [] : drawn;
 
   const bySlot = new Map(drawn.map((device) => [device.slot, device]));
   const picked: Device[] = [];
@@ -149,6 +166,11 @@ export function boardDevices(board: Board, walk: Walk = DEFAULT_WALK): Device[] 
     taken.add(slot);
     picked.push(device);
   }
+
+  // A run of particular breakers is the ones that were picked and nothing
+  // else: what was not picked was not tested, and a device the instrument
+  // never saw has no business on the report.
+  if (walk.scope === "PICKED") return picked;
 
   return [...picked, ...drawn.filter((device) => !taken.has(device.slot))];
 }

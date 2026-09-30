@@ -17,7 +17,7 @@ import { readUpload } from "@/lib/storage";
 import { COMPANY } from "@/lib/company";
 import { showReading, type Verdict } from "@/lib/rcd/assess";
 import { loadTuning } from "@/lib/rcd/settings";
-import { CHECKLIST } from "@/lib/rcd/checklist";
+import { checklistFor } from "@/lib/rcd/checklist";
 import { normaliseWalk } from "@/lib/rcd/map";
 import { namesMatch } from "@/lib/rcd/names";
 import {
@@ -130,6 +130,8 @@ export type BoardTest = {
     droppedDuplicate: string[];
     untested: string[];
     walk: string;
+    /** What the run covered: the whole board, or the circuits picked on it. */
+    wholeBoard: boolean;
   };
   checklist: { question: string; answer: string }[];
   /** The instrument's own export for this board, and its page sizes. */
@@ -227,8 +229,9 @@ export async function loadRcdReport(reportId: string): Promise<RcdReport | null>
         droppedDuplicate: (corrections.droppedDuplicate ?? []).map(safe),
         untested: (corrections.untested ?? []).map(safe),
         walk: describeWalk(corrections.walk),
+        wholeBoard: normaliseWalk(corrections.walk).scope === "BOARD",
       },
-      checklist: CHECKLIST.map((item) => ({
+      checklist: checklistFor(normaliseWalk(corrections.walk).scope === "BOARD").map((item) => ({
         question: item.question,
         answer: safe(answerFor(checklist[item.key])),
       })),
@@ -283,6 +286,16 @@ function pick(a: number | null, b: number | null): Reading {
 
 function describeWalk(value: unknown): string {
   const walk = normaliseWalk(value);
+
+  // A run of particular breakers has no default to fall back on: what was
+  // picked is the whole of it, in the order it was picked.
+  if (walk.scope === "PICKED") {
+    const count = walk.sequence.length;
+    return `Selected circuit breakers only \u2014 ${count} ${
+      count === 1 ? "device" : "devices"
+    }, in the order tested`;
+  }
+
   const grid =
     walk.order === "ROWS"
       ? "Across each row, then down"
@@ -564,6 +577,9 @@ function cover(doc: Doc, data: RcdReport) {
   const all = everyResult(data);
   const failed = all.filter((result) => result.verdict === "FAIL").length;
   const boards = data.boards.length;
+  // Boards where only particular circuits were tested. A client reading a
+  // cover has to know that before anything else on it.
+  const partial = data.boards.filter((board) => !board.corrections.wholeBoard).length;
   const tested = data.boards.map((board) => board.boardName).join(", ");
   // The visit's date is the earliest board's, since that is the day the work
   // started; a visit that ran over two days says so on each board's own page.
@@ -586,6 +602,16 @@ function cover(doc: Doc, data: RcdReport) {
     rows: [
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
+      ...(partial > 0
+        ? ([
+            [
+              "What was tested",
+              partial === boards
+                ? "Selected circuit breakers only"
+                : `Selected circuit breakers on ${partial} of ${boards} switchboards`,
+            ],
+          ] as [string, string][])
+        : []),
       [boards === 1 ? "Switchboard" : "Switchboards", tested || "—"],
       ["Instrument", data.instrument ?? "—"],
       ["Tested by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
@@ -921,6 +947,29 @@ function toneFor(verdict: Verdict) {
 function results(doc: Doc, data: RcdReport, board: BoardTest, index: number): Section {
   const pieces: Piece[] = [];
 
+  // A test of particular circuits says so before the first result, not in a
+  // table at the back. A reader who takes a page of passes for a tested board
+  // has been misled by the report, whatever else it says elsewhere.
+  if (!board.corrections.wholeBoard) {
+    const devices = deviceCount(board.results);
+    const note = safe(
+      `Only the circuit breakers listed below were tested on ${board.boardName}: ${devices} ${
+        devices === 1 ? "device" : "devices"
+      }, tested in the order shown. The remaining RCDs on this switchboard were not part of this test, and nothing in this report says anything about them.`,
+    );
+    const height = measureText(doc, note, { width: CONTENT - 36, size: 9.5, lineGap: 2 });
+    pieces.push({
+      height: height + 26,
+      keepWith: 1,
+      draw: (y) => {
+        doc.rect(MARGIN, y, CONTENT, height + 18).fillAndStroke(COLOURS.soft, COLOURS.hair);
+        doc.rect(MARGIN, y, 4, height + 18).fill(COLOURS.bar);
+        doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
+        doc.text(note, MARGIN + 18, y + 9, { width: CONTENT - 36, lineGap: 2 });
+      },
+    });
+  }
+
   for (const group of GROUPS) {
     const rows = board.results.filter((result) => result.verdict === group.verdict);
     const tone = toneFor(group.verdict);
@@ -1081,6 +1130,12 @@ function corrections(doc: Doc, data: RcdReport, board: BoardTest, index: number)
   const lines: [string, string][] = [
     ["Switchboard", board.boardName],
     ["Tested on", shortDate(board.testDate)],
+    [
+      "What was tested",
+      board.corrections.wholeBoard
+        ? "Every RCD on this switchboard"
+        : "Selected circuit breakers only \u2014 the rest of the switchboard was not tested",
+    ],
     ["Order worked", board.corrections.walk],
     ["Incomplete / non-device records excluded", listed(board.corrections.droppedEmpty)],
     ["Superseded repeat tests excluded", listed(board.corrections.droppedDuplicate)],
