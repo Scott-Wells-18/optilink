@@ -332,6 +332,12 @@ model Inspection {
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
 
   issues Issue[]
 
@@ -472,6 +478,12 @@ model Job {
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
 
   items JobItem[]
 
@@ -568,6 +580,12 @@ model RcdReport {
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
   updatedAt DateTime @updatedAt
 
   tests RcdTestRun[]
@@ -1073,6 +1091,12 @@ model SafetyDoc {
   contact        Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
@@ -1164,6 +1188,12 @@ model PowerAnalysis {
   summary Json?
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
@@ -1240,6 +1270,12 @@ model AmpReport {
   contactName String?
 
   createdAt DateTime @default(now())
+  /**
+   * The profiles named as having prepared this, in the order they are listed.
+   * Empty means the director, which is who it was before this could be chosen.
+   */
+  preparedBy String[]
+
   updatedAt DateTime @updatedAt
 
   recordings AmpRecording[]

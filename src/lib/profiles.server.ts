@@ -120,3 +120,16 @@ export async function ensureProfiles(): Promise<void> {
   }
 }
 
+
+/**
+ * Who a document is prepared by, given what was chosen on it.
+ *
+ * Nobody chosen means the director, which is who it was before this could be
+ * chosen at all: a report filed last month still comes out signed.
+ */
+export async function preparedByFor(chosen: string[] | null | undefined): Promise<Signatory[]> {
+  const ids = (chosen ?? []).filter(Boolean);
+  if (ids.length === 0) return defaultSignatories();
+  const found = await signatories(ids);
+  return found.length > 0 ? found : defaultSignatories();
+}

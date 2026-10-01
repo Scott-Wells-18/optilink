@@ -17,6 +17,7 @@ import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDial
 import { EMPTY_PROFILE, type ProfileDraft } from "@/components/ProfileDialog";
 import { TITLE_LABELS, fullName, type Title } from "@/lib/profiles";
 import type { ContactChoice } from "@/components/ReportContactDialog";
+import type { PreparedByChoice } from "@/components/PreparedByDialog";
 import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 
 /**
@@ -55,6 +56,7 @@ type IssueRecord = {
 type NamedContact = { id: string; name: string } | null;
 
 type InspectionRecord = {
+  preparedBy?: string[];
   id: string;
   name: string | null;
   /** The day it was carried out, as an ISO date. */
@@ -75,6 +77,7 @@ type JobItemRecord = {
 };
 
 type JobRecord = {
+  preparedBy?: string[];
   id: string;
   name: string | null;
   /** The day the work was done, as an ISO date. */
@@ -94,6 +97,7 @@ type RcdRunRecord = {
 
 /** One visit's report, holding however many switchboards were tested on it. */
 type RcdReportRecord = {
+  preparedBy?: string[];
   id: string;
   name: string | null;
   date: string;
@@ -303,6 +307,36 @@ function contactRow(
   };
 }
 
+/**
+ * The row that says who a report is prepared by.
+ *
+ * Beside the row that says who it is for, because they are the two people a
+ * report names and they are chosen the same way.
+ */
+function preparedByRow(
+  key: string,
+  path: string,
+  what: string,
+  chosen: string[],
+  names: Map<string, string>,
+  open: (choice: PreparedByChoice) => void,
+  /**
+   * What the document asks of the people on it. A record of work carried out
+   * names everybody who was on the job, apprentice included; a report that
+   * assesses an installation names whoever is licensed for it.
+   */
+  needs: "reports" | "safety" = "reports",
+): TreeNode {
+  const who = chosen.map((id) => names.get(id)).filter(Boolean) as string[];
+  return {
+    id: `preparedby:${key}`,
+    label: who.length > 0 ? who.join(", ") : "Prepared by",
+    detail: who.length > 0 ? "Change who prepared it" : "The director, unless you say otherwise",
+    variant: "info",
+    onActivate: () => open({ path, what, needs, chosen }),
+  };
+}
+
 export function useClientsTree(enabled: boolean) {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [dialog, setDialog] = usePersisted<DialogSpec | null>("dialog", null);
@@ -324,6 +358,7 @@ export function useClientsTree(enabled: boolean) {
   const [contact, setContact] = usePersisted<ContactChoice | null>("contact", null);
   const [testGear, setTestGear] = useState<TestEquipmentRecord[]>([]);
   const [profiles, setProfiles] = useState<ProfileRecord[]>([]);
+  const [preparedBy, setPreparedBy] = usePersisted<PreparedByChoice | null>("preparedby", null);
   const [profileDialog, setProfileDialog] = usePersisted<ProfileDraft | null>("profile", null);
   const [gearDialog, setGearDialog] = usePersisted<EquipmentDraft | null>("gear", null);
   const [error, setError] = useState<string | null>(null);
@@ -349,6 +384,12 @@ export function useClientsTree(enabled: boolean) {
       // The section shows what it has; a failed refresh is not worth a banner.
     }
   }, []);
+
+  /** Who each profile is, for the rows that name them. */
+  const profileNames = useMemo(
+    () => new Map(profiles.map((person) => [person.id, fullName(person)])),
+    [profiles],
+  );
 
   /** The people who can be named on the paperwork. Another flat list. */
   const refreshProfiles = useCallback(async () => {
@@ -732,6 +773,14 @@ export function useClientsTree(enabled: boolean) {
                                 }),
                             },
                           ] as TreeNode[])),
+                      preparedByRow(
+                        `inspection:${inspection.id}`,
+                        `/api/inspections/${inspection.id}`,
+                        "thermal report",
+                        inspection.preparedBy ?? [],
+                        profileNames,
+                        setPreparedBy,
+                      ),
                       contactRow(
                         `inspection:${inspection.id}`,
                         `/api/inspections/${inspection.id}`,
@@ -933,6 +982,15 @@ export function useClientsTree(enabled: boolean) {
                       variant: "add",
                       onActivate: () => setJobItem({ jobId: job.id, jobTitle: title }),
                     },
+                    preparedByRow(
+                      `job:${job.id}`,
+                      `/api/jobs/${job.id}`,
+                      "works report",
+                      job.preparedBy ?? [],
+                      profileNames,
+                      setPreparedBy,
+                      "safety",
+                    ),
                     contactRow(
                       `job:${job.id}`,
                       `/api/jobs/${job.id}`,
@@ -1094,6 +1152,14 @@ export function useClientsTree(enabled: boolean) {
                       variant: "add",
                       onActivate: () => void startRcdTest(site.id, report.id),
                     },
+                    preparedByRow(
+                      `rcdreport:${report.id}`,
+                      `/api/rcd-reports/${report.id}`,
+                      "RCD report",
+                      report.preparedBy ?? [],
+                      profileNames,
+                      setPreparedBy,
+                    ),
                     contactRow(
                       `rcdreport:${report.id}`,
                       `/api/rcd-reports/${report.id}`,
@@ -1579,6 +1645,12 @@ export function useClientsTree(enabled: boolean) {
     powerNodes,
     ampNodes,
     profileNodes,
+    preparedBy,
+    closePreparedBy: () => setPreparedBy(null),
+    savedPreparedBy: () => {
+      setPreparedBy(null);
+      void refresh();
+    },
     profileDialog,
     closeProfile: () => setProfileDialog(null),
     savedProfile: () => {

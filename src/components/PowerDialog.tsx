@@ -7,6 +7,7 @@ import { BRIEFS, BRIEF_LABELS, BRIEF_NOTES, type Brief } from "@/lib/power/brief
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 import { uploadFile } from "@/components/ImageUpload";
+import { PreparedByPicks } from "@/components/PreparedByPicks";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -36,6 +37,7 @@ type Run = {
   brief: string | null;
   contactId: string | null;
   contactName: string | null;
+  preparedBy: string[];
   sourceFile: { id: string; originalName: string } | null;
   summary: Summary | null;
   site: {
@@ -241,6 +243,17 @@ export function PowerDialog({
                 </button>
               ))}
             </div>
+
+            <div className="board-section-head">
+              <h3 className="board-section-title">Who recorded it?</h3>
+              <p className="board-section-note">
+                Their name, credentials and signature go on the report.
+              </p>
+            </div>
+            <PreparedByPicks
+              chosen={run?.preparedBy ?? []}
+              onChange={(next) => void patch({ preparedBy: next })}
+            />
 
             <div className="board-section-head">
               <h3 className="board-section-title">Who asked for it?</h3>

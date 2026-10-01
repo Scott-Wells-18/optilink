@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { readUpload } from "@/lib/storage";
 import { personName } from "@/lib/contacts";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
-import { reportSignature } from "@/lib/signatures";
+import { preparedByFor } from "@/lib/profiles.server";
 import { readAmpRecording, clock, trim, type AmpReading, type Check } from "@/lib/amps/parse";
 import {
   DEVICE_LABELS,
@@ -18,7 +18,12 @@ import {
 } from "@/lib/amps/summary";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { expiry } from "@/lib/report/calibration";
-import { mastheadLines, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
+import {
+  mastheadLines,
+  signOffBlock,
+  stampWideFeet,
+  type PageMeta,
+} from "@/lib/report/furniture";
 import { stampCertificate } from "@/lib/report/certificate";
 import { equipmentPageCount, equipmentPages } from "@/lib/report/equipment";
 import { ampScaleTop, drawAmpChart } from "@/lib/report/ampChart";
@@ -158,7 +163,7 @@ export async function loadAmpReport(id: string): Promise<AmpLoad> {
       reportDate: new Date(),
       entries,
       logo: await brandBytes("logo.jpg"),
-      signature: await reportSignature(),
+      preparedBy: await preparedByFor(report.preparedBy),
     },
   };
 }
@@ -431,16 +436,7 @@ function recordedBy(doc: Doc, data: AmpReport) {
   const y = PAGE.height - MARGIN - 170;
 
   label(doc, "Recorded by", MARGIN, y);
-  if (data.signature) doc.image(data.signature, MARGIN + 6, y + 18, { fit: [170, 46] });
-  doc.rect(MARGIN, y + 66, 220, 0.8).fill(COLOURS.inkSoft);
-
-  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
-  doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
-  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, y + 91, {
-    lineBreak: false,
-  });
-  doc.fillColor(COLOURS.ink);
+  signOffBlock(doc, data.preparedBy, MARGIN, y + 52, 430);
 }
 
 /** "A-Phase PIT JACKS — Red phase — 20 A circuit breaker" */
@@ -1144,14 +1140,7 @@ function limitations(doc: Doc, data: AmpReport) {
   /* --- signed ------------------------------------------------------------ */
   const at = Math.max(Math.max(left, y) + 30, PAGE.height - MARGIN - 150);
   label(doc, "Recorded by", MARGIN, at);
-  if (data.signature) doc.image(data.signature, MARGIN + 6, at + 16, { fit: [170, 44] });
-  doc.rect(MARGIN, at + 62, 220, 0.8).fill(COLOURS.inkSoft);
-  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
-  doc.text(THERMOGRAPHER.name, MARGIN, at + 70, { lineBreak: false });
-  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, at + 86, {
-    lineBreak: false,
-  });
+  signOffBlock(doc, data.preparedBy, MARGIN, at + 48, CONTENT - 300);
 
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   doc.text(

@@ -66,7 +66,7 @@ import {
   safe,
   shortDate,
 } from "@/lib/report/theme";
-import { reportSignature } from "@/lib/signatures";
+import { preparedByFor } from "@/lib/profiles.server";
 
 /**
  * The RCD test report.
@@ -266,7 +266,7 @@ export async function loadRcdReport(reportId: string): Promise<RcdReport | null>
     })),
     concernPercent: tuning.concernPercent,
     logo: await brandBytes("logo.jpg"),
-    signature: await reportSignature(),
+    preparedBy: await preparedByFor(report.preparedBy),
   };
 }
 

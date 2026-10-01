@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readPreparedBy } from "@/lib/profiles";
 import { prisma } from "@/lib/db";
 import { badRequest, notFound, readJson, serverError } from "@/lib/api";
 
@@ -51,9 +52,12 @@ export async function PATCH(
       contactName?: string | null;
       /** The order the recordings are read in, as a list of their ids. */
       recordingOrder?: string[];
+      preparedBy?: unknown;
     };
 
     const data: Record<string, unknown> = {};
+    const preparedBy = readPreparedBy(body.preparedBy);
+    if (preparedBy) data.preparedBy = preparedBy;
     for (const key of ["name", "location", "contactName"] as const) {
       if (body[key] !== undefined) data[key] = body[key]?.slice(0, 200) || null;
     }

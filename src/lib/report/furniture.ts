@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
+import type { Signatory } from "@/lib/profiles.server";
 import { COLOURS, CONTENT, MARGIN, PAGE, safe, shortDate } from "@/lib/report/theme";
 
 /**
@@ -18,8 +19,8 @@ export type PageMeta = {
   siteName: string;
   siteLocation: string | null;
   logo: Buffer | null;
-  /** The director's signature, where the app holds one. */
-  signature: Buffer | null;
+  /** Who the report is prepared by, with their marks already read. */
+  preparedBy: Signatory[];
 };
 
 export function newDocument(): { doc: Doc; done: Promise<Buffer> } {
@@ -494,30 +495,75 @@ export function signOff(
   y: number,
   options: { thermography?: boolean } = {},
 ) {
-  if (meta.signature) {
-    // Sat on the rule rather than above it, the way a pen lands on a form.
-    doc.image(meta.signature, MARGIN + 6, y - 34, { fit: [170, 46] });
-    doc.rect(MARGIN, y + 12, 200, 0.8).fill(COLOURS.inkSoft);
-  } else {
-    doc.font("Helvetica").fontSize(11).fillColor(COLOURS.ink);
-    doc.text("……………………………………………", MARGIN, y);
-  }
-  doc.font("Helvetica-Bold").fontSize(11).fillColor(COLOURS.ink);
-  doc.text(THERMOGRAPHER.name, MARGIN, y + 22);
-  doc.font("Helvetica").fontSize(10).fillColor(COLOURS.inkSoft);
-  if (options.thermography) {
-    doc.text(
-      `${THERMOGRAPHER.level} - ${THERMOGRAPHER.certificateNumber}`,
-      MARGIN,
-      y + 38,
-    );
-  }
-  doc
-    .fontSize(9.5)
-    .text(
-      `Qualified Supervisor ${COMPANY.supervisor}`,
-      MARGIN,
-      y + (options.thermography ? 53 : 38),
-    );
+  signOffBlock(doc, meta.preparedBy, MARGIN, y, CONTENT, options);
+}
+
+/**
+ * Who put their name to this, with their mark above it.
+ *
+ * However many people were named, side by side: a job carried out by an
+ * electrician and an apprentice is signed by both of them, and each one is
+ * named for what they are. Nobody is given a credential they do not hold —
+ * an apprentice signs as an apprentice, with no licence number under their
+ * name, because they do not have one and the report must not imply they do.
+ *
+ * Nobody named at all leaves the ruled line the reports have always printed,
+ * which is a document waiting for a pen rather than a broken one.
+ */
+export function signOffBlock(
+  doc: Doc,
+  people: Signatory[],
+  x: number,
+  y: number,
+  width: number,
+  options: { thermography?: boolean } = {},
+): number {
+  const listed = people.length > 0 ? people.slice(0, 3) : [null];
+  const gap = 24;
+  const column = Math.min(260, (width - gap * (listed.length - 1)) / listed.length);
+
+  listed.forEach((person, index) => {
+    const left = x + index * (column + gap);
+
+    if (person?.signature) {
+      // Sat on the rule rather than above it, the way a pen lands on a form.
+      try {
+        doc.image(person.signature, left + 6, y - 34, { fit: [column - 40, 46] });
+      } catch {
+        // A signature the renderer will not take is not worth a failed report.
+      }
+    }
+    doc.rect(left, y + 12, Math.min(200, column), 0.8).fill(COLOURS.inkSoft);
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(COLOURS.ink);
+    doc.text(safe(person?.name ?? THERMOGRAPHER.name), left, y + 22, {
+      width: column,
+      height: 13,
+      ellipsis: true,
+    });
+
+    let at = y + 38;
+    doc.font("Helvetica").fontSize(10).fillColor(COLOURS.inkSoft);
+    if (options.thermography && index === 0) {
+      doc.text(`${THERMOGRAPHER.level} - ${THERMOGRAPHER.certificateNumber}`, left, at, {
+        width: column,
+      });
+      at += 15;
+    }
+    const role = person?.role ?? "";
+    if (role) {
+      doc.fontSize(9.5).text(safe(role), left, at, { width: column, height: 11, ellipsis: true });
+      at += 13;
+    }
+    // The certificate that authorises the work, where they hold one. An
+    // apprentice holds neither, and their name stands on its own.
+    const supervisor = person ? person.supervisor : COMPANY.supervisor;
+    if (supervisor) {
+      doc.fontSize(9.5).text(`Qualified Supervisor ${supervisor}`, left, at, { width: column });
+      at += 13;
+    }
+  });
+
   doc.fillColor(COLOURS.ink);
+  return y + (options.thermography ? 80 : 66);
 }

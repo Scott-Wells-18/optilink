@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readPreparedBy } from "@/lib/profiles";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import { releaseFiles } from "@/lib/storage";
@@ -16,9 +17,12 @@ export async function PATCH(
       recommendations?: string[];
       contactId?: string | null;
       itemOrder?: string[];
+      preparedBy?: unknown;
     };
 
     const data: Record<string, unknown> = {};
+    const preparedBy = readPreparedBy(body.preparedBy);
+    if (preparedBy) data.preparedBy = preparedBy;
     if (body.date) {
       // "2026-09-18" from a date input, kept as that day rather than a moment.
       const date = new Date(`${body.date}T00:00:00Z`);

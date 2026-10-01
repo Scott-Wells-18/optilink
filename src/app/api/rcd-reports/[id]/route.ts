@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readPreparedBy } from "@/lib/profiles";
 import { prisma } from "@/lib/db";
 import { notFound, readJson, serverError } from "@/lib/api";
 
@@ -40,8 +41,11 @@ export async function PATCH(
       date?: string;
       instrumentId?: string | null;
       contactId?: string | null;
+      preparedBy?: unknown;
     };
     const data: Record<string, unknown> = {};
+    const preparedBy = readPreparedBy(body.preparedBy);
+    if (preparedBy) data.preparedBy = preparedBy;
     if (body.name !== undefined) data.name = body.name?.slice(0, 200) || null;
     if ("instrumentId" in body) data.instrumentId = body.instrumentId || null;
     if ("contactId" in body) data.contactId = body.contactId || null;

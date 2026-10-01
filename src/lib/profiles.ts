@@ -90,3 +90,14 @@ export function readProfile(body: Record<string, unknown>) {
     signatureFileId: text(body.signatureFileId, 60),
   };
 }
+
+/**
+ * The profiles named as having prepared a report.
+ *
+ * Ids only: the names, the numbers and the signature are read off the profile
+ * when the report is drawn, so renaming somebody renames them everywhere.
+ */
+export function readPreparedBy(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((id): id is string => typeof id === "string" && id.length > 0).slice(0, 8);
+}

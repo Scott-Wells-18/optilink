@@ -38,6 +38,7 @@ export async function GET() {
           jobs: {
             orderBy: { createdAt: "asc" },
             select: {
+              preparedBy: true,
               id: true,
               name: true,
               date: true,
@@ -61,6 +62,7 @@ export async function GET() {
           rcdReports: {
             orderBy: { createdAt: "asc" },
             select: {
+              preparedBy: true,
               id: true,
               name: true,
               date: true,
@@ -120,6 +122,7 @@ export async function GET() {
           inspections: {
             orderBy: { createdAt: "asc" },
             select: {
+              preparedBy: true,
               id: true,
               name: true,
               date: true,

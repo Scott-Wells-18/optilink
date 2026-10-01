@@ -5,9 +5,14 @@ import { prisma } from "@/lib/db";
 import { personName } from "@/lib/contacts";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { readUpload } from "@/lib/storage";
-import { reportSignature } from "@/lib/signatures";
+import { preparedByFor } from "@/lib/profiles.server";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
-import { mastheadLines, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
+import {
+  mastheadLines,
+  signOffBlock,
+  stampWideFeet,
+  type PageMeta,
+} from "@/lib/report/furniture";
 import { expiry } from "@/lib/report/calibration";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { stampCertificate, type Slot } from "@/lib/report/certificate";
@@ -212,7 +217,7 @@ export async function loadPowerReport(id: string): Promise<PowerLoad> {
       recording,
       summary,
       logo: await brandBytes("logo.jpg"),
-      signature: await reportSignature(),
+      preparedBy: await preparedByFor(run.preparedBy),
     },
   };
 }
@@ -579,19 +584,7 @@ function recordedBy(doc: Doc, data: PowerReport) {
   const y = PAGE.height - MARGIN - 170;
 
   label(doc, "Recorded by", MARGIN, y);
-
-  if (data.signature) {
-    doc.image(data.signature, MARGIN + 6, y + 18, { fit: [170, 46] });
-  }
-  doc.rect(MARGIN, y + 66, 220, 0.8).fill(COLOURS.inkSoft);
-
-  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
-  doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
-  doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, y + 91, {
-    lineBreak: false,
-  });
-  doc.fillColor(COLOURS.ink);
+  signOffBlock(doc, data.preparedBy, MARGIN, y + 52, 430);
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { personName } from "@/lib/contacts";
 import { uploadFile } from "@/components/ImageUpload";
+import { PreparedByPicks } from "@/components/PreparedByPicks";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -55,6 +56,7 @@ type Report = {
   instrumentId: string | null;
   contactId: string | null;
   contactName: string | null;
+  preparedBy: string[];
   recordings: Recording[];
   site: {
     name: string;
@@ -583,6 +585,17 @@ export function AmpsDialog({
                 onBlur={(event) => void patch({ purpose: event.target.value || null })}
               />
             </label>
+
+            <div className="board-section-head">
+              <h3 className="board-section-title">Who recorded them?</h3>
+              <p className="board-section-note">
+                Their name, credentials and signature go on the report.
+              </p>
+            </div>
+            <PreparedByPicks
+              chosen={report?.preparedBy ?? []}
+              onChange={(next) => void patch({ preparedBy: next })}
+            />
 
             <div className="board-section-head">
               <h3 className="board-section-title">Who asked for them?</h3>

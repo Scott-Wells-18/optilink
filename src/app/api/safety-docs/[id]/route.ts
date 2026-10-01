@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readPreparedBy } from "@/lib/profiles";
 import { prisma } from "@/lib/db";
 import { notFound, readJson, serverError } from "@/lib/api";
 import { BY_CODE } from "@/lib/safety/catalogue";
@@ -45,9 +46,12 @@ export async function PATCH(
       energised?: unknown;
       /** One person confirming they have read the documents, or taking it back. */
       sign?: { key: string; confirmed: boolean };
+      preparedBy?: unknown;
     };
 
     const data: Record<string, unknown> = {};
+    const preparedBy = readPreparedBy(body.preparedBy);
+    if (preparedBy) data.preparedBy = preparedBy;
 
     // The answers decide the documents, so they arrive together: whatever was
     // said about the work, and what that works out to.

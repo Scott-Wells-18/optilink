@@ -23,6 +23,7 @@ import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { PowerDialog } from "@/components/PowerDialog";
 import { AmpsDialog } from "@/components/AmpsDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
+import { PreparedByDialog } from "@/components/PreparedByDialog";
 import { EquipmentDialog } from "@/components/EquipmentDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
@@ -220,6 +221,14 @@ export function Gateway({
           reportId={clients.amps.reportId}
           siteName={clients.amps.siteName}
           onClose={clients.closeAmps}
+        />
+      ) : null}
+
+      {open && clients.preparedBy ? (
+        <PreparedByDialog
+          choice={clients.preparedBy}
+          onClose={clients.closePreparedBy}
+          onSaved={clients.savedPreparedBy}
         />
       ) : null}
 

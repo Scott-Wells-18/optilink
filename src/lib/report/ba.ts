@@ -34,7 +34,7 @@ import {
   type Section,
 } from "@/lib/report/flow";
 import { COLOURS, CONTENT, MARGIN, longDate, safe, shortDate } from "@/lib/report/theme";
-import { reportSignature } from "@/lib/signatures";
+import { preparedByFor } from "@/lib/profiles.server";
 
 /**
  * The works completed report — what was found, what was done, and the photos
@@ -142,7 +142,7 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
     items,
     unfinished,
     logo: await brandBytes("logo.jpg"),
-    signature: await reportSignature(),
+    preparedBy: await preparedByFor(job.preparedBy),
   };
 }
 
