@@ -14,7 +14,7 @@ import {
 import { prisma } from "@/lib/db";
 import { personName } from "@/lib/contacts";
 import { readUpload } from "@/lib/storage";
-import { COMPANY } from "@/lib/company";
+import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { showReading, type Verdict } from "@/lib/rcd/assess";
 import { loadTuning } from "@/lib/rcd/settings";
 import { checklistFor } from "@/lib/rcd/checklist";
@@ -291,7 +291,7 @@ function describeWalk(value: unknown): string {
   // picked is the whole of it, in the order it was picked.
   if (walk.scope === "PICKED") {
     const count = walk.sequence.length;
-    return `Selected circuit breakers only \u2014 ${count} ${
+    return `Selected RCBOs and RCDs only \u2014 ${count} ${
       count === 1 ? "device" : "devices"
     }, in the order tested`;
   }
@@ -607,14 +607,14 @@ function cover(doc: Doc, data: RcdReport) {
             [
               "What was tested",
               partial === boards
-                ? "Selected circuit breakers only"
-                : `Selected circuit breakers on ${partial} of ${boards} switchboards`,
+                ? "Selected RCBOs and RCDs only"
+                : `Selected RCBOs and RCDs on ${partial} of ${boards} switchboards`,
             ],
           ] as [string, string][])
         : []),
       [boards === 1 ? "Switchboard" : "Switchboards", tested || "—"],
       ["Instrument", data.instrument ?? "—"],
-      ["Tested by", `${COMPANY.name} · Lic ${COMPANY.licence}`],
+      ["Tested by", `${THERMOGRAPHER.name} · Qualified Supervisor ${COMPANY.supervisor}`],
     ],
     note:
       "This report is issued to the addressee named above and relates only to the switchboards and devices listed " +
@@ -953,7 +953,7 @@ function results(doc: Doc, data: RcdReport, board: BoardTest, index: number): Se
   if (!board.corrections.wholeBoard) {
     const devices = deviceCount(board.results);
     const note = safe(
-      `Only the circuit breakers listed below were tested on ${board.boardName}: ${devices} ${
+      `Only the RCBOs and RCDs listed below were tested on ${board.boardName}: ${devices} ${
         devices === 1 ? "device" : "devices"
       }, tested in the order shown. The remaining RCDs on this switchboard were not part of this test, and nothing in this report says anything about them.`,
     );
@@ -1134,7 +1134,7 @@ function corrections(doc: Doc, data: RcdReport, board: BoardTest, index: number)
       "What was tested",
       board.corrections.wholeBoard
         ? "Every RCD on this switchboard"
-        : "Selected circuit breakers only \u2014 the rest of the switchboard was not tested",
+        : "Selected RCBOs and RCDs only \u2014 the rest of the switchboard was not tested",
     ],
     ["Order worked", board.corrections.walk],
     ["Incomplete / non-device records excluded", listed(board.corrections.droppedEmpty)],

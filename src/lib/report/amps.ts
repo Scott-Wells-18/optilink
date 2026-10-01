@@ -18,7 +18,7 @@ import {
 } from "@/lib/amps/summary";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { expiry } from "@/lib/report/calibration";
-import type { PageMeta } from "@/lib/report/furniture";
+import { mastheadLines, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
 import { stampCertificate } from "@/lib/report/certificate";
 import { equipmentPageCount, equipmentPages } from "@/lib/report/equipment";
 import { ampScaleTop, drawAmpChart } from "@/lib/report/ampChart";
@@ -286,7 +286,7 @@ export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
     head(doc, data, "Equipment Used", note),
   );
 
-  stampPages(doc, data);
+  stampWideFeet(doc, data, { width: PAGE.width, height: PAGE.height, margin: MARGIN });
   doc.end();
 
   const pdf = await done;
@@ -305,14 +305,11 @@ function cover(doc: Doc, data: AmpReport) {
 
   /* --- masthead ---------------------------------------------------------- */
   if (data.logo) doc.image(data.logo, MARGIN, 34, { fit: [158, 50] });
-  const trading = [COMPANY.addressLine1, COMPANY.addressLine2, COMPANY.phone, COMPANY.email];
-  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  trading.forEach((line, index) => {
-    doc.text(line, MARGIN + CONTENT - 220, 36 + index * 11.5, { width: 220, align: "right" });
-  });
+  const masthead = mastheadLines(doc, MARGIN + CONTENT - 250, 32, 250);
 
-  doc.rect(MARGIN, 100, CONTENT, 0.8).fill(COLOURS.hair);
-  doc.rect(MARGIN, 99, 64, 2.6).fill(COLOURS.accent);
+  const rule = Math.max(masthead + 8, 100);
+  doc.rect(MARGIN, rule, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, rule - 1, 64, 2.6).fill(COLOURS.accent);
 
   /* --- left: what it is, and who for ------------------------------------- */
   const left = 430;
@@ -423,18 +420,6 @@ function cover(doc: Doc, data: AmpReport) {
     { width, lineGap: 1.6 },
   );
 
-  /* --- the foot ---------------------------------------------------------- */
-  const footY = PAGE.height - MARGIN - 32;
-  doc.rect(MARGIN, footY, CONTENT, 32).fill(COLOURS.bar);
-  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
-  doc.text(COMPANY.name, MARGIN + 14, footY + 11.5, { width: 120 });
-  doc.font("Helvetica").fontSize(8.5);
-  doc.text(
-    `ABN ${COMPANY.abn}   ·   Contractor Licence ${COMPANY.licence}   ·   Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN + 14,
-    footY + 12,
-    { width: CONTENT - 28, align: "right" },
-  );
   doc.fillColor(COLOURS.ink).font("Helvetica");
 }
 
@@ -452,13 +437,9 @@ function recordedBy(doc: Doc, data: AmpReport) {
   doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
   doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
   doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(COMPANY.name, MARGIN, y + 91, { lineBreak: false });
-  doc.text(
-    `Contractor Licence ${COMPANY.licence}  ·  Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN,
-    y + 105,
-    { lineBreak: false },
-  );
+  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, y + 91, {
+    lineBreak: false,
+  });
   doc.fillColor(COLOURS.ink);
 }
 
@@ -1168,13 +1149,9 @@ function limitations(doc: Doc, data: AmpReport) {
   doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
   doc.text(THERMOGRAPHER.name, MARGIN, at + 70, { lineBreak: false });
   doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(COMPANY.name, MARGIN, at + 86, { lineBreak: false });
-  doc.text(
-    `Contractor Licence ${COMPANY.licence}  ·  Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN,
-    at + 99,
-    { lineBreak: false },
-  );
+  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, at + 86, {
+    lineBreak: false,
+  });
 
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   doc.text(
@@ -1232,35 +1209,6 @@ function panelBar(doc: Doc, x: number, y: number, width: number, title: string, 
   doc.rect(x, y, width, 19).fill(colour);
   doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9.5);
   doc.text(safe(title), x + 8, y + 5.5, { width: width - 16, height: 12, ellipsis: true });
-  doc.fillColor(COLOURS.ink);
-}
-
-function stampPages(doc: Doc, data: AmpReport) {
-  const range = doc.bufferedPageRange();
-  // From page two: the cover has its own foot bar carrying the same details.
-  for (let index = 1; index < range.count; index += 1) {
-    doc.switchToPage(range.start + index);
-    const bottom = doc.page.margins.bottom;
-    doc.page.margins.bottom = 0;
-
-    const y = PAGE.height - 26;
-    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
-    doc.text(safe(`${data.clientName}  ·  ${data.siteName}`), MARGIN, y, {
-      width: CONTENT - 140,
-    });
-    doc.text(`Page ${index + 1} of ${range.count}`, MARGIN + CONTENT - 140, y, {
-      width: 140,
-      align: "right",
-    });
-    doc.text(
-      `${COMPANY.name} · Lic ${COMPANY.licence} · Supervisor ${COMPANY.supervisor}`,
-      MARGIN,
-      y + 10,
-      { width: CONTENT },
-    );
-
-    doc.page.margins.bottom = bottom;
-  }
   doc.fillColor(COLOURS.ink);
 }
 

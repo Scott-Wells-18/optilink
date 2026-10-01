@@ -1,6 +1,6 @@
 import PDFDocument from "pdfkit";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
-import { COLOURS, CONTENT, MARGIN, PAGE, shortDate } from "@/lib/report/theme";
+import { COLOURS, CONTENT, MARGIN, PAGE, safe, shortDate } from "@/lib/report/theme";
 
 /**
  * The parts every report is built from — bars, table heads, covers, footers.
@@ -145,11 +145,13 @@ export type Cover = {
  */
 export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
   /* --- masthead: who it is from ------------------------------------------ */
-  if (meta.logo) doc.image(meta.logo, MARGIN, 46, { fit: [176, 56] });
-  tradingLines(doc, MARGIN + CONTENT - 210, 48, 210);
+  if (meta.logo) doc.image(meta.logo, MARGIN, 44, { fit: [176, 56] });
+  const masthead = mastheadLines(doc, MARGIN + CONTENT - 250, 42, 250);
 
-  doc.rect(MARGIN, 124, CONTENT, 0.8).fill(COLOURS.hair);
-  doc.rect(MARGIN, 123, 64, 2.6).fill(COLOURS.accent);
+  // Under whichever is taller, the logo or the block beside it.
+  const rule = Math.max(masthead + 10, 118);
+  doc.rect(MARGIN, rule, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, rule - 1, 64, 2.6).fill(COLOURS.accent);
 
   /* --- the title --------------------------------------------------------- */
   let y = 156;
@@ -220,7 +222,10 @@ export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
 
   /* --- the foot ---------------------------------------------------------- */
   const marks = cover.marks.filter(Boolean) as Buffer[];
-  const footY = PAGE.height - MARGIN - 34;
+  // Where the foot bar used to be. The company's numbers are in the masthead
+  // now; repeating them along the bottom said the same thing twice and left
+  // the licence of a company where a reader looks for the licence of a person.
+  const footY = PAGE.height - MARGIN - 20;
   if (marks.length) {
     // Right-aligned as a group, in the order they were given.
     let markX = MARGIN + CONTENT - marks.length * 54 - (marks.length - 1) * 8;
@@ -237,21 +242,8 @@ export function coverPage(doc: Doc, meta: PageMeta, cover: Cover) {
   const noteWidth = CONTENT - 120;
   doc.font("Helvetica").fontSize(9).fillColor(COLOURS.inkSoft);
   const noteHeight = doc.heightOfString(cover.note, { width: noteWidth, lineGap: 1.5 });
-  const noteY = Math.max(
-    y + 12,
-    (marks.length ? footY - 86 : footY - 26) - noteHeight,
-  );
+  const noteY = Math.max(y + 12, (marks.length ? footY - 86 : footY) - noteHeight);
   doc.text(cover.note, MARGIN, noteY, { width: noteWidth, lineGap: 1.5 });
-  doc.rect(MARGIN, footY, CONTENT, 34).fill(COLOURS.bar);
-  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
-  doc.text(COMPANY.name, MARGIN + 14, footY + 12, { width: 120 });
-  doc.font("Helvetica").fontSize(8.5);
-  doc.text(
-    `ABN ${COMPANY.abn}   ·   Contractor Licence ${COMPANY.licence}   ·   Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN + 14,
-    footY + 12.5,
-    { width: CONTENT - 28, align: "right" },
-  );
   doc.fillColor(COLOURS.ink).font("Helvetica");
 }
 
@@ -329,19 +321,40 @@ function label(doc: Doc, text: string, x: number, y: number) {
   doc.fillColor(COLOURS.ink);
 }
 
-/** The trading details, right-aligned beside the logo on a cover. */
-function tradingLines(doc: Doc, x: number, y: number, width: number) {
-  const lines = [
-    COMPANY.addressLine1,
-    COMPANY.addressLine2,
-    COMPANY.phone,
-    COMPANY.email,
-  ];
+/**
+ * Who the report is from, right-aligned beside the logo on a cover.
+ *
+ * The entity that trades as Optilink goes above the address, in italics,
+ * because that is the name on the contract and the invoice even though nobody
+ * says it out loud. The ABN and the contractor licence close the block: they
+ * belong to the company rather than to whoever prepared the report, and this
+ * is the one place on the report that says them.
+ *
+ * Returns where it finished, so the rule under it can be drawn against the
+ * block rather than at a guessed offset.
+ */
+export function mastheadLines(doc: Doc, x: number, y: number, width: number): number {
+  let at = y;
+
+  doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(COLOURS.inkSoft);
+  doc.text(COMPANY.legalName, x, at, { width, align: "right", lineGap: 0.5 });
+  at = doc.y + 3;
+
   doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  lines.forEach((line, index) => {
-    doc.text(line, x, y + index * 11.5, { width, align: "right" });
+  for (const line of [COMPANY.addressLine1, COMPANY.addressLine2, COMPANY.phone, COMPANY.email]) {
+    doc.text(line, x, at, { width, align: "right" });
+    at += 11.5;
+  }
+
+  doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+  doc.text(`ABN ${COMPANY.abn}   \u00b7   Contractor Licence ${COMPANY.licence}`, x, at + 1.5, {
+    width,
+    align: "right",
   });
+  at += 13;
+
   doc.fillColor(COLOURS.ink);
+  return at;
 }
 
 /**
@@ -391,6 +404,51 @@ export function footer(doc: Doc, meta: PageMeta) {
   });
 
   doc.page.margins.bottom = bottom;
+  doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * The foot of every page of a landscape report.
+ *
+ * The same foot the portrait reports carry — the logo, who the report is for
+ * and where — with the page number on the right. It is stamped in one pass at
+ * the end rather than drawn page by page, because a landscape report only
+ * knows how many pages it ran to once it has finished.
+ */
+export function stampWideFeet(
+  doc: Doc,
+  meta: PageMeta,
+  page: { width: number; height: number; margin: number },
+) {
+  const range = doc.bufferedPageRange();
+  const content = page.width - page.margin * 2;
+
+  // From page two: a cover carries its own details at the top of it.
+  for (let index = 1; index < range.count; index += 1) {
+    doc.switchToPage(range.start + index);
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+
+    const y = page.height - 44;
+    if (meta.logo) doc.image(meta.logo, page.margin, y - 3, { fit: [84, 26] });
+
+    const middle = page.margin + 100;
+    const width = content - 240;
+    doc.fillColor(COLOURS.bar).font("Helvetica-Bold").fontSize(9);
+    doc.text(safe(meta.clientName), middle, y, { width, align: "center", lineBreak: false });
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(meta.siteLocation || meta.siteName), middle, y + 12, {
+      width,
+      align: "center",
+      lineBreak: false,
+    });
+    doc.text(`Page ${index + 1} of ${range.count}`, page.margin + content - 140, y + 6, {
+      width: 140,
+      align: "right",
+    });
+
+    doc.page.margins.bottom = bottom;
+  }
   doc.fillColor(COLOURS.ink);
 }
 
@@ -457,7 +515,7 @@ export function signOff(
   doc
     .fontSize(9.5)
     .text(
-      `${COMPANY.name} · Lic ${COMPANY.licence} · Supervisor ${COMPANY.supervisor}`,
+      `Qualified Supervisor ${COMPANY.supervisor}`,
       MARGIN,
       y + (options.thermography ? 53 : 38),
     );

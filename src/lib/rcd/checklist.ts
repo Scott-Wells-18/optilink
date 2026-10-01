@@ -11,9 +11,9 @@ export type ChecklistItem = {
   key: string;
   question: string;
   /**
-   * How the same question is put where only particular circuit breakers were
-   * tested. Asking whether every RCD on the board was tested, on a test that
-   * never set out to cover the board, is a question with no honest answer.
+   * How the same question is put where only particular devices were tested.
+   * Asking whether every RCD on the board was tested, on a test that never set
+   * out to cover the board, is a question with no honest answer.
    */
   picked?: string;
   /** A note rather than a yes/no. */
@@ -33,7 +33,7 @@ export const CHECKLIST: ChecklistItem[] = [
   {
     key: "allTested",
     question: "Every accessible RCD on this board was tested.",
-    picked: "Every circuit breaker selected for this test was tested.",
+    picked: "Every RCD and RCBO selected for this test was tested.",
   },
   {
     key: "notTested",

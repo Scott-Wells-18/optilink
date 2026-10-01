@@ -4,6 +4,11 @@
  */
 export const COMPANY = {
   name: "Optilink",
+  /**
+   * The entity that trades as Optilink, which is what the letterhead has to
+   * say even though nobody calls it that.
+   */
+  legalName: "Optigroup Pty Ltd Trading As Optilink Electrical & Communications",
   abn: "19 075 861 611",
   /** NSW electrical contractor licence. */
   licence: "91510C",

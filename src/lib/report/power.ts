@@ -7,7 +7,7 @@ import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { readUpload } from "@/lib/storage";
 import { reportSignature } from "@/lib/signatures";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
-import { type PageMeta } from "@/lib/report/furniture";
+import { mastheadLines, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
 import { expiry } from "@/lib/report/calibration";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { stampCertificate, type Slot } from "@/lib/report/certificate";
@@ -437,7 +437,7 @@ export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
     heading(doc, data, "Equipment Used", note),
   );
 
-  stampPages(doc, data);
+  stampWideFeet(doc, data, { width: PAGE.width, height: PAGE.height, margin: MARGIN });
   doc.end();
 
   const pdf = await done;
@@ -462,19 +462,11 @@ function cover(doc: Doc, data: PowerReport) {
 
   /* --- masthead ---------------------------------------------------------- */
   if (data.logo) doc.image(data.logo, MARGIN, 34, { fit: [158, 50] });
-  const trading = [
-    COMPANY.addressLine1,
-    COMPANY.addressLine2,
-    COMPANY.phone,
-    COMPANY.email,
-  ];
-  doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  trading.forEach((line, index) => {
-    doc.text(line, MARGIN + CONTENT - 220, 36 + index * 11.5, { width: 220, align: "right" });
-  });
+  const masthead = mastheadLines(doc, MARGIN + CONTENT - 250, 32, 250);
 
-  doc.rect(MARGIN, 100, CONTENT, 0.8).fill(COLOURS.hair);
-  doc.rect(MARGIN, 99, 64, 2.6).fill(COLOURS.accent);
+  const rule = Math.max(masthead + 8, 100);
+  doc.rect(MARGIN, rule, CONTENT, 0.8).fill(COLOURS.hair);
+  doc.rect(MARGIN, rule - 1, 64, 2.6).fill(COLOURS.accent);
 
   /* --- left: what it is, and who for ------------------------------------- */
   const left = 430;
@@ -571,19 +563,6 @@ function cover(doc: Doc, data: PowerReport) {
   }
   doc.rect(x, at, width, 0.6).fill(COLOURS.hair);
 
-  /* --- the foot ---------------------------------------------------------- */
-  const footY = PAGE.height - MARGIN - 32;
-
-  doc.rect(MARGIN, footY, CONTENT, 32).fill(COLOURS.bar);
-  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9);
-  doc.text(COMPANY.name, MARGIN + 14, footY + 11.5, { width: 120 });
-  doc.font("Helvetica").fontSize(8.5);
-  doc.text(
-    `ABN ${COMPANY.abn}   \u00b7   Contractor Licence ${COMPANY.licence}   \u00b7   Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN + 14,
-    footY + 12,
-    { width: CONTENT - 28, align: "right" },
-  );
   doc.fillColor(COLOURS.ink).font("Helvetica");
 }
 
@@ -609,13 +588,9 @@ function recordedBy(doc: Doc, data: PowerReport) {
   doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
   doc.text(THERMOGRAPHER.name, MARGIN, y + 74, { lineBreak: false });
   doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.inkSoft);
-  doc.text(COMPANY.name, MARGIN, y + 91, { lineBreak: false });
-  doc.text(
-    `Contractor Licence ${COMPANY.licence}  \u00b7  Qualified Supervisor ${COMPANY.supervisor}`,
-    MARGIN,
-    y + 105,
-    { lineBreak: false },
-  );
+  doc.text(`Qualified Supervisor ${COMPANY.supervisor}`, MARGIN, y + 91, {
+    lineBreak: false,
+  });
   doc.fillColor(COLOURS.ink);
 }
 
@@ -1267,37 +1242,6 @@ function heading(doc: Doc, data: PowerReport, title: string, note?: string) {
   doc.rect(MARGIN, 72, CONTENT, 0.8).fill(COLOURS.hair);
   doc.rect(MARGIN, 71, 54, 2.4).fill(COLOURS.accent);
   doc.fillColor(COLOURS.ink);
-}
-
-function stampPages(doc: Doc, data: PowerReport) {
-  const range = doc.bufferedPageRange();
-  // From page two: the cover has its own foot bar carrying the same details.
-  for (let index = 1; index < range.count; index += 1) {
-    doc.switchToPage(range.start + index);
-    const bottom = doc.page.margins.bottom;
-    doc.page.margins.bottom = 0;
-
-    const y = PAGE.height - 26;
-    doc.font("Helvetica").fontSize(7.5).fillColor(COLOURS.inkSoft);
-    doc.text(
-      safe(`${data.clientName}  ·  ${data.siteName}`),
-      MARGIN,
-      y,
-      { width: CONTENT - 140 },
-    );
-    doc.text(`Page ${index + 1} of ${range.count}`, MARGIN + CONTENT - 140, y, {
-      width: 140,
-      align: "right",
-    });
-    doc.text(
-      `${COMPANY.name} · Lic ${COMPANY.licence} · Supervisor ${COMPANY.supervisor}`,
-      MARGIN,
-      y + 10,
-      { width: CONTENT },
-    );
-
-    doc.page.margins.bottom = bottom;
-  }
 }
 
 async function brandBytes(name: string): Promise<Buffer | null> {

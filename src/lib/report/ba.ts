@@ -219,7 +219,7 @@ function cover(doc: Doc, data: JobReport) {
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
       ["Items of work", `${listed.length}`],
-      ["Works carried out by", `${THERMOGRAPHER.name} · Lic ${COMPANY.licence}`],
+      ["Works carried out by", `${THERMOGRAPHER.name} · Qualified Supervisor ${COMPANY.supervisor}`],
     ],
     note:
       "This report is issued to the addressee named above and relates only to the site and the work listed on it. " +
