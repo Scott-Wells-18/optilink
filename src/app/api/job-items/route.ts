@@ -23,10 +23,19 @@ export async function POST(request: Request) {
       location?: string;
       found?: string;
       done?: string;
+      number?: string;
       photos?: JobPhotoInput[];
     };
 
     if (!body.jobId) return badRequest("Which job is this for?");
+
+    // What the report is for decides what the work needs, so it is read before
+    // anything is judged short.
+    const job = await prisma.job.findUnique({
+      where: { id: body.jobId },
+      select: { kind: true },
+    });
+    if (!job) return badRequest("That report could not be found.");
 
     const photos = readJobPhotos(body.photos);
     const fields = {
@@ -34,6 +43,7 @@ export async function POST(request: Request) {
       location: body.location?.trim().slice(0, 200) ?? "",
       found: body.found?.trim().slice(0, 2000) ?? "",
       done: body.done?.trim().slice(0, 2000) ?? "",
+      number: body.number?.trim().slice(0, 60) ?? "",
     };
 
     const anything = photos.length > 0 || Object.values(fields).some(Boolean);
@@ -58,8 +68,8 @@ export async function POST(request: Request) {
     const parts = { ...fields, photos };
     return NextResponse.json({
       id: item.id,
-      complete: isComplete(parts),
-      missing: whatIsMissing(parts),
+      complete: isComplete(parts, job.kind),
+      missing: whatIsMissing(parts, job.kind),
     });
   } catch (error) {
     return serverError(error, "That work could not be saved.");

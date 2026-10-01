@@ -74,11 +74,64 @@ export type WorkParts = {
   location?: string | null;
   found?: string | null;
   done?: string | null;
+  number?: string | null;
   photos: { stage: JobPhotoStage }[];
 };
 
-export function whatIsMissing(item: WorkParts): string[] {
+/**
+ * What a record is for, which decides what it needs.
+ *
+ * A completed record is a before and an after: what was found, what was done,
+ * and a photograph of each. A rectification is a proposal — the job, what it
+ * needs, and photographs of how it stands now — so it asks for those instead
+ * of asking what was done about something nobody has done yet.
+ */
+export type JobKind = "COMPLETED" | "RECTIFICATION";
+
+export const JOB_KIND_LABELS: Record<JobKind, string> = {
+  COMPLETED: "Works Completed Report",
+  RECTIFICATION: "Recommended Rectifications Report",
+};
+
+export const JOB_KIND_NOTES: Record<JobKind, string> = {
+  COMPLETED: "What was done, before and after, with the photographs to show it.",
+  RECTIFICATION:
+    "What we recommend doing, with photographs of how it stands now. Issued with a quotation.",
+};
+
+/**
+ * Which stages a kind of report photographs.
+ *
+ * A completed record is a before, a during and an after. A recommendation has
+ * only one: how the job stands now. There is no "after" of something nobody
+ * has done, and offering the slot would only invite somebody to put the wrong
+ * thing in it.
+ */
+export function stagesFor(kind: JobKind): readonly JobPhotoStage[] {
+  return kind === "RECTIFICATION" ? ["BEFORE"] : JOB_STAGES;
+}
+
+/** What that one slot is called on a recommendation, where "Before" means nothing. */
+export function stageLabel(stage: JobPhotoStage, kind: JobKind): string {
+  if (kind === "RECTIFICATION" && stage === "BEFORE") return "Photos of the job";
+  return STAGE_LABELS[stage];
+}
+
+export function stageNote(stage: JobPhotoStage, kind: JobKind): string {
+  if (kind === "RECTIFICATION" && stage === "BEFORE") {
+    return "How the job stands now. Required. Up to nine.";
+  }
+  return STAGE_NOTES[stage];
+}
+
+export function whatIsMissing(item: WorkParts, kind: JobKind = "COMPLETED"): string[] {
   const missing: string[] = [];
+  if (kind === "RECTIFICATION") {
+    if (!item.title?.trim()) missing.push("the job name");
+    if (!item.done?.trim()) missing.push("what it needs");
+    if (!item.photos.some((photo) => photo.stage === "BEFORE")) missing.push("a photo of the job");
+    return missing;
+  }
   if (!item.title?.trim()) missing.push("what it was");
   if (!item.location?.trim()) missing.push("where");
   if (!item.found?.trim()) missing.push("how you found it");
@@ -88,8 +141,8 @@ export function whatIsMissing(item: WorkParts): string[] {
   return missing;
 }
 
-export function isComplete(item: WorkParts): boolean {
-  return whatIsMissing(item).length === 0;
+export function isComplete(item: WorkParts, kind: JobKind = "COMPLETED"): boolean {
+  return whatIsMissing(item, kind).length === 0;
 }
 
 /** "Needs where and an after photo." */

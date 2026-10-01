@@ -178,6 +178,7 @@ export function Gateway({
           key={clients.jobItem.itemId ?? clients.jobItem.jobId}
           jobId={clients.jobItem.jobId}
           jobTitle={clients.jobItem.jobTitle}
+          kind={clients.jobItem.kind}
           itemId={clients.jobItem.itemId}
           onCancel={clients.closeJobItem}
           onSaved={clients.closeJobItem}

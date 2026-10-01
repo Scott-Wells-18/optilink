@@ -7,6 +7,7 @@ import {
   JOB_STAGES,
   STAGE_LABELS,
   isComplete,
+  type JobKind,
   type JobPhotoStage,
 } from "@/lib/jobs";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
@@ -33,7 +34,7 @@ import {
   type Piece,
   type Section,
 } from "@/lib/report/flow";
-import { COLOURS, CONTENT, MARGIN, longDate, safe, shortDate } from "@/lib/report/theme";
+import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
 import { preparedByFor } from "@/lib/profiles.server";
 
 /**
@@ -75,10 +76,13 @@ type Item = {
   location: string;
   found: string;
   done: string;
+  /** The job number on a rectification, where one was given. */
+  number: string;
   photos: Photo[];
 };
 
 export type JobReport = PageMeta & {
+  kind: JobKind;
   jobTitle: string;
   jobDate: Date;
   reportDate: Date;
@@ -109,7 +113,8 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
   // at different times, so a piece of work can be saved half-written and
   // picked up later — but a works record is what was done, and half a
   // sentence about it is not that. What is left out is counted and said.
-  const ready = job.items.filter((item) => isComplete(item));
+  const kind = (job.kind as JobKind) ?? "COMPLETED";
+  const ready = job.items.filter((item) => isComplete(item, kind));
   const unfinished = job.items.length - ready.length;
 
   const items: Item[] = [];
@@ -125,12 +130,14 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
       location: safe(titleCase(item.location)),
       found: safe(tidy(item.found)),
       done: safe(tidy(item.done)),
+      number: safe(item.number?.trim() ?? ""),
       // Before, then during, then after — the order the story is told in.
       photos: photos.sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage)),
     });
   }
 
   return {
+    kind,
     clientName: safe(job.site.client.name),
     siteName: safe(job.site.name),
     siteLocation: job.site.location ? safe(job.site.location) : null,
@@ -187,6 +194,8 @@ export function buildJobReport(data: JobReport): Promise<Buffer> {
   summary(doc, data, laid);
   render(doc, data, laid);
 
+  pending(doc, data);
+
   stampPageNumbers(doc);
   doc.end();
   return done;
@@ -204,27 +213,38 @@ function overflowPages(data: JobReport): number {
 
 function cover(doc: Doc, data: JobReport) {
   const listed = titles(data);
+  const proposed = data.kind === "RECTIFICATION";
   coverPage(doc, data, {
-    title: "Works Completed Report",
-    eyebrow: "Before and after record",
+    title: proposed ? "Recommended Rectifications Report" : "Works Completed Report",
+    eyebrow: proposed ? "Recommended rectifications" : "Before and after record",
     subtitle: data.siteLocation || data.siteName,
-    dateLabel: "Work carried out",
+    dateLabel: proposed ? "Inspected" : "Work carried out",
     date: data.jobDate,
-    scopeLabel: "Work carried out",
+    scopeLabel: proposed ? "Rectifications recommended" : "Work carried out",
     scopeList: listed,
     // What a reader pulling the text out of the file gets, and what is drawn
     // where there is no work on the report to list.
-    scope: listed.length ? listed.join(", ") : "Electrical maintenance works",
+    scope: listed.length
+      ? listed.join(", ")
+      : proposed
+        ? "Recommended electrical rectification works"
+        : "Electrical maintenance works",
     rows: [
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
-      ["Items of work", `${listed.length}`],
-      ["Works carried out by", `${THERMOGRAPHER.name} · Qualified Supervisor ${COMPANY.supervisor}`],
+      [proposed ? "Jobs recommended" : "Items of work", `${listed.length}`],
+      [
+        proposed ? "Prepared by" : "Works carried out by",
+        `${THERMOGRAPHER.name} · Qualified Supervisor ${COMPANY.supervisor}`,
+      ],
     ],
-    note:
-      "This report is issued to the addressee named above and relates only to the site and the work listed on it. " +
-      "Every photograph in it was taken on site during the work it appears beside, and shows the equipment as it " +
-      "was found and as it was left.",
+    note: proposed
+      ? "This report is issued to the addressee named above and sets out the work we recommend carrying out at " +
+        "the site listed on it. Every photograph in it was taken on site and shows the equipment as it stands. " +
+        "It is a recommendation accompanied by a quotation; no work described in it has been carried out."
+      : "This report is issued to the addressee named above and relates only to the site and the work listed on it. " +
+        "Every photograph in it was taken on site during the work it appears beside, and shows the equipment as it " +
+        "was found and as it was left.",
     marks: [],
   });
 }
@@ -250,30 +270,43 @@ function restOfTheList(doc: Doc, data: JobReport) {
 }
 
 function summary(doc: Doc, data: JobReport, laid: Layout) {
+  const proposed = data.kind === "RECTIFICATION";
   doc.addPage();
-  sectionBar(doc, "Summary of Works", MARGIN);
+  sectionBar(doc, proposed ? "Summary of Recommendations" : "Summary of Works", MARGIN);
 
   const where = data.siteLocation ? `${data.siteName}, ${data.siteLocation}` : data.siteName;
   const count = data.items.length;
   const photos = data.items.reduce((total, item) => total + item.photos.length, 0);
 
+  // The same shape of sentence either way, in the tense the report is in: one
+  // says what was done, the other says what we are proposing to do.
+  const opening = proposed
+    ? `The following work is recommended for ${data.clientName} at ${where}, from an attendance on ${longDate(
+        data.jobDate,
+      )}. ${
+        count === 1 ? "One job is recommended" : `${count} jobs are recommended`
+      }, photographed as the equipment stands — ${photos} ${
+        photos === 1 ? "photograph" : "photographs"
+      } in all. None of it has been carried out.`
+    : `The following works were carried out for ${data.clientName} at ${where} on ${longDate(
+        data.jobDate,
+      )}. ${
+        count === 1 ? "One item of work was completed" : `${count} items of work were completed`
+      }, photographed as found and as left — ${photos} ${
+        photos === 1 ? "photograph" : "photographs"
+      } in all.`;
+
   doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.ink);
   doc.text(
-    `The following works were carried out for ${data.clientName} at ${where} on ${longDate(
-      data.jobDate,
-    )}. ${
-      count === 1 ? "One item of work was completed" : `${count} items of work were completed`
-    }, photographed as found and as left — ${photos} ${
-      photos === 1 ? "photograph" : "photographs"
-    } in all.${
+    `${opening}${
       // A piece of work saved but not yet written up is left off rather than
       // printed half-finished, and the report says so rather than quietly
       // being shorter than the day was.
       data.unfinished === 0
         ? ""
         : data.unfinished === 1
-          ? " A further item of work has been recorded but not yet written up, and is not included here."
-          : ` A further ${data.unfinished} items of work have been recorded but not yet written up, and are not included here.`
+          ? ` A further ${proposed ? "job" : "item of work"} has been recorded but not yet written up, and is not included here.`
+          : ` A further ${data.unfinished} ${proposed ? "jobs have" : "items of work have"} been recorded but not yet written up, and are not included here.`
     }`,
     MARGIN,
     MARGIN + 46,
@@ -281,8 +314,17 @@ function summary(doc: Doc, data: JobReport, laid: Layout) {
   );
 
   let y = doc.y + 22;
-  const columns = [178, CONTENT - 178 - 150 - 44, 150, 44];
-  tableHead(doc, y, ["Work", "Location", "What was done", "Page"], columns);
+  // A recommendation has a job number where a works record has a place, and it
+  // is a short thing, so the heading it leaves behind goes to the job name.
+  const second = proposed ? 76 : CONTENT - 178 - 150 - 44;
+  const first = proposed ? CONTENT - second - 150 - 44 : 178;
+  const columns = [first, second, 150, 44];
+  tableHead(
+    doc,
+    y,
+    proposed ? ["Job", "Job no.", "What it needs", "Page"] : ["Work", "Location", "What was done", "Page"],
+    columns,
+  );
   y += 20;
 
   doc.fontSize(9);
@@ -298,7 +340,7 @@ function summary(doc: Doc, data: JobReport, laid: Layout) {
       height: 12,
     });
     doc.font("Helvetica");
-    doc.text(item.location, MARGIN + columns[0] + 8, y + 7, {
+    doc.text(proposed ? item.number : item.location, MARGIN + columns[0] + 8, y + 7, {
       width: columns[1] - 12,
       ellipsis: true,
       height: 12,
@@ -512,8 +554,11 @@ function notePiece(doc: Doc, note: Note): Piece {
 }
 
 /** "BEFORE · 7", or "BEFORE · CONTINUED" where the stage ran onto this page. */
-function gridLabel(grid: Grid): string {
-  const name = STAGE_LABELS[grid.stage].toUpperCase();
+function gridLabel(grid: Grid, kind: JobKind): string {
+  // Nothing has been done on a rectification, so there is no before and after
+  // to speak of: the photographs are of the job as it stands.
+  const name =
+    kind === "RECTIFICATION" ? "THE JOB" : STAGE_LABELS[grid.stage].toUpperCase();
   if (grid.carried) return `${name}  ·  CONTINUED`;
   return grid.total > 1 ? `${name}  ·  ${grid.total}` : name;
 }
@@ -533,7 +578,11 @@ function work(doc: Doc, data: JobReport): Section {
         });
       },
     });
-    return { id: "work", title: "The Work", pieces };
+    return {
+    id: "work",
+    title: data.kind === "RECTIFICATION" ? "Recommended Rectifications" : "The Work",
+    pieces,
+  };
   }
 
   for (const [at, item] of data.items.entries()) {
@@ -545,11 +594,15 @@ function work(doc: Doc, data: JobReport): Section {
       // stage rather than both sitting at the top of the item away from the
       // photographs they are explaining.
       const note =
-        stage === "BEFORE"
-          ? { tag: "Found", body: item.found }
-          : stage === "AFTER"
-            ? { tag: "Done", body: item.done }
-            : null;
+        data.kind === "RECTIFICATION"
+          ? stage === "BEFORE"
+            ? { tag: "Scope", body: item.done }
+            : null
+          : stage === "BEFORE"
+            ? { tag: "Found", body: item.found }
+            : stage === "AFTER"
+              ? { tag: "Done", body: item.done }
+              : null;
       return cut(stage, shots, note);
     });
 
@@ -559,8 +612,12 @@ function work(doc: Doc, data: JobReport): Section {
     // above everything where nothing was photographed as found, and under the
     // last of them where nothing was photographed as left.
     const has = (stage: JobPhotoStage) => grids.some((grid) => grid.stage === stage);
-    if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.found };
-    if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.done };
+    if (data.kind === "RECTIFICATION") {
+      if (!has("BEFORE")) leaves[0].lead = { tag: "Scope", body: item.done };
+    } else {
+      if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.found };
+      if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.done };
+    }
 
     const head = headHeight(doc, item);
     const height = tileHeight(doc, leaves, at === 0, head);
@@ -589,7 +646,16 @@ function work(doc: Doc, data: JobReport): Section {
               .font("Helvetica")
               .fontSize(9.5)
               .fillColor(COLOURS.inkSoft)
-              .text(item.location, MARGIN + CONTENT - 150, y + 2, { width: 150, align: "right" });
+              .text(
+                data.kind === "RECTIFICATION"
+                  ? item.number
+                    ? `Job ${item.number}`
+                    : item.location
+                  : item.location,
+                MARGIN + CONTENT - 150,
+                y + 2,
+                { width: 150, align: "right" },
+              );
           },
         });
       }
@@ -604,7 +670,7 @@ function work(doc: Doc, data: JobReport): Section {
           keepWith: (grid.note ? 1 : 0) + grid.rows,
           draw: (y) => {
             doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
-            doc.text(gridLabel(grid), MARGIN + 1, y + 2, {
+            doc.text(gridLabel(grid, data.kind), MARGIN + 1, y + 2, {
               width: CONTENT,
               characterSpacing: 0.6,
             });
@@ -641,7 +707,11 @@ function work(doc: Doc, data: JobReport): Section {
   }
 
 
-  return { id: "work", title: "The Work", pieces };
+  return {
+    id: "work",
+    title: data.kind === "RECTIFICATION" ? "Recommended Rectifications" : "The Work",
+    pieces,
+  };
 }
 
 /* --- signing it off ------------------------------------------------------- */
@@ -650,7 +720,9 @@ function closing(doc: Doc, data: JobReport): Section {
   const pieces: Piece[] = [];
 
   const opener = safe(
-    "The works listed in this report have been completed and left in a safe and serviceable condition. All work has been carried out in accordance with AS/NZS 3000 and tested on completion.",
+    data.kind === "RECTIFICATION"
+      ? "The work set out in this report is recommended rather than carried out. Each job is listed with photographs of how the equipment stands and what we propose doing about it, and is priced in the quotation issued alongside this report. Nothing in it has been attended to yet."
+      : "The works listed in this report have been completed and left in a safe and serviceable condition. All work has been carried out in accordance with AS/NZS 3000 and tested on completion.",
   );
   pieces.push({
     height: measureText(doc, opener, { width: CONTENT, size: 10.5, lineGap: 2.5 }) + 24,
@@ -667,7 +739,9 @@ function closing(doc: Doc, data: JobReport): Section {
       draw: (y) => sectionBar(doc, "Further Recommendations", y),
     });
     const note = safe(
-      "The following was noted during the works but fell outside the agreed scope. We would recommend it is attended to.",
+      data.kind === "RECTIFICATION"
+        ? "The following was also noted on site. It is not covered by the quotation issued with this report."
+        : "The following was noted during the works but fell outside the agreed scope. We would recommend it is attended to.",
     );
     pieces.push({
       height: measureText(doc, note, { width: CONTENT, size: 10 }) + 10,
@@ -693,5 +767,51 @@ function closing(doc: Doc, data: JobReport): Section {
   // Tall enough for the signature, which is drawn above the rule it sits on.
   pieces.push({ height: 110, draw: (y) => signOff(doc, data, y + 40) });
 
-  return { id: "closing", title: "Completion", pieces };
+  return {
+    id: "closing",
+    title: data.kind === "RECTIFICATION" ? "Acceptance" : "Completion",
+    pieces,
+  };
+}
+
+/**
+ * The page a rectification report ends on.
+ *
+ * A whole page, because what it says is the whole point of the document: the
+ * work in it has not been done, and nothing in it becomes a works completed
+ * report until the quotation beside it is accepted. A line of small print at
+ * the foot of the last page would be read as boilerplate; a page that says
+ * nothing else cannot be.
+ */
+function pending(doc: Doc, data: JobReport) {
+  if (data.kind !== "RECTIFICATION") return;
+
+  doc.addPage();
+
+  const text = "WORKS COMPLETED REPORT PENDING VIA ACCEPTANCE OF QUOTATION";
+  const width = CONTENT - 60;
+  doc.font("Helvetica-Bold").fontSize(26);
+  const height = doc.heightOfString(text, { width, align: "center", lineGap: 6 });
+  const top = (PAGE.height - height) / 2 - 30;
+
+  doc.rect(MARGIN, top - 54, CONTENT, height + 108).fill(COLOURS.soft);
+  doc.rect(MARGIN, top - 54, CONTENT, 6).fill(COLOURS.bar);
+  doc.rect(MARGIN, top + height + 48, CONTENT, 6).fill(COLOURS.bar);
+
+  doc.fillColor(COLOURS.bar).font("Helvetica-Bold").fontSize(26);
+  doc.text(text, MARGIN + 30, top, { width, align: "center", lineGap: 6, characterSpacing: 0.4 });
+
+  doc.font("Helvetica").fontSize(10.5).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe(
+      "The work set out in this report has not been carried out. On acceptance of the quotation issued with it, " +
+        "the work will be scheduled and a works completed report will follow, with photographs of the work as it " +
+        "was found and as it was left.",
+    ),
+    MARGIN + 70,
+    top + height + 78,
+    { width: CONTENT - 140, align: "center", lineGap: 2 },
+  );
+
+  footer(doc, data);
 }

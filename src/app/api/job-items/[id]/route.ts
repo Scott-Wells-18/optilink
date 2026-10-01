@@ -19,19 +19,21 @@ export async function GET(
       location: true,
       found: true,
       done: true,
+      number: true,
       photos: {
         orderBy: [{ stage: "asc" }, { position: "asc" }],
         select: { stage: true, fileId: true },
       },
-      job: { select: { name: true, date: true } },
+      job: { select: { name: true, date: true, kind: true } },
     },
   });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json({
     ...item,
-    complete: isComplete(item),
-    missing: whatIsMissing(item),
+    kind: item.job.kind,
+    complete: isComplete(item, item.job.kind),
+    missing: whatIsMissing(item, item.job.kind),
   });
 }
 
@@ -54,6 +56,7 @@ export async function PATCH(
       location?: string;
       found?: string;
       done?: string;
+      number?: string;
       photos?: JobPhotoInput[];
     };
 
@@ -64,14 +67,22 @@ export async function PATCH(
         location: true,
         found: true,
         done: true,
+        number: true,
         photos: { select: { fileId: true } },
+        job: { select: { kind: true } },
       },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const data: Record<string, string> = {};
-    const limits = { title: 200, location: 200, found: 2000, done: 2000 } as const;
-    for (const key of ["title", "location", "found", "done"] as const) {
+    const limits = {
+      title: 200,
+      location: 200,
+      found: 2000,
+      done: 2000,
+      number: 60,
+    } as const;
+    for (const key of ["title", "location", "found", "done", "number"] as const) {
       if (key in body) data[key] = body[key]?.trim().slice(0, limits[key]) ?? "";
     }
 
@@ -92,6 +103,7 @@ export async function PATCH(
         location: true,
         found: true,
         done: true,
+        number: true,
         photos: { select: { stage: true } },
       },
     });
@@ -106,13 +118,15 @@ export async function PATCH(
 
     const anything =
       item.photos.length > 0 ||
-      [item.title, item.location, item.found, item.done].some((value) => value.trim());
+      [item.title, item.location, item.found, item.done, item.number].some((value) =>
+        value?.trim(),
+      );
     if (!anything) return badRequest("There is nothing left on this piece of work.");
 
     return NextResponse.json({
       id: item.id,
-      complete: isComplete(item),
-      missing: whatIsMissing(item),
+      complete: isComplete(item, existing.job.kind),
+      missing: whatIsMissing(item, existing.job.kind),
     });
   } catch (error) {
     return serverError(error, "Those changes could not be saved.");

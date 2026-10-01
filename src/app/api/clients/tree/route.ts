@@ -42,6 +42,7 @@ export async function GET() {
               id: true,
               name: true,
               date: true,
+              kind: true,
               contact: { select: { id: true, name: true } },
               items: {
                 orderBy: { position: "asc" },
@@ -51,6 +52,7 @@ export async function GET() {
                   location: true,
                   found: true,
                   done: true,
+                  number: true,
                   // Which stages are covered, so the tree can say what a piece
                   // of work still needs without loading every photo.
                   photos: { select: { stage: true } },

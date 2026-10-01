@@ -6,26 +6,32 @@ import {
   JOB_STAGES,
   MAX_PHOTOS_PER_STAGE,
   PHOTO_BUDGET,
-  STAGE_LABELS,
-  STAGE_NOTES,
   missingReads,
+  stageLabel,
+  stageNote,
+  stagesFor,
   whatIsMissing,
+  type JobKind,
   type JobPhotoStage,
 } from "@/lib/jobs";
 import { uploadImage } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
- * One piece of work, written up on the spot: what it was, where, how it was
- * found and what was done about it — then photographed before, optionally
- * during, and after.
+ * One piece of work, written up on the spot.
+ *
+ * On a works completed report that is what it was, where, how it was found and
+ * what was done about it — then photographed before, optionally during, and
+ * after. On a recommendation it is the job, its number and what it needs, with
+ * photographs of how it stands now; there is no after of something nobody has
+ * done yet, so the dialog does not ask for one.
  */
 
 type Pending = { fileId: string; name: string };
 
 type Field = { key: string; label: string; placeholder: string; multiline?: boolean };
 
-const FIELDS: Field[] = [
+const COMPLETED_FIELDS: Field[] = [
   { key: "title", label: "What was it", placeholder: "e.g. Meal room GPO replaced" },
   { key: "location", label: "Where", placeholder: "e.g. Meal room, north wall" },
   {
@@ -42,20 +48,48 @@ const FIELDS: Field[] = [
   },
 ];
 
+/**
+ * A recommendation, in the client's own terms.
+ *
+ * The job number is theirs rather than ours: it is what they raised the work
+ * against and what they will quote back when they accept it, so it is printed
+ * beside the job name on the report.
+ */
+const RECTIFICATION_FIELDS: Field[] = [
+  { key: "title", label: "Job name", placeholder: "e.g. Replace meal room switchboard" },
+  { key: "number", label: "Job number", placeholder: "e.g. 4821" },
+  {
+    key: "done",
+    label: "Job description",
+    placeholder: "e.g. Board is full, no spare ways and no main switch. Replace with a 24-way.",
+    multiline: true,
+  },
+];
+
+const FIELDS_FOR: Record<JobKind, Field[]> = {
+  COMPLETED: COMPLETED_FIELDS,
+  RECTIFICATION: RECTIFICATION_FIELDS,
+};
+
 export function JobItemDialog({
   jobId,
   jobTitle,
+  kind,
   itemId,
   onCancel,
   onSaved,
 }: {
   jobId: string;
   jobTitle: string;
+  /** What the report is for, which decides what is asked for and photographed. */
+  kind: JobKind;
   /** Set when an unfinished piece of work is being picked back up. */
   itemId?: string;
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const fields = FIELDS_FOR[kind];
+  const stages = stagesFor(kind);
   const key = `jobitem:${itemId ?? jobId}`;
   const [values, setValues] = usePersisted<Record<string, string>>(`${key}:fields`, {});
   const [photos, setPhotos] = usePersisted<Partial<Record<JobPhotoStage, Pending[]>>>(
@@ -114,6 +148,7 @@ export function JobItemDialog({
           location: string;
           found: string;
           done: string;
+          number: string | null;
           photos: { stage: JobPhotoStage; fileId: string }[];
         };
         if (stale) return;
@@ -125,6 +160,7 @@ export function JobItemDialog({
                 location: item.location,
                 found: item.found,
                 done: item.done,
+                number: item.number ?? "",
               },
         );
         setPhotos((current) => {
@@ -169,13 +205,17 @@ export function JobItemDialog({
   const allPhotos = JOB_STAGES.flatMap((stage) =>
     (photos[stage] ?? []).map(() => ({ stage })),
   );
-  const missing = whatIsMissing({
-    title: values.title,
-    location: values.location,
-    found: values.found,
-    done: values.done,
-    photos: allPhotos,
-  });
+  const missing = whatIsMissing(
+    {
+      title: values.title,
+      location: values.location,
+      found: values.found,
+      done: values.done,
+      number: values.number,
+      photos: allPhotos,
+    },
+    kind,
+  );
 
   /**
    * There is something worth keeping.
@@ -186,7 +226,7 @@ export function JobItemDialog({
    * on the way out, and the work sits in the report marked unfinished.
    */
   const anything =
-    allPhotos.length > 0 || FIELDS.some((field) => values[field.key]?.trim());
+    allPhotos.length > 0 || fields.some((field) => values[field.key]?.trim());
 
   /**
    * Take a selection — a handful of photos, or a whole folder off the phone or
@@ -206,7 +246,9 @@ export function JobItemDialog({
 
     const room = MAX_PHOTOS_PER_STAGE - (photos[stage]?.length ?? 0);
     if (room <= 0) {
-      setError(`${STAGE_LABELS[stage]} already holds its ${MAX_PHOTOS_PER_STAGE} photos.`);
+      setError(
+        `${stageLabel(stage, kind)} already holds its ${MAX_PHOTOS_PER_STAGE} photos.`,
+      );
       return;
     }
 
@@ -216,7 +258,7 @@ export function JobItemDialog({
     const over = pictures.length - taking.length;
     setError(
       over > 0
-        ? `${STAGE_LABELS[stage]} holds ${MAX_PHOTOS_PER_STAGE} photos — a page of three by three. ` +
+        ? `${stageLabel(stage, kind)} holds ${MAX_PHOTOS_PER_STAGE} photos — a page of three by three. ` +
           `The first ${taking.length} went in; the other ${over} did not.`
         : null,
     );
@@ -298,11 +340,17 @@ export function JobItemDialog({
           <h2 className="dialog-title">
             {/* Work saved half-done is being finished; work already written
                 up is being corrected. Both open the same way. */}
-            {itemId
-              ? missing.length > 0
-                ? "Finish this work"
-                : "Edit this work"
-              : "Add work"}
+            {kind === "RECTIFICATION"
+              ? itemId
+                ? missing.length > 0
+                  ? "Finish this job"
+                  : "Edit this job"
+                : "Add a job"
+              : itemId
+                ? missing.length > 0
+                  ? "Finish this work"
+                  : "Edit this work"
+                : "Add work"}
           </h2>
           <p className="board-section-note">
             {busy === "load" ? "Opening\u2026" : jobTitle}
@@ -310,7 +358,7 @@ export function JobItemDialog({
         </div>
 
         <div className="dialog-fields">
-          {FIELDS.map((field) => (
+          {fields.map((field) => (
             <label className="dialog-field" key={field.key}>
               <span className="dialog-label">{field.label}</span>
               {field.multiline ? (
@@ -338,14 +386,14 @@ export function JobItemDialog({
         </div>
 
         <div className="issue-slots">
-          {JOB_STAGES.map((stage) => {
+          {stages.map((stage) => {
             const held = photos[stage] ?? [];
             const full = held.length >= MAX_PHOTOS_PER_STAGE;
             const uploading = busy === stage;
             return (
               <section className="issue-slot" key={stage}>
                 <div className="issue-slot-head">
-                  <h3 className="board-section-title">{STAGE_LABELS[stage]}</h3>
+                  <h3 className="board-section-title">{stageLabel(stage, kind)}</h3>
                   <span className="issue-count">
                     {held.length} of {MAX_PHOTOS_PER_STAGE}
                   </span>
@@ -400,7 +448,7 @@ export function JobItemDialog({
                       <figure key={photo.fileId} className="issue-shot">
                         <Image
                           src={`/api/files/${photo.fileId}`}
-                          alt={STAGE_LABELS[stage]}
+                          alt={stageLabel(stage, kind)}
                           width={220}
                           height={165}
                         />
@@ -416,7 +464,7 @@ export function JobItemDialog({
                     ))}
                   </div>
                 ) : (
-                  <p className="issue-empty">{STAGE_NOTES[stage]}</p>
+                  <p className="issue-empty">{stageNote(stage, kind)}</p>
                 )}
               </section>
             );

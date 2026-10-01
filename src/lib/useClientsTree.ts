@@ -10,7 +10,14 @@ import {
   type Board,
 } from "@/lib/board";
 import { MOTOR_SLOT, type IssueType } from "@/lib/issues";
-import { missingReads, whatIsMissing, type JobPhotoStage } from "@/lib/jobs";
+import {
+  JOB_KIND_LABELS,
+
+  missingReads,
+  whatIsMissing,
+  type JobKind,
+  type JobPhotoStage,
+} from "@/lib/jobs";
 import { usePersisted } from "@/lib/session";
 import { personName, type Contact, type ContactInput } from "@/lib/contacts";
 import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDialog";
@@ -71,6 +78,8 @@ type JobItemRecord = {
   location: string;
   found: string;
   done: string;
+  /** The client's own job number, on a recommendation. */
+  number: string | null;
   /** Which stages are covered, for working out whether it is finished. */
   photos: { stage: JobPhotoStage }[];
   _count: { photos: number };
@@ -79,6 +88,7 @@ type JobItemRecord = {
 type JobRecord = {
   preparedBy?: string[];
   id: string;
+  kind: JobKind;
   name: string | null;
   /** The day the work was done, as an ISO date. */
   date: string;
@@ -252,6 +262,8 @@ export type SafetySpec = {
 export type JobItemSpec = {
   jobId: string;
   jobTitle: string;
+  /** What the report is for, which decides what the dialog asks for. */
+  kind: JobKind;
   /** Set when an unfinished piece of work is being picked back up. */
   itemId?: string;
 };
@@ -883,13 +895,20 @@ export function useClientsTree(enabled: boolean) {
     [refresh],
   );
 
-  /** Starting a report needs no form either — today's date names it. */
+  /**
+   * Starting a report needs no form either — today's date names it.
+   *
+   * What it is for is chosen here rather than inside, because it is what the
+   * report asks for from the first piece of work onwards: a completed record
+   * wants a before and an after, a recommendation wants the job and what it
+   * needs.
+   */
   const startJob = useCallback(
-    async (siteId: string) => {
+    async (siteId: string, kind: JobKind) => {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ siteId }),
+        body: JSON.stringify({ siteId, kind }),
       });
       if (!response.ok) {
         setError("The job could not be started.");
@@ -926,10 +945,16 @@ export function useClientsTree(enabled: boolean) {
                   label: title,
                   detail: (() => {
                     const unfinished = job.items.filter(
-                      (item) => whatIsMissing(item).length > 0,
+                      (item) => whatIsMissing(item, job.kind).length > 0,
                     ).length;
                     const all = countLabel(job.items.length, "item", "items");
-                    return unfinished > 0 ? `${all}  ·  ${unfinished} unfinished` : all;
+                    // Which of the two it is comes first: it is what somebody
+                    // opening the section is looking for.
+                    const what =
+                      job.kind === "RECTIFICATION" ? "Recommended rectifications" : "Works completed";
+                    const counts =
+                      unfinished > 0 ? `${all}  ·  ${unfinished} unfinished` : all;
+                    return `${what}  ·  ${counts}`;
                   })(),
                   editDate: {
                     value: isoDate(job.date),
@@ -942,7 +967,7 @@ export function useClientsTree(enabled: boolean) {
                       // A job is done and written up at different times, so a
                       // piece of work can sit here unfinished. It says what it
                       // is short of, and opening it picks it back up.
-                      const missing = whatIsMissing(item);
+                      const missing = whatIsMissing(item, job.kind);
                       const name = item.title.trim() || "Unfinished work";
                       return {
                         id: `jobitem:${item.id}`,
@@ -950,18 +975,30 @@ export function useClientsTree(enabled: boolean) {
                         detail:
                           missing.length > 0
                             ? missingReads(missing)
-                            : `${item.location}  ·  ${countLabel(
-                                item._count.photos,
-                                "photo",
-                                "photos",
-                              )}`,
+                            : [
+                                // A recommendation has a job number instead of
+                                // a place: it is what the client quotes back.
+                                job.kind === "RECTIFICATION"
+                                  ? item.number?.trim()
+                                    ? `Job ${item.number.trim()}`
+                                    : ""
+                                  : item.location,
+                                countLabel(item._count.photos, "photo", "photos"),
+                              ]
+                                .filter(Boolean)
+                                .join("  ·  "),
                         variant: "info" as const,
                         // Finished or not, opening it opens it for editing:
                         // a photograph of the wrong board or a sentence that
                         // reads badly is found after the work is written up
                         // as often as before it.
                         onActivate: () =>
-                          setJobItem({ jobId: job.id, jobTitle: title, itemId: item.id }),
+                          setJobItem({
+                            jobId: job.id,
+                            jobTitle: title,
+                            kind: job.kind,
+                            itemId: item.id,
+                          }),
                         onRemove: () => void remove(`/api/job-items/${item.id}`, name),
                         // Dragged into the order the client should read it in.
                         drag: {
@@ -978,9 +1015,10 @@ export function useClientsTree(enabled: boolean) {
                     {
                       id: `add:jobitem:${job.id}`,
                       label: "Add new",
-                      detail: "Work done",
+                      detail: job.kind === "RECTIFICATION" ? "A job we recommend" : "Work done",
                       variant: "add",
-                      onActivate: () => setJobItem({ jobId: job.id, jobTitle: title }),
+                      onActivate: () =>
+                        setJobItem({ jobId: job.id, jobTitle: title, kind: job.kind }),
                     },
                     preparedByRow(
                       `job:${job.id}`,
@@ -1002,13 +1040,16 @@ export function useClientsTree(enabled: boolean) {
                   ],
                 };
               }),
-              {
-                id: `add:job:${site.id}`,
+              // Two rows rather than one and a question: which report this is
+              // changes everything it asks for afterwards, so it is chosen
+              // before anything is started rather than inside it.
+              ...(["COMPLETED", "RECTIFICATION"] as const).map<TreeNode>((kind) => ({
+                id: `add:job:${kind.toLowerCase()}:${site.id}`,
                 label: "Add new",
-                detail: "Report",
-                variant: "add",
-                onActivate: () => void startJob(site.id),
-              },
+                detail: JOB_KIND_LABELS[kind],
+                variant: "add" as const,
+                onActivate: () => void startJob(site.id, kind),
+              })),
             ],
           }));
 
