@@ -448,10 +448,24 @@ model IssuePhoto {
 // left.
 // ---------------------------------------------------------------------------
 
+/**
+ * What a works record is for.
+ *
+ * A completed report says what was done. A rectification report says what is
+ * proposed, and is sent with a quotation: it is the same layout and the same
+ * photographs, read forwards instead of backwards.
+ */
+enum JobKind {
+  COMPLETED
+  RECTIFICATION
+}
+
 model Job {
   id     String @id @default(cuid())
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  kind JobKind @default(COMPLETED)
 
   /**
    * Optional — falls back to the date the work was done.
@@ -498,6 +512,9 @@ model JobItem {
 
   title    String
   location String
+
+  /** The job number on a rectification, where one was given. */
+  number String?
   /**
    * How it was found.
    */

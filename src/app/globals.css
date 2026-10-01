@@ -5335,3 +5335,100 @@ a.dialog-cancel {
     linear-gradient(45deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%),
     #1f9254;
 }
+
+/* ===========================================================================
+   The setup sections
+   ===========================================================================
+
+   Clients, Profiles and Equipment are where the app is set up rather than
+   where work is recorded, so they stand apart from the sections above them:
+   OptiLink blue at rest, and inverting to white on hover the way every other
+   card lifts. The text inverts with the card.
+   =========================================================================== */
+
+.tree-node[data-node="clients"],
+.tree-node[data-node="profiles"],
+.tree-node[data-node="equipment"] {
+  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+  color: #fff;
+}
+
+.tree-node[data-node="clients"] .tree-node-label,
+.tree-node[data-node="profiles"] .tree-node-label,
+.tree-node[data-node="equipment"] .tree-node-label,
+.tree-node[data-node="clients"] .tree-node-index,
+.tree-node[data-node="profiles"] .tree-node-index,
+.tree-node[data-node="equipment"] .tree-node-index,
+.tree-node[data-node="clients"] .tree-node-chevron,
+.tree-node[data-node="profiles"] .tree-node-chevron,
+.tree-node[data-node="equipment"] .tree-node-chevron {
+  color: #fff;
+}
+
+.tree-node[data-node="clients"] .tree-node-detail,
+.tree-node[data-node="profiles"] .tree-node-detail,
+.tree-node[data-node="equipment"] .tree-node-detail {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* The rail that marks a resting card is already white here. */
+.tree-node[data-node="clients"]::before,
+.tree-node[data-node="profiles"]::before,
+.tree-node[data-node="equipment"]::before {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* --- hovered, or open: white card, blue text ----------------------------- */
+.tree-card-wrap:hover > .tree-node[data-node="clients"],
+.tree-card-wrap:hover > .tree-node[data-node="profiles"],
+.tree-card-wrap:hover > .tree-node[data-node="equipment"],
+.tree-node[data-node="clients"]:focus-visible,
+.tree-node[data-node="profiles"]:focus-visible,
+.tree-node[data-node="equipment"]:focus-visible,
+.tree-node[data-node="clients"].is-open,
+.tree-node[data-node="profiles"].is-open,
+.tree-node[data-node="equipment"].is-open {
+  background: #fff;
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-label,
+.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-label,
+.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-label,
+.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-index,
+.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-index,
+.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-index,
+.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-chevron,
+.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-chevron,
+.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-chevron,
+.tree-node[data-node="clients"].is-open .tree-node-label,
+.tree-node[data-node="profiles"].is-open .tree-node-label,
+.tree-node[data-node="equipment"].is-open .tree-node-label,
+.tree-node[data-node="clients"].is-open .tree-node-index,
+.tree-node[data-node="profiles"].is-open .tree-node-index,
+.tree-node[data-node="equipment"].is-open .tree-node-index,
+.tree-node[data-node="clients"].is-open .tree-node-chevron,
+.tree-node[data-node="profiles"].is-open .tree-node-chevron,
+.tree-node[data-node="equipment"].is-open .tree-node-chevron {
+  color: var(--accent-deep);
+}
+
+.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-detail,
+.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-detail,
+.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-detail,
+.tree-node[data-node="clients"].is-open .tree-node-detail,
+.tree-node[data-node="profiles"].is-open .tree-node-detail,
+.tree-node[data-node="equipment"].is-open .tree-node-detail {
+  color: rgba(20, 82, 143, 0.72);
+}
+
+.tree-card-wrap:hover > .tree-node[data-node="clients"]::before,
+.tree-card-wrap:hover > .tree-node[data-node="profiles"]::before,
+.tree-card-wrap:hover > .tree-node[data-node="equipment"]::before,
+.tree-node[data-node="clients"].is-open::before,
+.tree-node[data-node="profiles"].is-open::before,
+.tree-node[data-node="equipment"].is-open::before {
+  background: var(--accent-deep);
+}

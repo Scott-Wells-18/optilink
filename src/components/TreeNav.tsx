@@ -436,6 +436,9 @@ function Branch({
             type="button"
             ref={cardRef as RefObject<HTMLButtonElement | null>}
             className={`tree-node ${state}`}
+            // The sections that set the app up rather than record work are
+            // styled apart from the rest; the stylesheet picks them by name.
+            data-node={node.id}
             onClick={() => {
               if (opensPanel) node.onActivate?.();
               else if (hasChildren) toggle(depth, node.id);
