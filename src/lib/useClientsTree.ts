@@ -14,6 +14,8 @@ import { missingReads, whatIsMissing, type JobPhotoStage } from "@/lib/jobs";
 import { usePersisted } from "@/lib/session";
 import { personName, type Contact, type ContactInput } from "@/lib/contacts";
 import { EMPTY_EQUIPMENT, type EquipmentDraft } from "@/components/EquipmentDialog";
+import { EMPTY_PROFILE, type ProfileDraft } from "@/components/ProfileDialog";
+import { TITLE_LABELS, fullName, type Title } from "@/lib/profiles";
 import type { ContactChoice } from "@/components/ReportContactDialog";
 import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 
@@ -154,6 +156,18 @@ type SiteRecord = {
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
+
+/** Somebody who can be named on the paperwork, as the Profiles section lists them. */
+type ProfileRecord = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  licence: string | null;
+  supervisor: string | null;
+  titles: Title[];
+  director: boolean;
+  signatureFileId: string | null;
+};
 
 /** A piece of our own test gear, as the Equipment section lists it. */
 type TestEquipmentRecord = {
@@ -309,6 +323,8 @@ export function useClientsTree(enabled: boolean) {
   );
   const [contact, setContact] = usePersisted<ContactChoice | null>("contact", null);
   const [testGear, setTestGear] = useState<TestEquipmentRecord[]>([]);
+  const [profiles, setProfiles] = useState<ProfileRecord[]>([]);
+  const [profileDialog, setProfileDialog] = usePersisted<ProfileDraft | null>("profile", null);
   const [gearDialog, setGearDialog] = usePersisted<EquipmentDraft | null>("gear", null);
   const [error, setError] = useState<string | null>(null);
 
@@ -334,11 +350,23 @@ export function useClientsTree(enabled: boolean) {
     }
   }, []);
 
+  /** The people who can be named on the paperwork. Another flat list. */
+  const refreshProfiles = useCallback(async () => {
+    try {
+      const response = await fetch("/api/profiles", { cache: "no-store" });
+      if (!response.ok) return;
+      setProfiles(await response.json());
+    } catch {
+      // The section shows what it has; a failed refresh is not worth a banner.
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
     void refresh();
     void refreshGear();
-  }, [enabled, refresh, refreshGear]);
+    void refreshProfiles();
+  }, [enabled, refresh, refreshGear, refreshProfiles]);
 
   const submit = useCallback(
     async (values: Record<string, unknown>) => {
@@ -1429,6 +1457,71 @@ export function useClientsTree(enabled: boolean) {
     [clients, remove, startAmpReport, setAmpDate, setAmps],
   );
 
+  const removeProfile = useCallback(
+    async (id: string, who: string) => {
+      if (!window.confirm(`Remove ${who}? Documents already issued keep their copy.`)) return;
+      await fetch(`/api/profiles/${id}`, { method: "DELETE" }).catch(() => {});
+      await refreshProfiles();
+    },
+    [refreshProfiles],
+  );
+
+  /**
+   * Profiles: who can be named on the paperwork.
+   *
+   * The row says what each person is allowed to put their name to, because
+   * that is the thing somebody is checking when they come here.
+   */
+  const profileNodes = useMemo<TreeNode[]>(
+    () => [
+      ...profiles.map<TreeNode>((person) => {
+        const who = fullName(person);
+        const titles = [
+          person.director ? "Director" : null,
+          ...person.titles.map((title) => TITLE_LABELS[title]),
+        ].filter(Boolean);
+        const allowed = !person.signatureFileId
+          ? "No signature yet"
+          : person.licence
+            ? "Every report"
+            : "SWMS and JSAs only";
+        return {
+          id: `profile:${person.id}`,
+          label: who,
+          detail: [
+            ...titles,
+            person.licence ? `Lic ${person.licence}` : null,
+            person.supervisor ? `Supervisor ${person.supervisor}` : null,
+            allowed,
+          ]
+            .filter(Boolean)
+            .join("  \u00b7  "),
+          variant: "info",
+          onActivate: () =>
+            setProfileDialog({
+              id: person.id,
+              firstName: person.firstName,
+              lastName: person.lastName,
+              licence: person.licence ?? "",
+              supervisor: person.supervisor ?? "",
+              titles: person.titles,
+              director: person.director,
+              signatureFileId: person.signatureFileId,
+            }),
+          onRemove: () => void removeProfile(person.id, who),
+        };
+      }),
+      {
+        id: "add:profile",
+        label: "Add new",
+        detail: "Profile",
+        variant: "add",
+        onActivate: () => setProfileDialog({ ...EMPTY_PROFILE }),
+      },
+    ],
+    [profiles, setProfileDialog, removeProfile],
+  );
+
   const equipmentNodes = useMemo<TreeNode[]>(
     () => [
       ...testGear.map<TreeNode>((item) => ({
@@ -1485,6 +1578,13 @@ export function useClientsTree(enabled: boolean) {
     swmsNodes,
     powerNodes,
     ampNodes,
+    profileNodes,
+    profileDialog,
+    closeProfile: () => setProfileDialog(null),
+    savedProfile: () => {
+      setProfileDialog(null);
+      void refreshProfiles();
+    },
     dialog,
     closeDialog: () => setDialog(null),
     info,

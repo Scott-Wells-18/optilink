@@ -89,6 +89,7 @@ model UploadedFile {
   safetyDocSources  SafetyDoc[]      @relation("SafetyDocSource")
   powerSources      PowerAnalysis[]  @relation("PowerAnalysisSource")
   ampSources        AmpRecording[]   @relation("AmpRecordingSource")
+  profileSignatures Profile[]        @relation("ProfileSignature")
   equipmentCerts    TestEquipment[]  @relation("TestEquipmentCert")
   equipmentPhotos   TestEquipment[]  @relation("TestEquipmentPhoto")
 }
@@ -924,6 +925,48 @@ model SafetyTemplate {
  * thing that makes a document binding, and it has no business sitting in
  * source control.
  */
+/**
+ * What somebody is on a report: an electrician, an apprentice, or both over
+ * time. The director is a separate flag because only one person holds it.
+ */
+enum ProfileTitle {
+  ELECTRICIAN
+  APPRENTICE
+}
+
+/**
+ * Somebody who prepares or signs the company's documents.
+ *
+ * What a person may put their name to depends on what is on file for them. A
+ * name and a signature are enough to read and sign a SWMS or a JSA, because
+ * that is a record of having read it. Putting your name to a report as the
+ * person who carried the work out needs the contractor licence that authorises
+ * it; the supervisor certificate is printed beside it where there is one.
+ */
+model Profile {
+  id        String @id @default(cuid())
+  firstName String
+  lastName  String
+
+  /** NSW electrical contractor licence. Without one: SWMS and JSAs only. */
+  licence String?
+  /** Qualified supervisor certificate. Always a bonus, never required. */
+  supervisor String?
+
+  titles   ProfileTitle[]
+  /** At most one profile carries this. */
+  director Boolean @default(false)
+
+  signatureFileId String?
+  signatureFile   UploadedFile? @relation("ProfileSignature", fields: [signatureFileId], references: [id], onDelete: SetNull)
+
+  /** The order they are listed and signed in. */
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Signature {
   /**
    * "scott", "kye".

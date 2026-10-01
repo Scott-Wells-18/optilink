@@ -22,6 +22,7 @@ import { SafetyDocDialog } from "@/components/SafetyDocDialog";
 import { RcdLimitsDialog } from "@/components/RcdLimitsDialog";
 import { PowerDialog } from "@/components/PowerDialog";
 import { AmpsDialog } from "@/components/AmpsDialog";
+import { ProfileDialog } from "@/components/ProfileDialog";
 import { EquipmentDialog } from "@/components/EquipmentDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
@@ -66,6 +67,7 @@ export function Gateway({
         if (section.id === "swms") return { ...section, children: clients.swmsNodes };
         if (section.id === "power") return { ...section, children: clients.powerNodes };
         if (section.id === "amps") return { ...section, children: clients.ampNodes };
+        if (section.id === "profiles") return { ...section, children: clients.profileNodes };
         if (section.id === "equipment") return { ...section, children: clients.equipmentNodes };
         return section;
       }),
@@ -77,6 +79,7 @@ export function Gateway({
       clients.swmsNodes,
       clients.powerNodes,
       clients.ampNodes,
+      clients.profileNodes,
       clients.equipmentNodes,
     ],
   );
@@ -217,6 +220,14 @@ export function Gateway({
           reportId={clients.amps.reportId}
           siteName={clients.amps.siteName}
           onClose={clients.closeAmps}
+        />
+      ) : null}
+
+      {open && clients.profileDialog ? (
+        <ProfileDialog
+          initial={clients.profileDialog}
+          onClose={clients.closeProfile}
+          onSaved={clients.savedProfile}
         />
       ) : null}
 

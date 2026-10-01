@@ -5261,3 +5261,77 @@ a.dialog-cancel {
   flex: 1 1 120px;
   padding: 9px 12px;
 }
+
+/* ===========================================================================
+   Profiles
+   ===========================================================================
+
+   Who can put their name to the paperwork, and what each of them is licensed
+   for. The rules are shown as the form is filled in rather than enforced at
+   the end, so it is obvious what a half-filled profile will be good for.
+   =========================================================================== */
+
+.profile-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.profile-pair > .dialog-field {
+  flex: 1 1 200px;
+}
+
+.profile-signature {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.profile-signature img {
+  max-height: 64px;
+  max-width: 240px;
+  object-fit: contain;
+}
+
+.profile-rules {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-rules li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.profile-rules li.is-on {
+  color: var(--ink-2);
+}
+
+.profile-rule-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hair-strong);
+}
+
+.profile-rules li.is-on .profile-rule-mark {
+  border-color: #1f9254;
+  background:
+    linear-gradient(45deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%),
+    #1f9254;
+}
