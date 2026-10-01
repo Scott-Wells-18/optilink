@@ -28,6 +28,7 @@ export async function POST(
       rating?: number | string | null;
       device?: string | null;
       phase?: string | null;
+      groupName?: string | null;
     };
     if (!body.fileId) return badRequest("No recording was supplied.");
 
@@ -73,6 +74,7 @@ export async function POST(
         rating: readRating(body.rating),
         device: readDevice(body.device),
         phase: readPhase(body.phase),
+        groupName: body.groupName?.trim().slice(0, 120) || null,
         position: (last?.position ?? -1) + 1,
         summary: JSON.parse(JSON.stringify(summary)),
       },

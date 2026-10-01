@@ -5084,6 +5084,26 @@ body {
   background: #fff;
 }
 
+/*
+ * A section's name, announced once above the first recording in it.
+ *
+ * It is pulled up out of the card it sits inside so it reads as a heading over
+ * the recordings rather than as a line belonging to the first of them, which
+ * is how the report prints it too.
+ */
+.amp-group-head {
+  margin: -6px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hair-strong);
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--accent-deep, #14528f);
+}
+
+.amp-group {
+  margin-top: 12px;
+}
+
 .amp-row-head {
   display: flex;
   align-items: center;

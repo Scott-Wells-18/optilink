@@ -17,6 +17,7 @@ export async function PATCH(
       rating?: number | string | null;
       device?: string | null;
       phase?: string | null;
+      groupName?: string | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -27,6 +28,9 @@ export async function PATCH(
     if ("rating" in body) data.rating = readRating(body.rating);
     if ("device" in body) data.device = readDevice(body.device);
     if ("phase" in body) data.phase = readPhase(body.phase);
+    // Cleared as readily as it is set: a recording taken out of a section is a
+    // recording standing on its own again.
+    if ("groupName" in body) data.groupName = body.groupName?.trim().slice(0, 120) || null;
 
     if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
 

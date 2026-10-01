@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { personName } from "@/lib/contacts";
 import { uploadFile } from "@/components/ImageUpload";
 import { PreparedByPicks } from "@/components/PreparedByPicks";
+import { groupNames, numberRecordings } from "@/lib/amps/grouping";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -43,6 +44,8 @@ type Recording = {
   rating: number | null;
   device: Device | null;
   phase: Phase | null;
+  /** The section of the report it belongs to, where it is in one. */
+  groupName: string | null;
   position: number;
   summary: Summary | null;
   file: { id: string; originalName: string } | null;
@@ -75,6 +78,7 @@ type Pending = {
   rating: string;
   device: Device | null;
   phase: Phase | null;
+  groupName: string;
 };
 
 const DEVICE_LABELS: Record<Device, string> = {
@@ -208,6 +212,7 @@ export function AmpsDialog({
           rating: pending.rating,
           device: pending.device,
           phase: pending.phase,
+          groupName: pending.groupName,
         }),
       });
       if (!response.ok) {
@@ -233,9 +238,17 @@ export function AmpsDialog({
   }
 
   /** Moving a recording up or down the order the report reads them in. */
+  /**
+   * One recording up or down the report.
+   *
+   * The index is into the list as it is shown, which is the order the report
+   * prints in — sections gathered — so moving a recording moves it where the
+   * person moving it can see it move.
+   */
   async function move(index: number, by: number) {
     if (!report) return;
-    const order = report.recordings.map((item) => item.id);
+    const shown = numberRecordings(report.recordings).map((row) => row.item);
+    const order = shown.map((item) => item.id);
     const to = index + by;
     if (to < 0 || to >= order.length) return;
     [order[index], order[to]] = [order[to], order[index]];
@@ -287,7 +300,9 @@ export function AmpsDialog({
     }
   }
 
-  const recordings = report?.recordings ?? [];
+  // Shown in the order the report prints: sections gathered behind the first
+  // recording that is in them, everything else where it was put.
+  const recordings = numberRecordings(report?.recordings ?? []).map((row) => row.item);
   const contacts = report?.site.contacts ?? [];
   const boards = report?.site.equipment ?? [];
 
@@ -315,12 +330,29 @@ export function AmpsDialog({
               </p>
             </div>
 
+            {/* The sections already on this report, so another recording can
+                be put into one without the name being typed twice. */}
+            <datalist id="amp-sections">
+              {groupNames(recordings).map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+
             {recordings.length > 0 ? (
               <ol className="amp-list">
-                {recordings.map((recording, index) => (
+                {numberRecordings(recordings).map((row, index) => {
+                  const recording = row.item;
+                  return (
                   <li className="amp-row" key={recording.id}>
+                    {/* A section is announced once, above the first of its
+                        recordings, exactly as the report prints it. */}
+                    {row.opensGroup ? (
+                      <p className="amp-group-head">
+                        {row.groupNumber}.&nbsp;&nbsp;{row.group}
+                      </p>
+                    ) : null}
                     <div className="amp-row-head">
-                      <span className="amp-row-number">{index + 1}</span>
+                      <span className="amp-row-number">{row.label.replace(/\.$/, "")}</span>
                       <input
                         className="dialog-input amp-row-name"
                         defaultValue={recording.name}
@@ -368,6 +400,21 @@ export function AmpsDialog({
                     {recording.summary?.notes?.length ? (
                       <p className="amp-warning">{recording.summary.notes[0]}</p>
                     ) : null}
+
+                    <label className="dialog-field amp-group">
+                      <span className="dialog-label">Section on the report, if any</span>
+                      <input
+                        className="dialog-input"
+                        list="amp-sections"
+                        placeholder="e.g. Pit Jacks Distribution Board"
+                        defaultValue={recording.groupName ?? ""}
+                        onBlur={(event) => {
+                          const groupName = event.target.value.trim();
+                          if (groupName === (recording.groupName ?? "")) return;
+                          void patchRecording(recording.id, { groupName: groupName || null });
+                        }}
+                      />
+                    </label>
 
                     <div className="amp-phase">
                       <span className="dialog-label">Which phase was it on?</span>
@@ -431,7 +478,8 @@ export function AmpsDialog({
                       </div>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ol>
             ) : (
               <p className="issue-empty">
@@ -459,6 +507,18 @@ export function AmpsDialog({
                     value={pending.name}
                     onChange={(event) =>
                       setPending({ ...pending, name: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="dialog-field amp-group">
+                  <span className="dialog-label">Section on the report, if any</span>
+                  <input
+                    className="dialog-input"
+                    list="amp-sections"
+                    placeholder="e.g. Pit Jacks Distribution Board"
+                    value={pending.groupName}
+                    onChange={(event) =>
+                      setPending({ ...pending, groupName: event.target.value })
                     }
                   />
                 </label>
@@ -562,6 +622,9 @@ export function AmpsDialog({
                       rating: "",
                       device: null,
                       phase: null,
+                      // Most often another phase of the board just added, so
+                      // the last section used is offered rather than nothing.
+                      groupName: lastGroup(recordings),
                     });
                   }}
                 />
@@ -798,6 +861,15 @@ function trim(value: number): string {
 }
 
 /** The file's name without its extension, as a first go at a name. */
+/** The section the last recording went into, offered for the next one. */
+function lastGroup(recordings: Recording[]): string {
+  for (let at = recordings.length - 1; at >= 0; at -= 1) {
+    const name = recordings[at].groupName?.trim();
+    if (name) return name;
+  }
+  return "";
+}
+
 function stem(name: string): string {
   return name.replace(/\.[^.]+$/, "").slice(0, 120);
 }

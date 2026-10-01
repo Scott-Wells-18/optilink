@@ -7,6 +7,7 @@ import { personName } from "@/lib/contacts";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { preparedByFor } from "@/lib/profiles.server";
 import { readAmpRecording, clock, trim, type AmpReading, type Check } from "@/lib/amps/parse";
+import { numberRecordings, type Numbered } from "@/lib/amps/grouping";
 import {
   DEVICE_LABELS,
   PHASE_LABELS,
@@ -62,6 +63,8 @@ export type Entry = {
   id: string;
   /** "A-Phase PIT JACKS". */
   name: string;
+  /** The section it belongs to, where it is in one. */
+  groupName: string | null;
   rating: number | null;
   device: Device | null;
   /** The conductor the clamp went on, where it was said. */
@@ -135,6 +138,7 @@ export async function loadAmpReport(id: string): Promise<AmpLoad> {
     entries.push({
       id: row.id,
       name: safe(row.name),
+      groupName: row.groupName ? safe(row.groupName) : null,
       rating: row.rating ?? null,
       device: (row.device as Device | null) ?? null,
       phase: (row.phase as Phase | null) ?? null,
@@ -161,7 +165,10 @@ export async function loadAmpReport(id: string): Promise<AmpLoad> {
       instrument: await readInstrument(report.instrument),
       takenOn: report.date,
       reportDate: new Date(),
-      entries,
+      // In the order they will be printed: a recording put into a section
+      // after the others moves up to join them, so a section is one section
+      // under one number rather than two halves under two.
+      entries: numberRecordings(entries).map((row) => row.item),
       logo: await brandBytes("logo.jpg"),
       preparedBy: await preparedByFor(report.preparedBy),
     },
@@ -272,14 +279,17 @@ export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
   // How many pages each recording runs to has to be known before the contents
   // is drawn: a file with a page of unreadable rows carries them with it, and
   // every page number after it would otherwise be out.
-  const plans = data.entries.map((entry) => plan(doc, entry));
+  // The entries arrive in printing order, so this only hangs a number on each
+  // of them: "1." standing alone, or "a." under the section it is in.
+  const numbered = numberRecordings(data.entries);
+  const plans = numbered.map((row) => plan(doc, row.item));
 
   cover(doc, data);
-  summary(doc, data, plans);
+  summary(doc, data, numbered, plans);
   about(doc, data);
 
-  data.entries.forEach((entry, index) => {
-    recordingPages(doc, data, entry, index, plans[index]);
+  numbered.forEach((row, index) => {
+    recordingPages(doc, data, row, plans[index]);
   });
 
   limitations(doc, data);
@@ -498,7 +508,7 @@ function instrumentLine(instrument: Instrument | null): string {
 
 /* --- the summary and contents --------------------------------------------- */
 
-function summary(doc: Doc, data: AmpReport, plans: Plan[]) {
+function summary(doc: Doc, data: AmpReport, numbered: Numbered<Entry>[], plans: Plan[]) {
   doc.addPage();
   head(doc, data, "Summary of Recordings");
 
@@ -521,7 +531,7 @@ function summary(doc: Doc, data: AmpReport, plans: Plan[]) {
   doc.text(opening, MARGIN, y, { width: CONTENT, lineGap: 2.4 });
   y = doc.y + 20;
 
-  y = table(doc, y, data);
+  y = table(doc, y, numbered);
 
   y += 10;
   doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
@@ -538,7 +548,7 @@ function summary(doc: Doc, data: AmpReport, plans: Plan[]) {
   );
   y = doc.y + 24;
 
-  contents(doc, data, plans, y);
+  contents(doc, data, numbered, plans, y);
 }
 
 function endStop(text: string): string {
@@ -548,7 +558,7 @@ function endStop(text: string): string {
 /** The widths of the summary table, which add up to the page. */
 const COLUMNS = [26, 214, 118, 68, 100, 92, 86, 70];
 
-function table(doc: Doc, y: number, data: AmpReport): number {
+function table(doc: Doc, y: number, numbered: Numbered<Entry>[]): number {
   const titles = ["#", "Recording", "Device", "Samples", "Period", "Highest", "Average", "Above"];
 
   doc.rect(MARGIN, y, CONTENT, 20).fill(COLOURS.bar);
@@ -566,14 +576,32 @@ function table(doc: Doc, y: number, data: AmpReport): number {
   });
   y += 20;
 
-  data.entries.forEach((entry, index) => {
+  numbered.forEach((row, index) => {
+    const entry = row.item;
+
+    // A section is announced once, across the table, and its recordings are
+    // lettered under it. The row carries no figures of its own: the figures
+    // belong to the recordings, and no average is taken across them.
+    if (row.opensGroup) {
+      doc.rect(MARGIN, y, CONTENT, 19).fill(COLOURS.soft);
+      doc.rect(MARGIN, y, 3, 19).fill(COLOURS.accent);
+      doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9);
+      doc.text(`${row.groupNumber}.  ${safe(row.group ?? "")}`, MARGIN + 12, y + 5, {
+        width: CONTENT - 24,
+        height: 11,
+        ellipsis: true,
+        lineBreak: false,
+      });
+      y += 19;
+    }
+
     const height = 30;
     if (index % 2 === 1) doc.rect(MARGIN, y, CONTENT, height).fill(COLOURS.soft);
     doc.rect(MARGIN, y + height, CONTENT, 0.5).fill(COLOURS.hair);
 
     const figures = entry.figures;
     const cells: [string, string | null][] = [
-      [String(index + 1), null],
+      [row.label.replace(/\.$/, ""), null],
       [entry.name, phaseLine(entry)],
       entry.rating === null
         ? ["—", "no rating entered"]
@@ -588,6 +616,11 @@ function table(doc: Doc, y: number, data: AmpReport): number {
       ],
     ];
 
+    // A lettered row's letter sits in from the margin, so a section reads as a
+    // section rather than as a run of rows that happen to be next to each
+    // other. Only the letter moves: the columns stay where they are, or the
+    // figures would not line up down the table.
+    const indent = row.group ? 8 : 0;
     let at = MARGIN;
     cells.forEach(([value, note], column) => {
       const centred = column > 2;
@@ -595,7 +628,7 @@ function table(doc: Doc, y: number, data: AmpReport): number {
       const highlight = column === 7 && entry.rating !== null && figures.above > 0;
       doc.font("Helvetica-Bold").fontSize(column === 1 ? 9 : 8.5);
       doc.fillColor(highlight ? COLOURS.alert : COLOURS.ink);
-      doc.text(safe(value), centred ? at : at + 6, y + (note ? 5.5 : 10), {
+      doc.text(safe(value), centred ? at : at + 6 + (column === 0 ? indent : 0), y + (note ? 5.5 : 10), {
         width: centred ? width : width - 10,
         align: centred ? "center" : "left",
         height: 11,
@@ -619,11 +652,23 @@ function table(doc: Doc, y: number, data: AmpReport): number {
   return y;
 }
 
-function contents(doc: Doc, data: AmpReport, plans: Plan[], y: number) {
+function contents(
+  doc: Doc,
+  data: AmpReport,
+  numbered: Numbered<Entry>[],
+  plans: Plan[],
+  y: number,
+) {
+  // A section opens on the page its first recording opens on, so a client
+  // turning to "1. Pit Jacks Distribution Board" lands on the first of them.
   const entries: [string, number][] = [];
   let page = FIRST_RECORDING;
-  data.entries.forEach((entry, index) => {
-    entries.push([`${index + 1}. ${entry.name}`, page]);
+  numbered.forEach((row, index) => {
+    if (row.opensGroup) entries.push([`${row.groupNumber}. ${row.group}`, page]);
+    entries.push([
+      row.group ? `     ${row.label} ${row.item.name}` : `${row.label} ${row.item.name}`,
+      page,
+    ]);
     page += plans[index].pages;
   });
 
@@ -756,13 +801,17 @@ function noteHeight(doc: Doc, note: string, width: number): number {
   return doc.heightOfString(safe(note), { width: width - 14, lineGap: 1.6 }) + 7;
 }
 
-function recordingPages(doc: Doc, data: AmpReport, entry: Entry, index: number, laid: Plan) {
+function recordingPages(doc: Doc, data: AmpReport, row: Numbered<Entry>, laid: Plan) {
+  const entry = row.item;
   doc.addPage();
   head(
     doc,
     data,
-    `${index + 1}. ${entry.name}`,
+    `${row.label} ${entry.name}`,
     [
+      // The section first, so a page read on its own still says which board
+      // its letter belongs to.
+      row.group ? `${row.groupNumber}. ${row.group}` : null,
       entry.rating === null ? "No protective-device rating entered" : ratingLine(entry),
       `From ${entry.fileName}`,
     ]
@@ -807,7 +856,7 @@ function recordingPages(doc: Doc, data: AmpReport, entry: Entry, index: number, 
   checks(doc, entry);
 
   /* --- anything the file could not give ---------------------------------- */
-  if (laid.notes.length > 0) notePages(doc, data, entry, index, laid.notes);
+  if (laid.notes.length > 0) notePages(doc, data, row, laid.notes);
 }
 
 /** "1 second", or the plain truth where the instrument varied. */
@@ -1044,7 +1093,8 @@ function checks(doc: Doc, entry: Entry) {
 }
 
 /** Anything in the file that could not be read, said plainly, two columns. */
-function notePages(doc: Doc, data: AmpReport, entry: Entry, index: number, notes: string[]) {
+function notePages(doc: Doc, data: AmpReport, row: Numbered<Entry>, notes: string[]) {
+  const entry = row.item;
   const column = (CONTENT - 40) / 2;
   let at = 0;
   let side = 0;
@@ -1056,7 +1106,7 @@ function notePages(doc: Doc, data: AmpReport, entry: Entry, index: number, notes
     head(
       doc,
       data,
-      `${index + 1}. ${entry.name}`,
+      `${row.label} ${entry.name}`,
       "Readings that could not be read, and what was done about them",
       entry.phase,
     );

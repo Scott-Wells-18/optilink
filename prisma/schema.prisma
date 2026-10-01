@@ -1332,6 +1332,16 @@ model AmpRecording {
   /** The conductor the clamp went on, where it was said. */
   phase AmpPhase?
 
+  /**
+   * The section of the report this recording belongs to, where it is in one.
+   *
+   * Three phases of the one board are three recordings and belong together
+   * under the board's name; a recording off somewhere else stands on its own.
+   * Recordings sharing a name share a section, which is numbered where a
+   * standalone recording would be and lists its own under a, b, c.
+   */
+  groupName String?
+
   /** The meter's own export, kept byte for byte. */
   fileId String
   file   UploadedFile @relation("AmpRecordingSource", fields: [fileId], references: [id], onDelete: Cascade)
