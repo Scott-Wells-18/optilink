@@ -19,6 +19,7 @@ import { isEmpty, summarise, type RichText } from "@/lib/safety/richText";
 import { Whs002Form, type BoardOption } from "@/components/Whs002Form";
 import { whsGaps, type Whs002 } from "@/lib/safety/whs002";
 import { clearSession, usePersisted } from "@/lib/session";
+import { PreparedByPicks } from "@/components/PreparedByPicks";
 
 /**
  * Getting a job's safe work paperwork out.
@@ -58,6 +59,7 @@ type Doc = {
   scopeOverrides: Record<string, RichText> | null;
   assessmentDate: string | null;
   signOff: Record<string, { at: string }> | null;
+  preparedBy?: string[];
   energised: Whs002 | null;
 };
 
@@ -96,6 +98,9 @@ export function SafetyDocDialog({
   const [typing, setTyping] = usePersisted<boolean>(`${key}:typing`, false);
   const [showRules, setShowRules] = useState(false);
   const [signed, setSigned] = useState<Record<string, string>>({});
+  /** Everybody on file, so the step can say who the SWMS cannot carry. */
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+  const [preparedBy, setPreparedBy] = useState<string[]>([]);
   const [busy, setBusy] = useState<"save" | "sign" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -117,6 +122,7 @@ export function SafetyDocDialog({
         Object.entries(doc.signOff ?? {}).map(([who, value]) => [who, value.at]),
       ),
     );
+    setPreparedBy(doc.preparedBy ?? []);
     if (doc.answers) {
       setAnswers((current) => (Object.keys(current).length ? current : doc.answers!));
     }
@@ -189,6 +195,34 @@ export function SafetyDocDialog({
     }),
     [answers, title, decision, contactId, scope, overrides, jobNumber, assessed, energised, needsWhs],
   );
+
+  /**
+   * Who has read these documents.
+   *
+   * Choosing somebody is the record of it, so it is saved as it is chosen
+   * rather than at the end: the documents are filled on the way out and
+   * whoever is named here is named on them.
+   */
+  async function saveSigners(next: string[]) {
+    setPreparedBy(next);
+    await fetch(`/api/safety-docs/${docId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ preparedBy: next }),
+    }).catch(() => setError("That could not be saved."));
+  }
+
+  /**
+   * Whoever was chosen that the released SWMS have no row for.
+   *
+   * Seventeen of the eighteen print Scott's and Kye's names beside their
+   * signatory rows. That is the controlled document; anybody else signs the
+   * JSAs, which have four rows and no printed names, and OEC-SWMS013.
+   */
+  const unplaceable = preparedBy
+    .map((id) => people.find((person) => person.id === id)?.name)
+    .filter((name): name is string => Boolean(name))
+    .filter((name) => !SIGNATORIES.some((person) => person.name.toLowerCase() === name.toLowerCase()));
 
   async function save(then: "close" | "stay") {
     if (!ready) return;
@@ -946,40 +980,28 @@ export function SafetyDocDialog({
                   </p>
                 ) : null}
 
-                <div className="issue-picks">
-                  {SIGNATORIES.map((person) => {
-                    const at = signed[person.key];
-                    return (
-                      <div
-                        key={person.key}
-                        className={`issue-pick is-static ${at ? "is-on" : ""}`}
-                      >
-                        <span className="issue-pick-body">
-                          <span className="issue-pick-label">
-                            {person.name} — {person.position}
-                          </span>
-                          <span className="issue-pick-note">
-                            {at
-                              ? `Confirmed ${new Date(at).toLocaleString("en-AU")}. Signature applied to every document above.`
-                              : "Has not confirmed. Name and position are printed; the date and signature are left blank."}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          className={at ? "whs-drop" : "dialog-confirm is-small"}
-                          disabled={busy !== null || !ready}
-                          onClick={() => void sign(person.key, !at)}
-                        >
-                          {at ? "Withdraw" : `I am ${person.name.split(" ")[0]} — I have read these`}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                <PreparedByPicks
+                  chosen={preparedBy}
+                  needs="safety"
+                  onChange={(next) => void saveSigners(next)}
+                  onLoaded={setPeople}
+                />
+
+                {unplaceable.length > 0 ? (
+                  <p className="dialog-error">
+                    {unplaceable.join(" and ")}{" "}
+                    {unplaceable.length === 1 ? "signs" : "sign"} the JSAs and OEC-SWMS013.
+                    The other SWMS print Scott Wells and Kye Wells in their two signatory
+                    rows — that is the released document, not something the app can
+                    rewrite — so no signature is put against a name that is not theirs.
+                  </p>
+                ) : null}
 
                 <p className="issue-empty">
-                  Changing any answer withdraws both confirmations, because what was read
-                  would no longer be what comes out.
+                  Choosing somebody here is the record that they have read these documents:
+                  their name, position and signature are applied to every one of them, dated
+                  the day the assessment was carried out. Changing any answer clears the
+                  selection, because what was read would no longer be what comes out.
                 </p>
 
                 <div className="board-section-head">

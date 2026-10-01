@@ -140,7 +140,13 @@ export async function PATCH(
      * is on file — and if that counted as a change it would take the previous
      * person's confirmation off every time.
      */
-    if (!body.sign && changed(held as Record<string, unknown>, data)) data.signOff = {};
+    // Something about the documents changed, so what anybody read is no longer
+    // what comes out: the signatures come off with it. Choosing who signed is
+    // itself a change, and does not withdraw itself.
+    if (!body.sign && !("preparedBy" in data) && changed(held as Record<string, unknown>, data)) {
+      data.signOff = {};
+      data.preparedBy = [];
+    }
 
     const doc = await prisma.safetyDoc.update({ where: { id }, data });
     return NextResponse.json(doc);

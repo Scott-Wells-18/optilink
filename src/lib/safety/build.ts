@@ -8,6 +8,7 @@ import { canFillJsaPdf, fillJsaPdf, type JsaPdfValues } from "@/lib/safety/fillJ
 import { fillWhs002 } from "@/lib/safety/fillWhs002";
 import { canFill, fillSwms, type SwmsValues } from "@/lib/safety/fillSwms";
 import { pdfBytes, signatureBytes, templateBytes, templateFor } from "@/lib/safety/library";
+import { signatories as profileSignatories } from "@/lib/profiles.server";
 import { personName } from "@/lib/contacts";
 import { clean, toPlain, type RichText } from "@/lib/safety/richText";
 import { scopePage } from "@/lib/safety/scopePage";
@@ -75,7 +76,7 @@ export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
 
   const projectName = doc.projectName?.trim() || doc.jobTitle?.trim() || "";
   const jobNumber = doc.jobNumber?.trim() ?? "";
-  const who = await signatories(signOff);
+  const who = await signatories(doc.preparedBy ?? [], signOff, assessed || issued);
 
   const out: Built[] = [];
 
@@ -405,19 +406,57 @@ function linkedTo(codes: string[]): string {
  * to the signing step yet. The date and the signature are the part that says
  * somebody read it, so those wait.
  */
-async function signatories(signOff: SignOff): Promise<Person[]> {
-  const out: Person[] = [];
-  for (const person of SIGNATORIES) {
-    const confirmed = signOff[person.key];
-    out.push({
-      key: person.key,
-      name: person.name,
-      position: person.position,
-      date: confirmed ? shortDate(new Date(confirmed.at)) : "",
-      signature: confirmed ? await signatureBytes(person.key) : null,
-    });
+async function signatories(
+  chosen: string[],
+  signOff: SignOff,
+  dated: string,
+): Promise<Person[]> {
+  // Nobody picked: the documents behave as they did before anyone could be
+  // picked, so paperwork filed last month still comes out the way it did.
+  if (chosen.length === 0) {
+    const out: Person[] = [];
+    for (const person of SIGNATORIES) {
+      const confirmed = signOff[person.key];
+      out.push({
+        key: person.key,
+        name: person.name,
+        position: person.position,
+        date: confirmed ? shortDate(new Date(confirmed.at)) : "",
+        signature: confirmed ? await signatureBytes(person.key) : null,
+      });
+    }
+    return out;
   }
-  return out;
+
+  const people = await profileSignatories(chosen);
+  return people.map((person) => ({
+    // Two of the released SWMS rows carry a name in print. Somebody whose name
+    // is one of those takes that row; anybody else is their own person, which
+    // the JSAs can take and those two SWMS rows cannot.
+    key: printedRow(person.name) ?? person.id,
+    name: person.name,
+    position: person.role || "Electrician",
+    date: dated,
+    signature: person.signature,
+  }));
+}
+
+/** Which pre-printed signatory row a name belongs in, where it is one of them. */
+function printedRow(name: string): string | null {
+  const wanted = name.trim().toLowerCase();
+  return SIGNATORIES.find((person) => person.name.toLowerCase() === wanted)?.key ?? null;
+}
+
+/**
+ * Who among the chosen cannot be placed on a released SWMS.
+ *
+ * Seventeen of the eighteen print their two signatory names, which is not ours
+ * to rewrite. Anyone else signs the JSAs — which have four rows and no printed
+ * names — and OEC-SWMS013, and the report says so rather than printing one
+ * person's name over another's signature.
+ */
+export function unplaceable(people: Person[]): string[] {
+  return people.filter((person) => !printedRow(person.name)).map((person) => person.name);
 }
 
 /** Scott authorises OEC-WHS002, and only once he has confirmed. */

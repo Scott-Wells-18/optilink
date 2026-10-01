@@ -27,18 +27,26 @@ export function PreparedByPicks({
   chosen,
   needs = "reports",
   onChange,
+  onLoaded,
 }: {
   chosen: string[];
   needs?: "reports" | "safety";
   onChange: (next: string[]) => void;
+  /** The people on file, for a caller that has something of its own to say. */
+  onLoaded?: (profiles: { id: string; name: string }[]) => void;
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   useEffect(() => {
     void fetch("/api/profiles", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : []))
-      .then(setProfiles)
+      .then((rows: Profile[]) => {
+        setProfiles(rows);
+        onLoaded?.(rows.map((row) => ({ id: row.id, name: fullName(row) })));
+      })
       .catch(() => {});
+    // Loaded once; the callback is only ever told what came back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const allowed = (profile: Profile) =>

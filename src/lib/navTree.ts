@@ -40,6 +40,12 @@ export type TreeNode = {
 
 export const SECTIONS: TreeNode[] = [
   {
+    id: "profiles",
+    label: "Profiles",
+    detail: "Who signs the paperwork",
+    children: [],
+  },
+  {
     id: "thermal",
     label: "Thermal",
     detail: "Infrared surveys",
@@ -79,12 +85,6 @@ export const SECTIONS: TreeNode[] = [
     id: "clients",
     label: "Clients",
     detail: "Sites & contacts",
-    children: [],
-  },
-  {
-    id: "profiles",
-    label: "Profiles",
-    detail: "Who signs the paperwork",
     children: [],
   },
   {
