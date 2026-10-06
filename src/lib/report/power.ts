@@ -7,12 +7,7 @@ import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import { readUpload } from "@/lib/storage";
 import { preparedByFor } from "@/lib/profiles.server";
 import { COLOURS, safe, shortDate } from "@/lib/report/theme";
-import {
-  mastheadLines,
-  signOffBlock,
-  stampWideFeet,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import { guarded, mastheadLines, signOffBlock, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
 import { expiry } from "@/lib/report/calibration";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { stampCertificate, type Slot } from "@/lib/report/certificate";
@@ -397,11 +392,13 @@ function blocks(
 /* --- the document --------------------------------------------------------- */
 
 export async function buildPowerReport(data: PowerReport): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: [PAGE.width, PAGE.height],
-    margin: MARGIN,
-    bufferPages: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [PAGE.width, PAGE.height],
+      margin: MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {

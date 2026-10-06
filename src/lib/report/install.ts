@@ -1,14 +1,7 @@
 import PDFDocument from "pdfkit";
 import { PDFDocument as Lib } from "pdf-lib";
 import { COLOURS, SEVERITY, longDate, safe, shortDate } from "@/lib/report/theme";
-import {
-  mastheadLines,
-  sectionBar,
-  stampWideFeet,
-  tableHead,
-  type Doc,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import { guarded, mastheadLines, sectionBar, stampWideFeet, tableHead, type Doc, type PageMeta } from "@/lib/report/furniture";
 import {
   MEASUREMENT_LABELS,
   TERMINALS,
@@ -86,11 +79,13 @@ export type InstallReport = PageMeta & {
 };
 
 export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: [PAGE.width, PAGE.height],
-    margin: MARGIN,
-    bufferPages: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [PAGE.width, PAGE.height],
+      margin: MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {
@@ -204,7 +199,7 @@ function barChart(
   const top = room(doc, data, height + 46, section);
 
   doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  doc.text(`${title.toUpperCase()}  (${unit})`, MARGIN, top, { characterSpacing: 0.6 });
+  doc.text(safe(`${title.toUpperCase()}  (${unit})`), MARGIN, top, { characterSpacing: 0.6 });
 
   const plot = { x: MARGIN + 34, y: top + 16, width: CONTENT - 40, height };
   const ceiling = Math.max(
@@ -235,14 +230,14 @@ function barChart(
     );
 
     doc.font("Helvetica-Bold").fontSize(7).fillColor(bar.alarm ? SEVERITY.fail.fill : COLOURS.ink);
-    doc.text(bar.reads, x - slot * 0.2, y - 10, {
+    doc.text(safe(bar.reads), x - slot * 0.2, y - 10, {
       width: width + slot * 0.4,
       align: "center",
       lineBreak: false,
     });
 
     doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
-    doc.text(bar.label, x - slot * 0.2, plot.y + plot.height + 4, {
+    doc.text(safe(bar.label), x - slot * 0.2, plot.y + plot.height + 4, {
       width: width + slot * 0.4,
       align: "center",
       lineBreak: false,
@@ -256,7 +251,7 @@ function barChart(
     doc.lineWidth(0.9).strokeColor(SEVERITY.fail.fill).stroke();
     doc.restore();
     doc.font("Helvetica-Bold").fontSize(6.5).fillColor(SEVERITY.fail.fill);
-    doc.text(limit.label, plot.x + plot.width - 120, y - 9, {
+    doc.text(safe(limit.label), plot.x + plot.width - 120, y - 9, {
       width: 120,
       align: "right",
       lineBreak: false,
@@ -465,7 +460,7 @@ function insulation(doc: Doc, data: InstallReport) {
       { width: columns[1] - 8 },
     );
     doc.font("Helvetica-Bold").fontSize(9.5);
-    doc.text(resistanceReads(row), MARGIN + columns[0] + columns[1] + 4, y + 6, {
+    doc.text(safe(resistanceReads(row)), MARGIN + columns[0] + columns[1] + 4, y + 6, {
       width: columns[2] - 8,
     });
     doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
@@ -491,7 +486,7 @@ function insulation(doc: Doc, data: InstallReport) {
       measured.map((row) => ({
         label: row.name,
         value: row.megohms as number,
-        reads: resistanceReads(row),
+        reads: safe(resistanceReads(row)),
       })),
       { value: 1, label: "1 MΩ" },
       "Insulation resistance",
@@ -649,7 +644,7 @@ function points(doc: Doc, data: InstallReport) {
       const x = MARGIN + columns[0] + columns[1] + 74 * index;
       if (reading) {
         doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-        doc.text(voltsReads(reading), x, at + 7, { width: 70, align: "center" });
+        doc.text(safe(voltsReads(reading)), x, at + 7, { width: 70, align: "center" });
         doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
         doc.text(reading.name, x, at + 17, { width: 70, align: "center", lineBreak: false });
       } else {
@@ -686,7 +681,7 @@ function points(doc: Doc, data: InstallReport) {
         {
           label: `${named(point)} ${terminal}`,
           value: reading.volts,
-          reads: voltsReads(reading),
+          reads: safe(voltsReads(reading)),
         },
       ];
     }),
@@ -706,7 +701,7 @@ function points(doc: Doc, data: InstallReport) {
   const earthBars: Bar[] = data.points.flatMap((point) => {
     const reading = point.readings["N-PE"];
     if (!reading || reading.volts === null) return [];
-    return [{ label: named(point), value: reading.volts, reads: voltsReads(reading) }];
+    return [{ label: named(point), value: reading.volts, reads: safe(voltsReads(reading)) }];
   });
   if (earthBars.length > 0) {
     barChart(

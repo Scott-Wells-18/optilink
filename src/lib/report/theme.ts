@@ -81,11 +81,35 @@ export function yearAfter(date: Date): Date {
  * A site name pasted out of a spreadsheet or a circuit labelled with a Greek
  * letter would otherwise come out as rubbish or throw, so anything outside
  * that set is folded down to the nearest thing that is in it.
+ *
+ * A unit is never dropped. Deleting the omega off "200 MΩ" leaves "200 M",
+ * which on a test report reads as a number with no unit, so the units that
+ * turn up in this trade are written out in words rather than removed.
  */
 const SUBSTITUTIONS: [RegExp, string][] = [
+  /*
+   * The units first, because dropping one is worse than spelling it.
+   *
+   * WinAnsi has no omega, so "2.4 \u03a9" came out as "2.4" and "> 200 M\u03a9" as
+   * "> 200 M" \u2014 a resistance with its unit deleted, on a report whose whole
+   * subject is resistance. It is written out instead: "2.4 ohm", "200 Mohm",
+   * which is what it would be said as anyway. The prefix is kept against the
+   * word so the pair cannot be split over a line break.
+   */
+  [/([MkGm])\s*[\u03a9\u2126]/g, "$1ohm"],
+  [/[\u03a9\u2126]/g, "ohm"],
+  // Greek mu is not in WinAnsi; the micro sign is. "10 \u03bcF" must stay 10 \u00b5F.
+  [/\u03bc/g, "\u00b5"],
+  [/[\u03a6\u03d5\u0444]/g, "ph"], // phase
   [/[\u2206\u0394]/g, "d"], // increment, delta
   [/\u2264/g, "<="],
   [/\u2265/g, ">="],
+  [/\u2248/g, "~"],
+  [/\u00b7/g, "\u00b7"], // middle dot is in WinAnsi, kept as written
+  [/[\u2192\u21d2]/g, "->"],
+  [/\u2190/g, "<-"],
+  [/[\u2032\u2035]/g, "'"], // prime, for feet and minutes
+  [/[\u2033\u2036]/g, '"'], // double prime, for inches and seconds
   [/[\u2010\u2011\u2012\u2015]/g, "-"], // the hyphens WinAnsi lacks
   [/\u00a0/g, " "],
 ];

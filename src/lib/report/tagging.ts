@@ -1,13 +1,7 @@
 import PDFDocument from "pdfkit";
 import { COMPANY } from "@/lib/company";
 import { COLOURS, SEVERITY, longDate, safe, shortDate } from "@/lib/report/theme";
-import {
-  mastheadLines,
-  signOffBlock,
-  stampWideFeet,
-  type Doc,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import { guarded, mastheadLines, signOffBlock, stampWideFeet, type Doc, type PageMeta } from "@/lib/report/furniture";
 import {
   LAND,
   LAND_CONTENT,
@@ -47,6 +41,15 @@ export type RegisterReport = PageMeta & {
   customer: string | null;
   site: string | null;
   items: Item[];
+  /**
+   * How many customer and site pairings the whole spreadsheet held.
+   *
+   * `items` is only the ones this report is about, so it cannot say how many
+   * the file held — and saying "the file held four, this is one of them" is
+   * the honest version of the note that would otherwise tell the reader of a
+   * finished report to go and choose a customer.
+   */
+  pairingsInFile?: number;
   /** The file it was read out of, named so the report can be traced back. */
   sourceName: string | null;
   /** Anything the reader wants the reader of the report to know. */
@@ -54,11 +57,13 @@ export type RegisterReport = PageMeta & {
 };
 
 export async function buildRegisterReport(data: RegisterReport): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: [LAND.width, LAND.height],
-    margin: LAND_MARGIN,
-    bufferPages: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [LAND.width, LAND.height],
+      margin: LAND_MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {
@@ -214,9 +219,10 @@ function cover(doc: Doc, data: RegisterReport) {
   doc.rect(LAND_MARGIN, at, width, 0.6).fill(COLOURS.hair);
   at += 16;
 
-  if (data.notes.length > 0) {
+  const notes = notesFor(data, named);
+  if (notes.length > 0) {
     doc.font("Helvetica-Oblique").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    for (const note of data.notes) {
+    for (const note of notes) {
       doc.text(`•  ${safe(note)}`, LAND_MARGIN, at, { width, lineGap: 1.4 });
       at = doc.y + 3;
     }
@@ -245,6 +251,40 @@ function cover(doc: Doc, data: RegisterReport) {
   doc.text("PREPARED BY", LAND_MARGIN, signAt, { characterSpacing: 1.2 });
   signOffBlock(doc, data.preparedBy, LAND_MARGIN, signAt + 46, 420);
   doc.fillColor(COLOURS.ink);
+}
+
+/**
+ * The notes, as they should read on this report rather than on the upload.
+ *
+ * The notes are written when the spreadsheet is read and kept with the report,
+ * which is right: a note about what the file held is part of the record. But
+ * one of them is written for somebody standing at the upload screen with a
+ * file holding several customers, and it names them all and ends "Choose which
+ * this report is about."
+ *
+ * Once the choice has been made that note is both wrong and worse than wrong:
+ * it tells the reader of a finished report to go and choose something, and it
+ * prints three other clients' names on a report going to the fourth. So where
+ * a pairing has been chosen it is replaced by what it should say — that the
+ * file held more and only this one is listed here.
+ */
+function notesFor(data: RegisterReport, named: boolean): string[] {
+  const isPicker = (note: string) => /Choose which this report is about/.test(note);
+  if (!named) return data.notes;
+
+  const rest = data.notes.filter((note) => !isPicker(note));
+  if (rest.length === data.notes.length) return rest;
+
+  const held = data.pairingsInFile ?? 0;
+  if (held < 2) return rest;
+  const others = held - 1;
+  return [
+    ...rest,
+    `The spreadsheet this was read from held ${held} customer and site pairings. This report lists ` +
+      `only ${data.customer} · ${data.site}; the other ${
+        others === 1 ? "pairing is" : `${others} pairings are`
+      } not included, and nothing belonging to them has been relabelled.`,
+  ];
 }
 
 /**

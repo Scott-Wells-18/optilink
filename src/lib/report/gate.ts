@@ -1,14 +1,7 @@
 import PDFDocument from "pdfkit";
 import { COMPANY } from "@/lib/company";
 import { COLOURS, SEVERITY, safe, shortDate, timeOfDay } from "@/lib/report/theme";
-import {
-  mastheadLines,
-  sectionBar,
-  stampWideFeet,
-  tableHead,
-  type Doc,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import { guarded, mastheadLines, sectionBar, stampWideFeet, tableHead, type Doc, type PageMeta } from "@/lib/report/furniture";
 import {
   ACCESSORY_LABELS,
   OUTCOME_LABELS,
@@ -98,11 +91,13 @@ export type GateReport = PageMeta & {
 /* --- the document ---------------------------------------------------------- */
 
 export async function buildGateReport(data: GateReport): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: [PAGE.width, PAGE.height],
-    margin: MARGIN,
-    bufferPages: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [PAGE.width, PAGE.height],
+      margin: MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {

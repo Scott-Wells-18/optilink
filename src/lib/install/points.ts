@@ -27,8 +27,16 @@ export type Point = {
   readings: Partial<Record<Terminals, InstallRow>>;
   /** Which pairs are missing. Empty on a complete point. */
   missing: Terminals[];
-  /** Extra readings at a pair the set already had, kept and shown. */
-  repeats: InstallRow[];
+  /**
+   * True where this set was opened by a pair the one before it already had.
+   *
+   * Which is to say: the reading that started this point was a repeat of a
+   * reading just taken. Two incomplete sets either side of that boundary are
+   * very often one point tested twice, and the operator can join them by
+   * excluding whichever reading was the accident. It is not assumed — the
+   * readings are left where the instrument put them — but it is said.
+   */
+  openedOnRepeat: boolean;
 };
 
 export type Grouping = {
@@ -52,15 +60,15 @@ export function groupPoints(
   const stray = voltage.filter((row) => row.terminals === null);
   const placed = voltage.filter((row) => row.terminals !== null);
 
-  const sets: { readings: Partial<Record<Terminals, InstallRow>>; repeats: InstallRow[] }[] = [];
-  let current: { readings: Partial<Record<Terminals, InstallRow>>; repeats: InstallRow[] } | null =
-    null;
+  type Set = { readings: Partial<Record<Terminals, InstallRow>>; openedOnRepeat: boolean };
+  const sets: Set[] = [];
+  let current: Set | null = null;
 
   for (const row of placed) {
     const pair = row.terminals as Terminals;
 
     if (!current) {
-      current = { readings: { [pair]: row }, repeats: [] };
+      current = { readings: { [pair]: row }, openedOnRepeat: false };
       continue;
     }
 
@@ -73,9 +81,15 @@ export function groupPoints(
        * that looked wrong, or the operator moving on having missed one — so
        * the set is closed as it stands and the reading opens the next. Either
        * way both readings survive and the report shows what happened.
+       *
+       * Closing rather than holding the repeat is the safe way round. Holding
+       * it would let two points that really were tested separately be merged
+       * into one, and a report that quietly loses a point is worse than one
+       * that shows two incomplete sets and says they may be the same point.
        */
+      const wasShort = !TERMINALS.every((terminal) => current!.readings[terminal]);
       sets.push(current);
-      current = { readings: { [pair]: row }, repeats: [] };
+      current = { readings: { [pair]: row }, openedOnRepeat: wasShort };
       continue;
     }
 
@@ -97,7 +111,7 @@ export function groupPoints(
       name: names[key] ?? "",
       readings: set.readings,
       missing: TERMINALS.filter((terminal) => !set.readings[terminal]),
-      repeats: set.repeats,
+      openedOnRepeat: set.openedOnRepeat,
     };
   });
 
@@ -171,6 +185,34 @@ export function anomaliesOf(
       });
     }
   }
+
+  /*
+   * Two short sets either side of a repeated reading.
+   *
+   * This is the shape a re-take leaves behind: L-PE, L-N, L-N again, N-PE
+   * reads as two incomplete points when it is one point whose L-N was taken
+   * twice. Saying which record to exclude is the whole of the fix, so it is
+   * named here rather than left to be worked out from two separate
+   * "incomplete set" notes.
+   */
+  grouping.points.forEach((point, at) => {
+    const before = grouping.points[at - 1];
+    if (!point.openedOnRepeat || !before || before.missing.length === 0) return;
+    const opener = TERMINALS.map((terminal) => point.readings[terminal]).find(Boolean);
+    out.push({
+      title: `${before.ref} and ${point.ref} may be one point tested twice`,
+      detail:
+        `${point.ref} opens with a reading at a pair ${before.ref} already had, which is what a ` +
+        "re-taken reading looks like. If one of the two was a repeat, exclude it and the readings " +
+        `either side of it join into one complete point. If ${before.ref} and ${point.ref} really ` +
+        "were different points, each is short a reading and should be re-tested.",
+      rows: [
+        ...Object.values(before.readings).map((row) => row.name),
+        ...(opener ? [opener.name] : []),
+      ],
+      surplus: false,
+    });
+  });
 
   const byPair = new Map<Terminals, InstallRow[]>();
   for (const row of rows) {

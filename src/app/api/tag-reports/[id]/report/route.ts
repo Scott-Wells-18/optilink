@@ -71,6 +71,9 @@ export async function GET(
       customer: report.customer ? safe(report.customer) : null,
       site: report.siteLabel ? safe(report.siteLabel) : null,
       items,
+      // The whole file's pairings, so the report can say that it lists one of
+      // them rather than telling its reader to go and choose.
+      pairingsInFile: new Set(all.map((item) => `${item.customer}\u0000${item.site}`)).size,
       sourceName: report.source?.originalName ? safe(report.source.originalName) : null,
       notes: report.notes.map(safe),
     });

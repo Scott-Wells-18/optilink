@@ -23,18 +23,53 @@ export type PageMeta = {
   preparedBy: Signatory[];
 };
 
+/**
+ * Make every word that reaches a page fit to be drawn on one.
+ *
+ * `safe` folds the characters Helvetica cannot carry down to ones it can, and
+ * it was being called at the call sites — which is to say, at a hundred and
+ * sixty of them, correctly at most. The one it was missed at printed an
+ * insulation resistance of "> 200 MΩ" as "> 200 M:•", which is the headline
+ * value of the report it was on.
+ *
+ * So it is done here instead, once, where every report's text goes through.
+ * A call site may still pass `safe(...)` and nothing changes: folding text
+ * that is already folded leaves it as it is.
+ */
+function guard(doc: Doc): Doc {
+  const draw = doc.text.bind(doc);
+  doc.text = ((text: unknown, ...rest: unknown[]) =>
+    draw(
+      typeof text === "string" ? safe(text) : (text as string),
+      ...(rest as []),
+    )) as typeof doc.text;
+  return doc;
+}
+
 export function newDocument(): { doc: Doc; done: Promise<Buffer> } {
-  const doc = new PDFDocument({
-    size: [PAGE.width, PAGE.height],
-    margin: MARGIN,
-    bufferPages: true,
-  });
+  const doc = guard(
+    new PDFDocument({
+      size: [PAGE.width, PAGE.height],
+      margin: MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
   return { doc, done };
+}
+
+/**
+ * The same guard, for a report that makes its own document.
+ *
+ * The landscape reports and the gate report set their own page size, so they
+ * do not come through `newDocument`. They still draw the same text.
+ */
+export function guarded(doc: Doc): Doc {
+  return guard(doc);
 }
 
 /* --- bars and tables ------------------------------------------------------ */

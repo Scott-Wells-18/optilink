@@ -185,33 +185,68 @@ const CHIP: Record<Verdict, { fill: string; ink: string }> = {
   REVIEW: SEVERITY.concern,
 };
 
+/**
+ * The status cell, chipped.
+ *
+ * The word the export used, not the verdict this report drew from it: a status
+ * of "Tagged Out" prints as "Tagged Out".
+ *
+ * Which means it has to print whole. Shrinking to fit one line is tried first
+ * and handles nearly everything, but a two-word status in a narrow column does
+ * not fit on one line at a size anybody can read, and clipping it is how
+ * "RETEST PENDING" came out as "RETEST" — a status that then reads as a
+ * different status. So where one line will not do, the chip takes two and
+ * grows; the row was measured against the same text, so there is room.
+ */
 function statusChip(doc: Doc, x: number, y: number, width: number, item: Item) {
   const tone = CHIP[item.verdict];
-  const height = 13;
-  // The word the export used, not the verdict this report drew from it: a
-  // status of "Tagged Out" prints as "Tagged Out".
   const text = safe(item.status || "Not stated").toUpperCase();
+  const options = { characterSpacing: 0.3 } as const;
 
-  doc.roundedRect(x, y, width, height, 3).fill(tone.fill);
-  doc.fillColor(tone.ink).font("Helvetica-Bold");
-
-  // Shrink to fit rather than wrap. A chip is one line high, and a status that
-  // wrapped inside one came out with its second word cut off halfway — which
-  // on a failed item is the half that says it is out of service.
+  doc.font("Helvetica-Bold");
   let size = 7;
   doc.fontSize(size);
-  while (size > 5 && doc.widthOfString(text, { characterSpacing: 0.3 }) > width - 4) {
+  while (size > 6 && doc.widthOfString(text, options) > width - 4) {
     size -= 0.5;
     doc.fontSize(size);
   }
 
-  doc.text(text, x, y + (height - size) / 2 - 0.6, {
-    width,
-    align: "center",
-    lineBreak: false,
-    ellipsis: true,
-    characterSpacing: 0.3,
-  });
+  // One line if it fits at a legible size; otherwise split at the last space
+  // that fits and let the chip be two lines tall.
+  const lines: string[] = [];
+  if (doc.widthOfString(text, options) <= width - 4) {
+    lines.push(text);
+  } else {
+    const words = text.split(/\s+/);
+    let line = "";
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && doc.widthOfString(next, options) > width - 4) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    // A single word longer than the column is the one case left: it shrinks
+    // the rest of the way rather than losing characters.
+    while (size > 4.5 && lines.some((one) => doc.widthOfString(one, options) > width - 4)) {
+      size -= 0.5;
+      doc.fontSize(size);
+    }
+  }
+
+  const line = size + 2.4;
+  const height = Math.max(13, lines.length * line + 3.4);
+  doc.roundedRect(x, y, width, height, 3).fill(tone.fill);
+  doc.fillColor(tone.ink).font("Helvetica-Bold").fontSize(size);
+
+  let at = y + (height - lines.length * line) / 2 + 0.4;
+  for (const one of lines) {
+    doc.text(one, x, at, { width, align: "center", lineBreak: false, ...options });
+    at += line;
+  }
   doc.fillColor(COLOURS.ink);
 }
 

@@ -19,12 +19,7 @@ import {
 } from "@/lib/amps/summary";
 import { readInstrument, type Instrument } from "@/lib/report/instrument";
 import { expiry } from "@/lib/report/calibration";
-import {
-  mastheadLines,
-  signOffBlock,
-  stampWideFeet,
-  type PageMeta,
-} from "@/lib/report/furniture";
+import { guarded, mastheadLines, signOffBlock, stampWideFeet, type PageMeta } from "@/lib/report/furniture";
 import { stampCertificate } from "@/lib/report/certificate";
 import { equipmentPageCount, equipmentPages } from "@/lib/report/equipment";
 import { ampScaleTop, drawAmpChart } from "@/lib/report/ampChart";
@@ -265,11 +260,13 @@ const HOW_TO_READ: [string, string][] = [
 const FIRST_RECORDING = 4;
 
 export async function buildAmpReport(data: AmpReport): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: [PAGE.width, PAGE.height],
-    margin: MARGIN,
-    bufferPages: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [PAGE.width, PAGE.height],
+      margin: MARGIN,
+      bufferPages: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => {

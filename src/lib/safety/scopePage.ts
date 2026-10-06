@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { guarded } from "@/lib/report/furniture";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { COLOURS } from "@/lib/report/theme";
@@ -50,11 +51,13 @@ export async function scopePage(
   const margin = Math.round(size.width * 0.085);
   // No margins of pdfkit's own: everything here is placed by hand, and a
   // bottom margin would turn the footer into a second, empty page.
-  const doc = new PDFDocument({
-    size: [size.width, size.height],
-    margins: { top: 0, left: 0, right: 0, bottom: 0 },
-    autoFirstPage: true,
-  });
+  const doc = guarded(
+    new PDFDocument({
+      size: [size.width, size.height],
+      margins: { top: 0, left: 0, right: 0, bottom: 0 },
+      autoFirstPage: true,
+    }),
+  );
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<void>((resolve) => doc.on("end", () => resolve()));
