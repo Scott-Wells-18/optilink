@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import type { InfoSpec } from "@/lib/useClientsTree";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /** Shows what was written against a row — nothing else in the tree reveals it. */
 export function InfoDialog({ spec, onClose }: { spec: InfoSpec; onClose: () => void }) {
@@ -17,7 +18,7 @@ export function InfoDialog({ spec, onClose }: { spec: InfoSpec; onClose: () => v
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={spec.title}>
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
       <div className="dialog">
         <h2 className="dialog-title">{spec.title}</h2>
 

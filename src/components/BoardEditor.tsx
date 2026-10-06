@@ -34,6 +34,7 @@ import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Draws a switchboard the way it actually looks: two columns of positions, one
@@ -269,7 +270,7 @@ export function BoardEditor({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={title}>
-      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board">
         <header className="board-head">
@@ -815,7 +816,7 @@ function SubBoardDialog({
 
   return (
     <div className="dialog-layer is-over" role="dialog" aria-modal aria-label="Sub-board">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-sub">
         <header className="board-sub-head">

@@ -20,6 +20,7 @@ import { Whs002Form, type BoardOption } from "@/components/Whs002Form";
 import { whsGaps, type Whs002 } from "@/lib/safety/whs002";
 import { clearSession, usePersisted } from "@/lib/session";
 import { PreparedByPicks } from "@/components/PreparedByPicks";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Getting a job's safe work paperwork out.
@@ -345,7 +346,7 @@ export function SafetyDocDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Safe work paperwork">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

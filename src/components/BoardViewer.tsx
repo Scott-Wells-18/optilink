@@ -36,6 +36,7 @@ import {
   type IssueType,
   type PhotoKind,
 } from "@/lib/issues";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * The board as drawn, read only, for reporting what an inspection turned up.
@@ -179,7 +180,7 @@ export function BoardViewer({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={name}>
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

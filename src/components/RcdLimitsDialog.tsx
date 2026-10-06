@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * The limits an RCD is judged against, opened from the RCD section.
@@ -101,7 +102,7 @@ export function RcdLimitsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="RCD limits">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

@@ -23,6 +23,7 @@ import { MainSwitchRow } from "@/components/MainSwitchRow";
 import { SupplyFields } from "@/components/SupplyFields";
 import { EMPTY_SUPPLY, type Supply } from "@/lib/supply";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Drawing a switchboard that is not a grid.
@@ -321,7 +322,7 @@ export function FreeBoardEditor({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Custom switchboard">
-      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-free">
         <header className="board-head">

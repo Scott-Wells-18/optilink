@@ -6,6 +6,7 @@ import { uploadFile } from "@/components/ImageUpload";
 import { PreparedByPicks } from "@/components/PreparedByPicks";
 import { groupNames, numberRecordings } from "@/lib/amps/grouping";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Building an amp reading report out of several short recordings.
@@ -308,7 +309,7 @@ export function AmpsDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Amp readings">
-      <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

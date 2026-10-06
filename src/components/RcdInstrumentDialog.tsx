@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Which instrument a visit's boards were tested with.
@@ -66,7 +67,7 @@ export function RcdInstrumentDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Instrument used">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

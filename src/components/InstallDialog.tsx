@@ -18,6 +18,7 @@ import {
   type Phases,
   type Point,
 } from "@/lib/install/points";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Reading an installation test over, before it is issued.
@@ -116,9 +117,18 @@ export function InstallDialog({
   if (!report) {
     return (
       <div className="dialog-layer" role="dialog" aria-modal aria-label="Installation test">
-        <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+        <DialogScrim />
         <div className="dialog is-board is-gate">
           <p className="issue-empty">{error ?? "Reading the export…"}</p>
+          {/* A file that could not be read leaves this as the whole dialog,
+              and the backdrop no longer closes it, so it says how to leave. */}
+          {error ? (
+            <div className="dialog-actions">
+              <button type="button" className="dialog-cancel" onClick={onClose}>
+                Close
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -146,7 +156,7 @@ export function InstallDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Installation test">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-board is-gate">
         <header className="board-head">

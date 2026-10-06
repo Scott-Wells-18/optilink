@@ -18,6 +18,7 @@ import { uploadImage } from "@/components/ImageUpload";
 import { RichTextBox } from "@/components/RichTextBox";
 import { clean, fromPlain, toPlain, type RichText } from "@/lib/richText";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * One piece of work, written up on the spot.
@@ -359,7 +360,7 @@ export function JobItemDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Add work">
-      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">

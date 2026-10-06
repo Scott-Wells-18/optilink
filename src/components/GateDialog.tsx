@@ -41,6 +41,7 @@ import {
   type GateType,
 } from "@/lib/gates/models";
 import { PHOTO_BUDGET } from "@/lib/jobs";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Servicing one gate, written up as it happens.
@@ -324,9 +325,19 @@ export function GateDialog({
   if (!report) {
     return (
       <div className="dialog-layer" role="dialog" aria-modal aria-label="Gate service">
-        <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+        <DialogScrim />
         <div className="dialog is-board is-gate">
           <p className="issue-empty">{error ?? "Opening…"}</p>
+          {/* While it is opening there is nothing to go back to, but if it
+              failed to open this is the whole dialog — and since the backdrop
+              is no longer a way out, it needs one of its own. */}
+          {error ? (
+            <div className="dialog-actions">
+              <button type="button" className="dialog-cancel" onClick={onClose}>
+                Close
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -361,7 +372,7 @@ export function GateDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Gate service">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-board is-gate">
         <header className="board-head">

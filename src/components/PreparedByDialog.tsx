@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TITLE_LABELS, canPrepareReports, canSignSafety, fullName, type Title } from "@/lib/profiles";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Choosing who a document is prepared by, or who signed it.
@@ -90,7 +91,7 @@ export function PreparedByDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Prepared by">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

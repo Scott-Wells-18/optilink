@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /** Switchboard or appliance — the first question when adding equipment. */
 export function ChooseKindDialog({
@@ -22,7 +23,7 @@ export function ChooseKindDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Add equipment">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
       <div className="dialog is-chooser">
         <h2 className="dialog-title">Add equipment at {siteName}</h2>
 

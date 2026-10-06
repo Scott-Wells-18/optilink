@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DialogSpec } from "@/lib/useClientsTree";
 import { clearSession, usePersisted } from "@/lib/session";
 import type { ContactInput } from "@/lib/contacts";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /** The pop-up behind every "add new" tile. */
 export function AddDialog({
@@ -78,7 +79,7 @@ export function AddDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label={spec.title}>
-      <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
       <form className="dialog is-tall" onSubmit={handleSubmit}>
         <h2 className="dialog-title">{spec.title}</h2>
 

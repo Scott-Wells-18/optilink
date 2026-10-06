@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { uploadFile, uploadImage } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Adding a piece of our own test gear.
@@ -204,7 +205,7 @@ export function EquipmentDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Equipment">
-      <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

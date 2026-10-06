@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { uploadFile } from "@/components/ImageUpload";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * The reference spreadsheet behind our own equipment register.
@@ -75,7 +76,7 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Equipment tagging settings">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">

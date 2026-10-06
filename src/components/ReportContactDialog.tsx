@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { personName } from "@/lib/contacts";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Whose name goes on a report.
@@ -65,7 +66,7 @@ export function ReportContactDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Report contact">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { uploadFile } from "@/components/ImageUpload";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Starting a client's test & tag report.
@@ -57,7 +58,7 @@ export function TagUploadDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="New test and tag report">
-      <button className="dialog-scrim" onClick={onCancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">

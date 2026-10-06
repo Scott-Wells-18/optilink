@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { uploadImage } from "@/components/ImageUpload";
 import { TITLE_LABELS, type Title } from "@/lib/profiles";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Somebody who puts their name to the company's documents.
@@ -105,7 +106,7 @@ export function ProfileDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Profile">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

@@ -26,6 +26,7 @@ import type { RcdRow } from "@/lib/rcd/parse";
 import { uploadFile } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
 import { personName } from "@/lib/contacts";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Turning an instrument's export into a report.
@@ -282,7 +283,7 @@ export function RcdWizard({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="RCD test">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

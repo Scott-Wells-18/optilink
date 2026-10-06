@@ -9,6 +9,7 @@ import { EMPTY_SUPPLY, normaliseSupply, type Supply } from "@/lib/supply";
 import { uploadFile } from "@/components/ImageUpload";
 import { PreparedByPicks } from "@/components/PreparedByPicks";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Loading an analyser's recording onto an analysis.
@@ -209,7 +210,7 @@ export function PowerDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Power analysis">
-      <button className="dialog-scrim" onClick={close} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="board is-viewer">
         <header className="board-head">

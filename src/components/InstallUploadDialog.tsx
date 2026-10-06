@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { uploadFile } from "@/components/ImageUpload";
 import { PHASE_LABELS, type Phases } from "@/lib/install/points";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Starting an installation test from the tester's export.
@@ -63,7 +64,7 @@ export function InstallUploadDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="New installation test">
-      <button className="dialog-scrim" onClick={onCancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">

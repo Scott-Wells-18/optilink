@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Which customer and site out of a spreadsheet a report is about.
@@ -81,7 +82,7 @@ export function TagGroupDialog({
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Whose equipment">
-      <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">

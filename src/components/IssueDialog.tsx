@@ -20,6 +20,7 @@ import {
 import { bandFor, priorityFor, priorityLabel, temperatureRise } from "@/lib/priority";
 import { uploadImage } from "@/components/ImageUpload";
 import { clearSession, usePersisted } from "@/lib/session";
+import { DialogScrim } from "@/components/DialogScrim";
 
 /**
  * Reporting what was found at one position: pick what it is, then photograph
@@ -280,7 +281,7 @@ export function IssueDialog({
 
   return (
     <div className="dialog-layer is-stacked" role="dialog" aria-modal aria-label="Report issue">
-      <button className="dialog-scrim" onClick={cancel} aria-label="Close" tabIndex={-1} />
+      <DialogScrim />
 
       <div className="dialog is-issue">
         <div className="issue-head">
