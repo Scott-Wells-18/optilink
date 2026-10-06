@@ -17,6 +17,7 @@ import {
   drawTable,
 } from "@/lib/report/registerTable";
 import { VERDICT_LABELS, byVerdict, type Item, type Verdict } from "@/lib/tagging/register";
+import { datedToReport, dayOf, monthAfter } from "@/lib/tagging/dates";
 
 /**
  * The test-and-tag register, as a report.
@@ -64,26 +65,38 @@ export async function buildRegisterReport(data: RegisterReport): Promise<Buffer>
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
-  cover(doc, data);
-  if (data.kind === "CLIENT") clientSections(doc, data);
-  else internalSections(doc, data);
+  /*
+   * Our own register is dated to the day it is made: the gear is tested and
+   * the report is run on the same visit, so the report date is the test date
+   * and the next test falls a month later. A client's equipment keeps the
+   * dates recorded against it — changing those would be changing somebody
+   * else's test record.
+   */
+  const report: RegisterReport =
+    data.kind === "INTERNAL"
+      ? { ...data, items: datedToReport(data.items, data.reportDate) }
+      : data;
+
+  cover(doc, report);
+  if (report.kind === "CLIENT") clientSections(doc, report);
+  else internalSections(doc, report);
 
   // The foot of every page says whose equipment is on it. Where the report
   // covers several customers and none has been chosen, it says so rather than
   // naming the site the report happens to be filed under — a foot reading one
   // contractor's name under another contractor's welder is the thing this
   // report must never do.
-  const spread = pairings(data.items).length > 1 && !(data.customer && data.site);
+  const spread = pairings(report.items).length > 1 && !(report.customer && report.site);
   stampWideFeet(
     doc,
     spread
       ? {
-          ...data,
+          ...report,
           clientName: "Several customers",
           siteName: "named above each group",
           siteLocation: null,
         }
-      : data,
+      : report,
     { width: LAND.width, height: LAND.height, margin: LAND_MARGIN },
   );
   doc.end();
@@ -118,19 +131,32 @@ function cover(doc: Doc, data: RegisterReport) {
   /*
    * The report date, large and alone.
    *
-   * It is the day this list was printed and nothing else. Every test date and
-   * due date in the tables below belongs to the item it is on, and this date
-   * never stands in for one of them — which is why it is up here on its own
-   * rather than at the top of a column of dates.
+   * The box is cut to the date rather than the date squeezed into the box: a
+   * long one ("Tuesday 6 October 2026") wrapped to a second line and dropped
+   * out the bottom of a fixed panel. It is measured at the size it is drawn,
+   * the type steps down if it is still too wide, and the panel is built round
+   * what comes out.
    */
   y = 196;
-  const dateWidth = 230;
+  const pad = 16;
+  const when = longDate(data.reportDate);
+
+  let dateSize = 19;
+  doc.font("Helvetica-Bold").fontSize(dateSize);
+  const dateMax = 300;
+  while (dateSize > 13 && doc.widthOfString(when) > dateMax - pad * 2) {
+    dateSize -= 0.5;
+    doc.fontSize(dateSize);
+  }
+  const dateWidth = Math.min(dateMax, Math.max(200, doc.widthOfString(when) + pad * 2));
   const dateX = LAND_MARGIN + LAND_CONTENT - dateWidth;
-  doc.roundedRect(dateX, y - 6, dateWidth, 62, 6).fill(COLOURS.band);
+  const dateHeight = 30 + dateSize + 10;
+
+  doc.roundedRect(dateX, y - 6, dateWidth, dateHeight, 6).fill(COLOURS.band);
   doc.fillColor(COLOURS.bar).font("Helvetica-Bold").fontSize(8);
-  doc.text("REPORT DATE", dateX + 16, y + 6, { characterSpacing: 1.2 });
-  doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(19);
-  doc.text(longDate(data.reportDate), dateX + 16, y + 20, { width: dateWidth - 32 });
+  doc.text("REPORT DATE", dateX + pad, y + 6, { characterSpacing: 1.2, lineBreak: false });
+  doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(dateSize);
+  doc.text(when, dateX + pad, y + 22, { width: dateWidth - pad * 2, lineBreak: false });
 
   /*
    * Whose equipment this is.
@@ -169,7 +195,6 @@ function cover(doc: Doc, data: RegisterReport) {
       .filter(Boolean)
       .join("  ·  "),
   ]);
-  if (data.sourceName) facts.push(["Read from", data.sourceName]);
 
   let at = y;
   const labelWidth = 118;
@@ -205,10 +230,10 @@ function cover(doc: Doc, data: RegisterReport) {
         ? "This report lists the equipment tested and tagged at the site named above, with the result recorded " +
             "against each item at the time it was tested. The test date and the next test due date shown against " +
             "an item are that item's own; the report date above is the day this list was issued."
-        : "This register lists " +
-            `${COMPANY.name}'s own equipment and the result recorded against each item at the time it was tested. ` +
-            "The test date and the next test due date shown against an item are that item's own; the report date " +
-            "above is the day this list was issued.",
+        : `This register lists ${COMPANY.name}'s own equipment, tested on ${dayOf(
+            data.reportDate,
+          )} and next due on ${dayOf(monthAfter(data.reportDate))}. The result shown against each ` +
+            "item is the result recorded for it.",
     ),
     LAND_MARGIN,
     at,
@@ -410,9 +435,12 @@ function tail(doc: Doc, y: number, data: RegisterReport) {
   doc.font("Helvetica-Oblique").fontSize(8).fillColor(COLOURS.inkSoft);
   doc.text(
     safe(
-      "Each result above is the result recorded against that item when it was tested, on the date shown " +
-        "against it. This report states what the register held; it does not re-test the equipment, and the " +
-        `report date (${shortDate(data.reportDate)}) does not extend or alter any test due date.`,
+      data.kind === "INTERNAL"
+        ? `Every item above was tested on ${dayOf(data.reportDate)} and is due for retest on ` +
+            `${dayOf(monthAfter(data.reportDate))}. The result shown against an item is the result recorded for it.`
+        : "Each result above is the result recorded against that item when it was tested, on the date shown " +
+            "against it. This report states what the register held; it does not re-test the equipment, and the " +
+            `report date (${shortDate(data.reportDate)}) does not extend or alter any test due date.`,
     ),
     LAND_MARGIN,
     at,

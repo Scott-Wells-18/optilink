@@ -120,7 +120,7 @@ export const SECTIONS: TreeNode[] = [
   },
   {
     id: "ba",
-    label: "Works Completed",
+    label: "Works",
     detail: "Completed works & rectifications",
     children: [],
   },

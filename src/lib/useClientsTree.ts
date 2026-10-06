@@ -921,6 +921,36 @@ export function useClientsTree(enabled: boolean) {
   );
 
   /**
+   * A recommendation, carried across into the record of having done it.
+   *
+   * The work was proposed, quoted, accepted and carried out; the photographs
+   * of how it stood are the before photographs of what followed. Nothing is
+   * called finished — every piece of work comes across saying what it still
+   * needs.
+   */
+  const convertJob = useCallback(
+    async (id: string, title: string) => {
+      if (
+        !window.confirm(
+          `Copy "${title}" into a new works completed report? The photos come across as before ` +
+            "photos and each job keeps its name, number and description. Nothing is marked finished, " +
+            "and the recommendation itself is untouched.",
+        )
+      ) {
+        return;
+      }
+      const response = await fetch(`/api/jobs/${id}/duplicate`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error ?? "That report could not be converted.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /**
    * Starting a report needs no form either — today's date names it.
    *
    * What it is for is chosen here rather than inside, because it is what the
@@ -1045,6 +1075,20 @@ export function useClientsTree(enabled: boolean) {
                       onActivate: () =>
                         setJobItem({ jobId: job.id, jobTitle: title, kind: job.kind }),
                     },
+                    // Only on a recommendation: there is nothing to convert a
+                    // works completed report into.
+                    ...(job.kind === "RECTIFICATION"
+                      ? [
+                          {
+                            id: `convert:${job.id}`,
+                            label: "Make the works completed report",
+                            detail:
+                              "Copies every job across, photos and all, as work still to be written up",
+                            variant: "info" as const,
+                            onActivate: () => void convertJob(job.id, title),
+                          },
+                        ]
+                      : []),
                     preparedByRow(
                       `job:${job.id}`,
                       `/api/jobs/${job.id}`,
@@ -1086,7 +1130,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startJob, setJobDate, setJobItem, setContact, moveJobItem],
+    [clients, remove, startJob, setJobDate, setJobItem, setContact, moveJobItem, convertJob],
   );
 
   const setRcdDate = useCallback(
@@ -1755,15 +1799,24 @@ export function useClientsTree(enabled: boolean) {
           ]
             .filter(Boolean)
             .join("  ·  ") || "Nothing on it",
-        variant: "info",
+        // Not an "info" row: one of those runs its action instead of opening,
+        // which left everything underneath it — who prepared it, whose
+        // equipment it is — with no way of being reached at all.
         editDate: {
           value: isoDate(report.date),
           onSave: (value) => void setTagDate(report.id, value),
         },
-        onActivate: () => window.open(`/api/tag-reports/${report.id}/report?preview=1`, "_blank"),
         onDownload: () => download(`/api/tag-reports/${report.id}/report`),
         onRemove: () => void removeTagReport(report.id, title),
         children: [
+          {
+            id: `tagpreview:${report.id}`,
+            label: "Preview",
+            detail: "Read it before it goes anywhere",
+            variant: "info",
+            onActivate: () =>
+              window.open(`/api/tag-reports/${report.id}/report?preview=1`, "_blank"),
+          },
           {
             id: `taggroup:${report.id}`,
             label:
