@@ -107,6 +107,7 @@ export async function GET(
       rows,
       points: grouping.points,
       stray: grouping.stray,
+      repeats: grouping.repeats,
       exclusions,
       anomalies: anomaliesOf(rows, grouping, report.phases),
       circuits,

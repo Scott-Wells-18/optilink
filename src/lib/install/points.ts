@@ -27,22 +27,28 @@ export type Point = {
   readings: Partial<Record<Terminals, InstallRow>>;
   /** Which pairs are missing. Empty on a complete point. */
   missing: Terminals[];
-  /**
-   * True where this set was opened by a pair the one before it already had.
-   *
-   * Which is to say: the reading that started this point was a repeat of a
-   * reading just taken. Two incomplete sets either side of that boundary are
-   * very often one point tested twice, and the operator can join them by
-   * excluding whichever reading was the accident. It is not assumed — the
-   * readings are left where the instrument put them — but it is said.
-   */
-  openedOnRepeat: boolean;
 };
 
 export type Grouping = {
   points: Point[];
   /** Readings that could not be placed at all — no terminal pair on them. */
   stray: InstallRow[];
+  /**
+   * Readings the instrument took twice, left out of the points.
+   *
+   * Kept here rather than dropped: they are listed on the report with what
+   * they read and what they repeat, and they are still in the file.
+   */
+  repeats: Repeat[];
+};
+
+/** A reading that repeated one already taken at the point being built. */
+export type Repeat = {
+  row: InstallRow;
+  /** The reading it repeats, which is the one the point keeps. */
+  of: InstallRow;
+  /** True where the two disagree, which is a re-take rather than a stutter. */
+  differs: boolean;
 };
 
 /**
@@ -60,8 +66,9 @@ export function groupPoints(
   const stray = voltage.filter((row) => row.terminals === null);
   const placed = voltage.filter((row) => row.terminals !== null);
 
-  type Set = { readings: Partial<Record<Terminals, InstallRow>>; openedOnRepeat: boolean };
+  type Set = { readings: Partial<Record<Terminals, InstallRow>> };
   const sets: Set[] = [];
+  const repeats: Repeat[] = [];
   let current: Set | null = null;
 
   /*
@@ -81,28 +88,52 @@ export function groupPoints(
     const pair = row.terminals as Terminals;
 
     if (!current) {
-      current = { readings: { [pair]: row }, openedOnRepeat: false };
+      current = { readings: { [pair]: row } };
       continue;
     }
 
-    if (current.readings[pair]) {
+    const held = current.readings[pair];
+    if (held) {
       /*
-       * The pair has come round again.
+       * The pair has come round again, and whether that is a new point or a
+       * repeat is answered by whether this one is finished.
        *
-       * On a complete set that is simply the next point starting. On an
-       * incomplete one it is ambiguous — it could be a repeat of a reading
-       * that looked wrong, or the operator moving on having missed one — so
-       * the set is closed as it stands and the reading opens the next. Either
-       * way both readings survive and the report shows what happened.
+       * Finished: all three taken, so this is the operator moving on, and the
+       * reading opens the next point.
        *
-       * Closing rather than holding the repeat is the safe way round. Holding
-       * it would let two points that really were tested separately be merged
-       * into one, and a report that quietly loses a point is worse than one
-       * that shows two incomplete sets and says they may be the same point.
+       * Not finished: the operator cannot have moved on, because the point
+       * they were on is still a reading short. Taking the same pair twice
+       * before the set is full is test pressed twice — so the second one is
+       * left out and the set carries on filling.
+       *
+       * This is the difference between reading S_12 L-PE, S_13 N-PE, S_14 N-PE
+       * again, S_15 L-N as two half points — which is what it used to do, and
+       * what it looks like on the page: a point missing its L-N beside a point
+       * missing its L-PE — and reading it as the one point it is, S_12, S_13
+       * and S_15, with S_14 set aside as the repeat.
        */
-      const wasShort = !TERMINALS.every((terminal) => current!.readings[terminal]);
+      if (!TERMINALS.every((terminal) => current!.readings[terminal])) {
+        /*
+         * Which of the two the point keeps.
+         *
+         * The same reading twice is test pressed twice: the probes have not
+         * moved, so either will do and the first is kept, which keeps the
+         * references stable.
+         *
+         * Two different readings at the same pair is a re-take: the operator
+         * looked at the first, did not believe it, and took it again. The
+         * second is the one they settled on, so it takes the place of the
+         * first — which is what turns a stray 12 V from a probe that had not
+         * seated into the 239 V that was there. Either way the one that is not
+         * kept is listed and said.
+         */
+        const differs = row.readings[pair] !== held.readings[pair];
+        if (differs) current.readings[pair] = row;
+        repeats.push({ row: differs ? held : row, of: differs ? row : held, differs });
+        continue;
+      }
       sets.push(current);
-      current = { readings: { [pair]: row }, openedOnRepeat: wasShort };
+      current = { readings: { [pair]: row } };
       continue;
     }
 
@@ -124,11 +155,10 @@ export function groupPoints(
       name: names[key] ?? "",
       readings: set.readings,
       missing: TERMINALS.filter((terminal) => !set.readings[terminal]),
-      openedOnRepeat: set.openedOnRepeat,
     };
   });
 
-  return { points, stray };
+  return { points, stray, repeats };
 }
 
 /** The S number a point's name is filed under. */
@@ -206,53 +236,39 @@ export function anomaliesOf(
   const out: Anomaly[] = [];
 
   /*
-   * The same reading, taken twice — found first, because it explains the rest.
+   * The readings that were taken twice, and have been left out.
    *
-   * Within a point each pair is taken once, so two records in a row set to the
-   * same pair are the operator pressing test again rather than a new reading.
-   * That is what splits one point into two short ones: the repeat closes the
-   * set before the third pair arrives, and both halves come out incomplete.
-   *
-   * Setting the second one aside is the whole of the fix, so it is named —
-   * S_1, S_2, S_3, S_4 with S_3 repeating S_2 becomes S_1, S_2, S_4, which is
-   * one complete point.
-   *
-   * It is worked out before anything else so that the notes it causes are not
-   * also printed. One duplicate used to raise five: two incomplete sets, a
-   * pair counted more often than the others, a vaguer version of this one, and
-   * this one. Five ways of saying the same thing is harder to act on than one.
+   * Stated rather than asked, because the grouping has already acted on it: a
+   * pair taken again before the point was finished cannot be a new point, so
+   * the second one is not in the results. What is left to decide is only the
+   * case where the two disagree — then it was a re-take, and which of the two
+   * readings is the right one is a question for the person who took them.
    */
-  const duplicates = new Set<string>();
-  const legs = rows.filter((row) => row.kind === "VOLTAGE_PHASE" && row.terminals);
-  for (let at = 1; at < legs.length; at += 1) {
-    const row = legs[at];
-    const before = legs[at - 1];
-    if (row.terminals !== before.terminals) continue;
+  const duplicates = new Set(grouping.repeats.map((repeat) => repeat.row.name));
+  for (const { row, of, differs } of grouping.repeats) {
     const pair = row.terminals as Terminals;
-    const same = row.readings[pair] === before.readings[pair];
-    duplicates.add(row.name);
-    duplicates.add(before.name);
     out.push({
-      title: `${row.name} repeats ${before.name}`,
-      detail:
-        `${before.name} and ${row.name} are both the ${pair} reading, one after the other` +
-        (same ? `, and both read ${row.readings[pair]} V` : "") +
-        ". Within one point each pair is taken once, so this reads as test pressed twice — and it " +
-        `is what has split the readings around it into two incomplete points. Set ${row.name} aside ` +
-        "as a duplicate and the readings either side of it close up into one complete point. If " +
-        "they really were two points, each is short the rest of its set.",
-      rows: [before.name, row.name],
+      title: differs
+        ? `${of.name} re-takes ${row.name}, and the two disagree`
+        : `${row.name} repeats ${of.name} and has been left out`,
+      detail: differs
+        ? `${row.name} read ${row.readings[pair]} V at ${pair} and ${of.name} read ` +
+          `${of.readings[pair]} V at the same pair, before the point was finished. Two different ` +
+          `readings at one pair is a reading taken again, so the point keeps ${of.name} as the one ` +
+          `that was settled on and ${row.name} is set aside. If it was the other way round, set ` +
+          `${of.name} aside instead.`
+        : `${of.name} and ${row.name} are both the ${pair} reading at the same point, and both read ` +
+          `${row.readings[pair]} V. A pair is taken once at a point, so ${row.name} is test pressed ` +
+          `twice and is not counted in the results. It is listed with the records set aside and is ` +
+          "still in the instrument's own export.",
+      rows: [of.name, row.name],
       surplus: true,
     });
   }
 
-  /** A point whose shape the duplicate above already accounts for. */
-  const explained = (point: Point) =>
-    Object.values(point.readings).some((row) => duplicates.has(row.name));
-
   /* --- the points -------------------------------------------------------- */
   for (const point of grouping.points) {
-    if (point.missing.length > 0 && point.missing.length < 3 && !explained(point)) {
+    if (point.missing.length > 0 && point.missing.length < 3) {
       out.push({
         title: `${point.ref} is an incomplete set`,
         detail:
@@ -263,33 +279,6 @@ export function anomaliesOf(
       });
     }
   }
-
-  /*
-   * Two short sets either side of a repeated reading.
-   *
-   * The same shape as the duplicate above but without a record to point at —
-   * the pair came round again across a set boundary rather than back to back.
-   * Where a duplicate was already named for these rows, this says nothing new.
-   */
-  grouping.points.forEach((point, at) => {
-    const before = grouping.points[at - 1];
-    if (!point.openedOnRepeat || !before || before.missing.length === 0) return;
-    if (explained(point) || explained(before)) return;
-    const opener = TERMINALS.map((terminal) => point.readings[terminal]).find(Boolean);
-    out.push({
-      title: `${before.ref} and ${point.ref} may be one point tested twice`,
-      detail:
-        `${point.ref} opens with a reading at a pair ${before.ref} already had, which is what a ` +
-        "re-taken reading looks like. If one of the two was a repeat, exclude it and the readings " +
-        `either side of it join into one complete point. If ${before.ref} and ${point.ref} really ` +
-        "were different points, each is short a reading and should be re-tested.",
-      rows: [
-        ...Object.values(before.readings).map((row) => row.name),
-        ...(opener ? [opener.name] : []),
-      ],
-      surplus: false,
-    });
-  });
 
   /* --- one pair recorded more often than the others ---------------------- */
   const byPair = new Map<Terminals, InstallRow[]>();

@@ -63,6 +63,7 @@ export async function GET(
     exclusions,
     points: grouping.points.map((point) => ({ ...point, key: pointKey(point) })),
     stray: grouping.stray,
+    repeats: grouping.repeats,
     anomalies: anomaliesOf(using, grouping, report.phases),
   });
 }

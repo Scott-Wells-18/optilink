@@ -20,6 +20,7 @@ import {
   reasonFor,
   type Anomaly,
   type Exclusion,
+  type Repeat,
   type Phases,
   type Point,
 } from "@/lib/install/points";
@@ -81,6 +82,8 @@ export type InstallReport = PageMeta & {
   rows: InstallRow[];
   points: Point[];
   stray: InstallRow[];
+  /** Readings the instrument took twice, left out of the points. */
+  repeats: Repeat[];
   exclusions: Exclusion[];
   anomalies: Anomaly[];
   circuits: Record<string, string>;
@@ -773,9 +776,25 @@ function points(doc: Doc, data: InstallReport) {
 /* --- what was set aside --------------------------------------------------------- */
 
 function setAside(doc: Doc, data: InstallReport) {
-  const out = data.allRows.filter((row) =>
+  /*
+   * Two ways a record is not in the results, listed together.
+   *
+   * One the operator set aside by hand, with a reason they typed. One the
+   * reading of the file set aside on its own: a pair taken twice before the
+   * point was finished is the same reading twice, and it cannot be a point of
+   * its own. Both are here with what they read and why, because a record left
+   * out of the results without the report saying so is a record deleted.
+   */
+  const byHand = data.allRows.filter((row) =>
     data.exclusions.some((exclusion) => exclusion.name === row.name),
   );
+  const repeated = data.repeats.map((repeat) => repeat.row.name);
+  const out = [
+    ...byHand,
+    ...data.allRows.filter(
+      (row) => repeated.includes(row.name) && !byHand.some((held) => held.name === row.name),
+    ),
+  ];
   const unplaced = data.rows.filter((row) => row.kind === "UNKNOWN");
 
   if (out.length === 0 && unplaced.length === 0 && data.anomalies.length === 0) return;
@@ -825,8 +844,14 @@ function setAside(doc: Doc, data: InstallReport) {
         lineGap: 1.2,
       });
       doc.fillColor(COLOURS.inkSoft);
+      const repeat = data.repeats.find((held) => held.row.name === row.name);
+      const why = data.exclusions.some((exclusion) => exclusion.name === row.name)
+        ? reasonFor(data.exclusions, row.name)
+        : repeat
+          ? `${repeat.differs ? "Re-take of" : "Repeat of"} ${repeat.of.name}, same pair at the same point`
+          : "—";
       doc.text(
-        safe(reasonFor(data.exclusions, row.name)),
+        safe(why),
         MARGIN + columns[0] + columns[1] + columns[2],
         y + 5,
         { width: columns[3] - 6, lineGap: 1.2 },
