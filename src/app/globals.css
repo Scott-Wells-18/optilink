@@ -5042,13 +5042,40 @@ body {
   margin: 0 0 8px;
 }
 
-.rich-box ul {
+/*
+ * The marker, put back.
+ *
+ * Tailwind's preflight sets `list-style: none` on every ul and ol, which is
+ * right for the navigation and the legends built out of lists but wrong here:
+ * this is somebody writing prose. Setting the indent without the marker left a
+ * dot point that moved the words across and drew nothing — the line looked
+ * blank-spaced rather than bulleted, while the report, which draws its own
+ * bullet, showed it correctly. So the box has to ask for the marker back.
+ *
+ * `ol` as well: nothing here writes one, but a browser's own list shortcut and
+ * a paste both can, and the box reads them, so it should show them.
+ */
+.rich-box ul,
+.rich-box ol {
   margin: 0 0 8px;
-  padding-left: 22px;
+  padding-left: 24px;
+}
+
+.rich-box ul {
+  list-style: disc outside;
+}
+
+.rich-box ol {
+  list-style: decimal outside;
 }
 
 .rich-box li {
   margin-bottom: 3px;
+}
+
+/* The marker takes the accent, so a dot point reads as one at a glance. */
+.rich-box li::marker {
+  color: var(--accent, #1b9bd8);
 }
 
 /* The prompt only shows while the box is genuinely empty. */

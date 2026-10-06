@@ -384,39 +384,54 @@ export function JobItemDialog({
         </div>
 
         <div className="dialog-fields">
-          {fields.map((field) => (
-            <label className="dialog-field" key={field.key}>
-              <span className="dialog-label">{field.label}</span>
-              {field.rich ? (
-                <RichTextBox
-                  value={written[field.key] ?? []}
-                  placeholder={field.placeholder}
-                  onChange={(next) =>
-                    setWritten((current) => ({ ...current, [field.key]: next }))
-                  }
-                />
-              ) : field.multiline ? (
-                <textarea
-                  rows={2}
-                  className="dialog-input dialog-textarea"
-                  placeholder={field.placeholder}
-                  value={values[field.key] ?? ""}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [field.key]: event.target.value }))
-                  }
-                />
-              ) : (
-                <input
-                  className="dialog-input"
-                  placeholder={field.placeholder}
-                  value={values[field.key] ?? ""}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [field.key]: event.target.value }))
-                  }
-                />
-              )}
-            </label>
-          ))}
+          {fields.map((field) => {
+            /*
+             * A written field is not wrapped in a label.
+             *
+             * A label forwards a click anywhere inside it to the one control it
+             * names, and the writing box is not one control — it is a box with
+             * a row of buttons over it. So clicking into the box to type fired
+             * the first of those buttons, which is Bold: one click turned bold
+             * on, the next turned it off, and nothing on screen said why the
+             * words were coming out heavy. The label stays for the plain
+             * fields, where it does what a label is for.
+             */
+            const Field = field.rich ? "div" : "label";
+            return (
+              <Field className="dialog-field" key={field.key}>
+                <span className="dialog-label">{field.label}</span>
+                {field.rich ? (
+                  <RichTextBox
+                    value={written[field.key] ?? []}
+                    placeholder={field.placeholder}
+                    label={field.label}
+                    onChange={(next) =>
+                      setWritten((current) => ({ ...current, [field.key]: next }))
+                    }
+                  />
+                ) : field.multiline ? (
+                  <textarea
+                    rows={2}
+                    className="dialog-input dialog-textarea"
+                    placeholder={field.placeholder}
+                    value={values[field.key] ?? ""}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                    }
+                  />
+                ) : (
+                  <input
+                    className="dialog-input"
+                    placeholder={field.placeholder}
+                    value={values[field.key] ?? ""}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                    }
+                  />
+                )}
+              </Field>
+            );
+          })}
         </div>
 
         <div className="issue-slots">

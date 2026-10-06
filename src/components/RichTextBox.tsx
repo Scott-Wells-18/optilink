@@ -17,10 +17,13 @@ export function RichTextBox({
   value,
   onChange,
   placeholder,
+  label,
 }: {
   value: RichText;
   onChange: (next: RichText) => void;
   placeholder?: string;
+  /** What this box is for, so the toolbar and the box say which one they are. */
+  label?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   // What the box last reported. Re-seeding it from a value it just produced
@@ -52,7 +55,7 @@ export function RichTextBox({
 
   return (
     <div className="rich">
-      <div className="rich-tools" role="toolbar" aria-label="Formatting">
+      <div className="rich-tools" role="toolbar" aria-label={label ? `Formatting — ${label}` : "Formatting"}>
         <button type="button" className="rich-tool" onMouseDown={hold} onClick={() => command("bold")}>
           <strong>B</strong>
         </button>
@@ -84,7 +87,7 @@ export function RichTextBox({
         suppressContentEditableWarning
         role="textbox"
         aria-multiline
-        aria-label="Scope of works"
+        aria-label={label ?? "Scope of works"}
         data-placeholder={placeholder ?? "What is being done on this job?"}
         onInput={report}
         onBlur={report}
