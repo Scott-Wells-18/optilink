@@ -155,6 +155,30 @@ type SafetyDocRecord = {
   sourceFileId: string | null;
 };
 
+const GATE_KIND_LABELS: Record<"BOOM" | "SLIDING", string> = {
+  BOOM: "Boom gate",
+  SLIDING: "Sliding gate",
+};
+
+const GATE_OUTCOME_LABELS: Record<string, string> = {
+  RETURNED: "Returned to service",
+  RETURNED_WITH_DEFECTS: "Returned with defects",
+  ISOLATED: "Isolated",
+};
+
+/** One gate, serviced once. */
+type GateReportRecord = {
+  id: string;
+  date: string;
+  kind: "BOOM" | "SLIDING";
+  gateLocation: string | null;
+  assetNumber: string | null;
+  model: string | null;
+  outcome: string | null;
+  completedAt: string | null;
+  technicianId: string | null;
+};
+
 /** One generated register, ours or a client's. */
 type TagReportRecord = {
   preparedBy?: string[];
@@ -184,6 +208,7 @@ type SiteRecord = {
   powerRuns: PowerRunRecord[];
   ampReports: AmpReportRecord[];
   tagReports: TagReportRecord[];
+  gateReports: GateReportRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -383,6 +408,7 @@ export function useClientsTree(enabled: boolean) {
   const [taggingSettings, setTaggingSettings] = usePersisted<boolean>("tagsettings", false);
   const [tagUpload, setTagUpload] = usePersisted<TagUploadSpec | null>("tagupload", null);
   const [tagGroup, setTagGroup] = usePersisted<string | null>("taggroup", null);
+  const [gate, setGate] = usePersisted<string | null>("gate", null);
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
@@ -1715,7 +1741,108 @@ export function useClientsTree(enabled: boolean) {
   ];
 
   const installNodes = useMemo<TreeNode[]>(() => soon("install"), []);
-  const gateNodes = useMemo<TreeNode[]>(() => soon("gates"), []);
+
+  /* --- gate servicing ---------------------------------------------------- */
+
+  const setGateDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/gates/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const startGate = useCallback(
+    async (siteId: string, kind: "BOOM" | "SLIDING") => {
+      const response = await fetch("/api/gates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteId, kind }),
+      });
+      if (!response.ok) {
+        setError("That report could not be started.");
+        return;
+      }
+      const made = await response.json();
+      await refresh();
+      setGate(made.id);
+    },
+    [refresh],
+  );
+
+  /**
+   * Gate servicing walks client → site → gate.
+   *
+   * A row is one unit serviced once, named by what it is and where it is,
+   * because a site with three barriers has three of these a year and the date
+   * alone will not tell them apart.
+   */
+  const gateNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `gates:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() ||
+              countLabel(site.gateReports.length, "service", "services"),
+            children: [
+              ...site.gateReports.map<TreeNode>((report) => {
+                const what =
+                  report.gateLocation?.trim() ||
+                  report.assetNumber?.trim() ||
+                  (report.kind === "SLIDING" ? "Sliding gate" : "Boom gate");
+                const title = `${what}  —  ${isoLabel(report.date)}`;
+                return {
+                  id: `gate:${report.id}`,
+                  label: title,
+                  detail:
+                    [
+                      report.model?.trim() || GATE_KIND_LABELS[report.kind],
+                      report.completedAt ? "Completed" : "In progress",
+                      report.outcome ? GATE_OUTCOME_LABELS[report.outcome] ?? null : null,
+                    ]
+                      .filter(Boolean)
+                      .join("  ·  "),
+                  variant: "info",
+                  editDate: {
+                    value: isoDate(report.date),
+                    onSave: (value) => void setGateDate(report.id, value),
+                  },
+                  onActivate: () => setGate(report.id),
+                  onDownload: () => download(`/api/gates/${report.id}/report`),
+                  onRemove: () => void remove(`/api/gates/${report.id}`, title),
+                };
+              }),
+              ...(["BOOM", "SLIDING"] as const).map<TreeNode>((kind) => ({
+                id: `add:gate:${kind.toLowerCase()}:${site.id}`,
+                label: "Add new",
+                detail: GATE_KIND_LABELS[kind],
+                variant: "add" as const,
+                onActivate: () => void startGate(site.id, kind),
+              })),
+            ],
+          }));
+
+          return {
+            id: `gates:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, remove, startGate, setGate, setGateDate],
+  );
 
   /* --- test and tag ----------------------------------------------------- */
 
@@ -1986,6 +2113,11 @@ export function useClientsTree(enabled: boolean) {
     installNodes,
     testTagNodes,
     gateNodes,
+    gate,
+    closeGate: () => {
+      setGate(null);
+      void refresh();
+    },
     profileNodes,
     preparedBy,
     closePreparedBy: () => setPreparedBy(null),

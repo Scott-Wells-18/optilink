@@ -28,6 +28,7 @@ import { EquipmentDialog } from "@/components/EquipmentDialog";
 import { TaggingSettingsDialog } from "@/components/TaggingSettingsDialog";
 import { TagUploadDialog } from "@/components/TagUploadDialog";
 import { TagGroupDialog } from "@/components/TagGroupDialog";
+import { GateDialog } from "@/components/GateDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -216,6 +217,10 @@ export function Gateway({
           onClose={clients.closeTagGroup}
           onSaved={clients.savedTagGroup}
         />
+      ) : null}
+
+      {open && clients.gate ? (
+        <GateDialog reportId={clients.gate} onClose={clients.closeGate} />
       ) : null}
 
       {open && clients.rcd ? (

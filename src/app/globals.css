@@ -5526,3 +5526,101 @@ a.dialog-cancel {
 .tagging-reference .amp-figures {
   margin: 0 0 4px;
 }
+
+/* ===========================================================================
+   Gate servicing
+   ===========================================================================
+
+   A long form filled in on a phone beside a barrier, so it reads as a list of
+   questions rather than a wall of inputs: each item is a card with its own
+   answer row, and the answer row is four buttons because there are four
+   answers — and "not answered yet" is not one of them.
+   =========================================================================== */
+
+.gate-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .gate-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gate-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.gate-item {
+  padding: 12px 14px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 14px;
+  background: #fff;
+  display: grid;
+  gap: 9px;
+}
+
+.gate-item-label {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.gate-item-note {
+  font-size: 13px;
+}
+
+/* A failure is the thing on the page worth noticing. */
+.issue-pick.is-phase.is-bad {
+  border-color: #c0272d;
+  background: rgba(192, 39, 45, 0.08);
+}
+
+.issue-pick.is-phase.is-bad .issue-pick-label {
+  color: #c0272d;
+}
+
+.gate-defects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.gate-defect {
+  padding: 12px 14px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 14px;
+  background: #fff;
+  display: grid;
+  gap: 9px;
+}
+
+.gate-defect-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gate-defect-head .dialog-input {
+  flex: 1 1 auto;
+}
+
+/* A finding carried down from a failed check is changed where it was typed. */
+.gate-defect-head .dialog-input[readonly] {
+  background: var(--soft, #f2f7fb);
+  color: var(--ink-2, #4a6072);
+}
+
+.gate-caption {
+  margin-top: 6px;
+  font-size: 12px;
+}

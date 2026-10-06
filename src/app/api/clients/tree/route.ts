@@ -112,6 +112,21 @@ export async function GET() {
               },
             },
           },
+          gateReports: {
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+            select: {
+              id: true,
+              date: true,
+              kind: true,
+              gateLocation: true,
+              assetNumber: true,
+              model: true,
+              outcome: true,
+              completedAt: true,
+              technicianId: true,
+            },
+          },
           tagReports: {
             where: { kind: "CLIENT" },
             // Newest first: the report wanted is nearly always the last made.

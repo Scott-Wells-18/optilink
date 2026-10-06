@@ -94,6 +94,7 @@ model UploadedFile {
   equipmentPhotos   TestEquipment[]  @relation("TestEquipmentPhoto")
   taggingReference  TaggingSettings[] @relation("TaggingReference")
   taggingSnapshots  TagReport[]      @relation("TagReportSource")
+  gatePhotos        GatePhoto[]      @relation("GatePhoto")
 }
 
 /**
@@ -220,6 +221,7 @@ model Site {
   powerRuns   PowerAnalysis[]
   ampReports  AmpReport[]
   tagReports  TagReport[]
+  gateReports GateReport[]
 
   @@index([clientId])
 }
@@ -247,6 +249,8 @@ model Contact {
   powerRuns   PowerAnalysis[]
   ampReports  AmpReport[]
   safetyDocs  SafetyDoc[]
+  gatesNotified GateReport[] @relation("GateNotified")
+  gatesSignedFor GateReport[] @relation("GateClientRep")
 
   @@index([siteId])
 }
@@ -1001,6 +1005,9 @@ model Profile {
   /** The order they are listed and signed in. */
   position Int @default(0)
 
+  /** The gate services they carried out and signed. */
+  gateServices GateReport[] @relation("GateTechnician")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1444,4 +1451,156 @@ model TagReport {
 
   @@index([siteId])
   @@index([kind, date])
+}
+
+
+/* ===========================================================================
+   Gate servicing
+   =========================================================================== */
+
+enum GateKind {
+  BOOM
+  SLIDING
+}
+
+enum GateServiceKind {
+  SCHEDULED
+  BREAKDOWN
+  FOLLOW_UP
+}
+
+enum GateOutcome {
+  RETURNED
+  RETURNED_WITH_DEFECTS
+  ISOLATED
+}
+
+/**
+ * One gate, serviced once.
+ *
+ * One report per unit, which is why the asset details are on the report rather
+ * than on a separate record: two barriers on the one site are two reports, and
+ * the second one's serial number is not a variation of the first's.
+ *
+ * Almost everything is nullable. A service report is filled in on site, on a
+ * phone, in the order the work happens, and a form that refuses to save until
+ * it is finished is a form that loses an afternoon's work when the battery
+ * goes. What it needs before it is finished is worked out when it is read, not
+ * enforced on every save.
+ */
+model GateReport {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The day it was serviced. Drives the technician date and the next due. */
+  date DateTime @default(now()) @db.Date
+  /** Recorded when the technician signs it off. */
+  completedAt DateTime?
+
+  /* --- the asset ---------------------------------------------------------- */
+
+  kind        GateKind @default(BOOM)
+  gateLocation String?
+  assetNumber  String?
+  jobNumber    String?
+  reportNumber String?
+
+  /** The operator, not the controller. "GIOTTO BT A ULTRA 36 XL". */
+  model        String?
+  serialNumber String?
+  /** The board inside it, which is a different thing from the operator. */
+  controllerModel    String?
+  controllerFirmware String?
+
+  /** Boom gates only. Metres, fractional allowed. */
+  armLengthMetres Float?
+
+  /** Which of the fitted accessories are on it, and anything else. */
+  accessories     String[]
+  accessoryNotes  String?
+
+  previousService String?
+  reportedFaults  String?
+
+  /* --- preparation --------------------------------------------------------- */
+
+  serviceKind GateServiceKind @default(SCHEDULED)
+  weather     String?
+  /** Which preparation items the technician confirmed. Never ticked for them. */
+  preparation String[]
+  manualRef   String?
+
+  /* --- the inspection ------------------------------------------------------ */
+
+  /** { itemId: { result, note } } for every item that has been answered. */
+  answers Json?
+
+  /* --- measurements and service work --------------------------------------- */
+
+  supplyVoltage   String?
+  earthTest       String?
+  balanceNotes    String?
+  lubrication     String?
+  partsReplaced   String?
+  testInstrument  String?
+
+  openingTime   String?
+  closingTime   String?
+  autoCloseDelay String?
+  finalCycles   String?
+  controllerErrors String?
+  safetyMethod  String?
+  forceEquipment String?
+
+  workCompleted   String?
+  recommendations String?
+  photoReferences String?
+
+  /** [{ ref, finding, priority, action, fromItem }] */
+  defects Json?
+
+  /* --- the outcome --------------------------------------------------------- */
+
+  outcome        GateOutcome?
+  outcomeNotes   String?
+  notifiedContactId String?
+  notifiedContact   Contact? @relation("GateNotified", fields: [notifiedContactId], references: [id], onDelete: SetNull)
+  notifiedTime   String?
+
+  nextServiceDue DateTime? @db.Date
+  intervalBasis  String?
+
+  /* --- who ----------------------------------------------------------------- */
+
+  /** The technician, from Profiles: their name, credentials and signature. */
+  technicianId String?
+  technician   Profile? @relation("GateTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+
+  /** The client representative the findings were handed to. Name only. */
+  clientContactId String?
+  clientContact   Contact? @relation("GateClientRep", fields: [clientContactId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photos GatePhoto[]
+
+  @@index([siteId])
+  @@index([date])
+}
+
+/** A photograph taken on the visit, referenced from the report. */
+model GatePhoto {
+  id       String     @id @default(cuid())
+  reportId String
+  report   GateReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  fileId String
+  file   UploadedFile @relation("GatePhoto", fields: [fileId], references: [id], onDelete: Cascade)
+
+  caption  String?
+  position Int    @default(0)
+
+  @@index([reportId])
 }
