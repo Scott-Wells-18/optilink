@@ -29,6 +29,8 @@ import { TaggingSettingsDialog } from "@/components/TaggingSettingsDialog";
 import { TagUploadDialog } from "@/components/TagUploadDialog";
 import { TagGroupDialog } from "@/components/TagGroupDialog";
 import { GateDialog } from "@/components/GateDialog";
+import { InstallDialog } from "@/components/InstallDialog";
+import { InstallUploadDialog } from "@/components/InstallUploadDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -221,6 +223,19 @@ export function Gateway({
 
       {open && clients.gate ? (
         <GateDialog reportId={clients.gate} onClose={clients.closeGate} />
+      ) : null}
+
+      {open && clients.installUpload ? (
+        <InstallUploadDialog
+          siteId={clients.installUpload.siteId}
+          siteName={clients.installUpload.siteName}
+          onCancel={clients.closeInstallUpload}
+          onStarted={clients.startedInstall}
+        />
+      ) : null}
+
+      {open && clients.install ? (
+        <InstallDialog reportId={clients.install} onClose={clients.closeInstall} />
       ) : null}
 
       {open && clients.rcd ? (

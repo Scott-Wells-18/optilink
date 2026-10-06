@@ -112,6 +112,20 @@ export async function GET() {
               },
             },
           },
+          installReports: {
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+            select: {
+              id: true,
+              name: true,
+              date: true,
+              phases: true,
+              installation: true,
+              preparedBy: true,
+              recordCount: true,
+              exclusions: true,
+            },
+          },
           gateReports: {
             // Newest first: the report wanted is nearly always the last made.
             orderBy: [{ date: "desc" }, { createdAt: "desc" }],

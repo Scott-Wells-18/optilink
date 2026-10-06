@@ -166,6 +166,18 @@ const GATE_OUTCOME_LABELS: Record<string, string> = {
   ISOLATED: "Isolated",
 };
 
+/** One installation, tested once. */
+type InstallReportRecord = {
+  id: string;
+  name: string | null;
+  date: string;
+  phases: "SINGLE" | "THREE";
+  installation: string | null;
+  preparedBy?: string[];
+  recordCount: number;
+  exclusions: { name: string; reason: string }[] | null;
+};
+
 /** One gate, serviced once. */
 type GateReportRecord = {
   id: string;
@@ -209,6 +221,7 @@ type SiteRecord = {
   ampReports: AmpReportRecord[];
   tagReports: TagReportRecord[];
   gateReports: GateReportRecord[];
+  installReports: InstallReportRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -409,6 +422,11 @@ export function useClientsTree(enabled: boolean) {
   const [tagUpload, setTagUpload] = usePersisted<TagUploadSpec | null>("tagupload", null);
   const [tagGroup, setTagGroup] = usePersisted<string | null>("taggroup", null);
   const [gate, setGate] = usePersisted<string | null>("gate", null);
+  const [install, setInstall] = usePersisted<string | null>("install", null);
+  const [installUpload, setInstallUpload] = usePersisted<TagUploadSpec | null>(
+    "installupload",
+    null,
+  );
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
@@ -1740,7 +1758,87 @@ export function useClientsTree(enabled: boolean) {
     },
   ];
 
-  const installNodes = useMemo<TreeNode[]>(() => soon("install"), []);
+  /* --- installation testing ----------------------------------------------- */
+
+  const setInstallDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/install/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /**
+   * Installation testing walks client → site → test.
+   *
+   * A report is one tester export read over and written up, so the row says
+   * what the installation was and how many records came out of the file.
+   */
+  const installNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `install:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() ||
+              countLabel(site.installReports.length, "test", "tests"),
+            children: [
+              ...site.installReports.map<TreeNode>((report) => {
+                const title =
+                  report.installation?.trim() ||
+                  report.name?.trim() ||
+                  isoLabel(report.date);
+                const aside = report.exclusions?.length ?? 0;
+                return {
+                  id: `install:${report.id}`,
+                  label: title,
+                  detail: [
+                    report.phases === "THREE" ? "Three-phase" : "Single-phase",
+                    countLabel(report.recordCount, "record", "records"),
+                    aside > 0 ? `${aside} set aside` : null,
+                  ]
+                    .filter(Boolean)
+                    .join("  ·  "),
+                  variant: "info",
+                  editDate: {
+                    value: isoDate(report.date),
+                    onSave: (value) => void setInstallDate(report.id, value),
+                  },
+                  onActivate: () => setInstall(report.id),
+                  onDownload: () => download(`/api/install/${report.id}/report`),
+                  onRemove: () => void remove(`/api/install/${report.id}`, title),
+                };
+              }),
+              {
+                id: `add:install:${site.id}`,
+                label: "Add new",
+                detail: "Upload the tester's export",
+                variant: "add",
+                onActivate: () => setInstallUpload({ siteId: site.id, siteName: site.name }),
+              },
+            ],
+          }));
+
+          return {
+            id: `install:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, remove, setInstall, setInstallDate, setInstallUpload],
+  );
 
   /* --- gate servicing ---------------------------------------------------- */
 
@@ -2111,6 +2209,18 @@ export function useClientsTree(enabled: boolean) {
     powerNodes,
     ampNodes,
     installNodes,
+    install,
+    closeInstall: () => {
+      setInstall(null);
+      void refresh();
+    },
+    installUpload,
+    closeInstallUpload: () => setInstallUpload(null),
+    startedInstall: (id: string) => {
+      setInstallUpload(null);
+      setInstall(id);
+      void refresh();
+    },
     testTagNodes,
     gateNodes,
     gate,

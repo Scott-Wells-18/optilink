@@ -5635,3 +5635,163 @@ a.dialog-cancel {
   margin-top: 6px;
   font-size: 12px;
 }
+
+/* ===========================================================================
+   Installation testing
+   ===========================================================================
+
+   An instrument's list, read over before it becomes a report: the points it
+   adds up to, anything that needs a decision, and every record as written.
+   =========================================================================== */
+
+.install-anomalies,
+.install-points,
+.install-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.install-anomaly {
+  padding: 11px 13px;
+  border: 1px solid rgba(240, 160, 32, 0.45);
+  border-left-width: 3px;
+  border-radius: 12px;
+  background: rgba(240, 160, 32, 0.07);
+}
+
+/* More than the scope expected is a question, not a fault — it reads quieter. */
+.install-anomaly.is-surplus {
+  border-color: var(--hair-strong);
+  border-left-color: var(--accent);
+  background: var(--soft, #f2f7fb);
+}
+
+.install-anomaly-title {
+  margin: 0 0 3px;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.install-anomaly-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.install-point,
+.install-row {
+  padding: 12px 14px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 14px;
+  background: #fff;
+  display: grid;
+  gap: 9px;
+}
+
+.install-point-head,
+.install-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.install-point-head .dialog-input {
+  flex: 1 1 auto;
+}
+
+.install-readings {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.install-reading {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--soft, #f2f7fb);
+  display: grid;
+  gap: 1px;
+}
+
+/* A reading that was never taken is not an empty box; it says so. */
+.install-reading.is-missing {
+  background: rgba(240, 160, 32, 0.1);
+}
+
+.install-reading-pair {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.install-reading-value {
+  font-weight: 650;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.install-reading.is-missing .install-reading-value {
+  font-size: 12px;
+  color: #a06a00;
+}
+
+.install-reading-ref {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.install-row-kind {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.install-row-value {
+  margin-left: auto;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.install-row-raw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  word-break: break-word;
+}
+
+.install-row-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.install-circuit {
+  flex: 1 1 auto;
+  font-size: 12px;
+}
+
+.install-exclude {
+  flex: none;
+  width: 160px;
+  font-size: 12px;
+}
+
+/* Set aside, not deleted: it stays visible and says what happened to it. */
+.install-row.is-out {
+  background: var(--soft, #f2f7fb);
+  border-style: dashed;
+}
+
+.install-row.is-out .install-row-value,
+.install-row.is-out .install-row-raw {
+  opacity: 0.62;
+}

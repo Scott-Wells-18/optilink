@@ -95,6 +95,7 @@ model UploadedFile {
   taggingReference  TaggingSettings[] @relation("TaggingReference")
   taggingSnapshots  TagReport[]      @relation("TagReportSource")
   gatePhotos        GatePhoto[]      @relation("GatePhoto")
+  installSources    InstallReport[]  @relation("InstallSource")
 }
 
 /**
@@ -139,6 +140,7 @@ model TestEquipment {
   powerRuns  PowerAnalysis[]
   ampReports AmpReport[]
   rcdReports RcdReport[]
+  installReports InstallReport[] @relation("InstallInstrument")
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +224,7 @@ model Site {
   ampReports  AmpReport[]
   tagReports  TagReport[]
   gateReports GateReport[]
+  installReports InstallReport[]
 
   @@index([clientId])
 }
@@ -251,6 +254,7 @@ model Contact {
   safetyDocs  SafetyDoc[]
   gatesNotified GateReport[] @relation("GateNotified")
   gatesSignedFor GateReport[] @relation("GateClientRep")
+  installReports InstallReport[] @relation("InstallContact")
 
   @@index([siteId])
 }
@@ -1603,4 +1607,84 @@ model GatePhoto {
   position Int    @default(0)
 
   @@index([reportId])
+}
+
+
+/* ===========================================================================
+   Installation testing
+   =========================================================================== */
+
+enum InstallPhases {
+  SINGLE
+  THREE
+}
+
+/**
+ * One installation, tested once.
+ *
+ * The tester's export is read when it is uploaded and the rows are kept on the
+ * report, so a report says the same thing next year as it says today. The file
+ * itself is kept too and is bound into the back of the report, exactly as the
+ * RCD report binds its own.
+ *
+ * Nothing in here edits a reading. `exclusions` sets a record aside — out of
+ * the points and the figures, into its own section, still in the appended
+ * original, and put back by taking the exclusion off.
+ */
+model InstallReport {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  date DateTime @default(now()) @db.Date
+  name String?
+
+  /** Which decides how many insulation and RCD records the scope expects. */
+  phases InstallPhases @default(SINGLE)
+
+  /** The tester's own export, kept byte for byte and appended to the report. */
+  sourceId String?
+  source   UploadedFile? @relation("InstallSource", fields: [sourceId], references: [id], onDelete: SetNull)
+
+  /** The rows as they were read, so the report never changes under anyone. */
+  rows Json
+
+  /**
+   * How many records the file held, counted once.
+   *
+   * Kept beside the rows so the navigation can say what is in a report without
+   * loading every reading of every report on the site. It describes the stored
+   * rows, so like them it never changes.
+   */
+  recordCount Int @default(0)
+
+  /** What the export said about itself: title, site, board, created. */
+  header Json?
+
+  /** { "S_2": "Powerpoint 1" } — what the operator called each point. */
+  pointNames Json?
+
+  /** [{ name, reason }] — records set aside, never deleted. */
+  exclusions Json?
+
+  /** { "S_1": "Kitchen sub-circuit" } — which circuit a record belongs to. */
+  circuits Json?
+
+  /** What was being tested, printed on the cover. */
+  installation String?
+  circuitDetails String?
+
+  contactId String?
+  contact   Contact? @relation("InstallContact", fields: [contactId], references: [id], onDelete: SetNull)
+
+  instrumentId String?
+  instrument   TestEquipment? @relation("InstallInstrument", fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  preparedBy String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([date])
 }
