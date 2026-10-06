@@ -325,7 +325,7 @@ export function GateDialog({
     return (
       <div className="dialog-layer" role="dialog" aria-modal aria-label="Gate service">
         <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
-        <div className="dialog is-board">
+        <div className="dialog is-board is-gate">
           <p className="issue-empty">{error ?? "Opening…"}</p>
         </div>
       </div>
@@ -363,7 +363,7 @@ export function GateDialog({
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Gate service">
       <button className="dialog-scrim" onClick={onClose} aria-label="Close" tabIndex={-1} />
 
-      <div className="dialog is-board">
+      <div className="dialog is-board is-gate">
         <header className="board-head">
           <div className="board-head-main">
             <h2 className="dialog-title">Gate service</h2>

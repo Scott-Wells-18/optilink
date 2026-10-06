@@ -5537,6 +5537,17 @@ a.dialog-cancel {
    answers — and "not answered yet" is not one of them.
    =========================================================================== */
 
+/*
+ * The gate form is a document, not a question.
+ *
+ * Thirty fields, two long inspection tables and a defects list, so it gets
+ * the room a form that long needs rather than the 400px a dialog asking one
+ * thing gets. Still a dialog, still capped at the viewport.
+ */
+.dialog.is-gate {
+  width: min(680px, 94vw);
+}
+
 .gate-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
