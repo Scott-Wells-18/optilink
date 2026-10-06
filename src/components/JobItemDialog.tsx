@@ -4,8 +4,8 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
   JOB_STAGES,
-  MAX_PHOTOS_PER_STAGE,
   PHOTO_BUDGET,
+  photoCapFor,
   missingReads,
   stageLabel,
   stageNote,
@@ -15,6 +15,8 @@ import {
   type JobPhotoStage,
 } from "@/lib/jobs";
 import { uploadImage } from "@/components/ImageUpload";
+import { RichTextBox } from "@/components/RichTextBox";
+import { clean, fromPlain, toPlain, type RichText } from "@/lib/richText";
 import { clearSession, usePersisted } from "@/lib/session";
 
 /**
@@ -29,7 +31,7 @@ import { clearSession, usePersisted } from "@/lib/session";
 
 type Pending = { fileId: string; name: string };
 
-type Field = { key: string; label: string; placeholder: string; multiline?: boolean };
+type Field = { key: string; label: string; placeholder: string; multiline?: boolean; rich?: boolean };
 
 const COMPLETED_FIELDS: Field[] = [
   { key: "title", label: "What was it", placeholder: "e.g. Meal room GPO replaced" },
@@ -38,13 +40,13 @@ const COMPLETED_FIELDS: Field[] = [
     key: "found",
     label: "How you found it",
     placeholder: "e.g. Socket loose in the wall, not retaining plugs",
-    multiline: true,
+    rich: true,
   },
   {
     key: "done",
     label: "What you did",
     placeholder: "e.g. Replaced GPO and mounting block, retested",
-    multiline: true,
+    rich: true,
   },
 ];
 
@@ -62,7 +64,7 @@ const RECTIFICATION_FIELDS: Field[] = [
     key: "done",
     label: "Job description",
     placeholder: "e.g. Board is full, no spare ways and no main switch. Replace with a 24-way.",
-    multiline: true,
+    rich: true,
   },
 ];
 
@@ -90,8 +92,13 @@ export function JobItemDialog({
 }) {
   const fields = FIELDS_FOR[kind];
   const stages = stagesFor(kind);
+  const cap = photoCapFor(kind);
   const key = `jobitem:${itemId ?? jobId}`;
   const [values, setValues] = usePersisted<Record<string, string>>(`${key}:fields`, {});
+  // What was written, with its dot points and emphasis. Kept beside the plain
+  // values rather than instead of them: the plain ones decide whether a piece
+  // of work is finished and what the contents table shows.
+  const [written, setWritten] = usePersisted<Record<string, RichText>>(`${key}:rich`, {});
   const [photos, setPhotos] = usePersisted<Partial<Record<JobPhotoStage, Pending[]>>>(
     `${key}:photos`,
     {},
@@ -103,6 +110,7 @@ export function JobItemDialog({
 
   function forget() {
     clearSession(`${key}:fields`);
+    clearSession(`${key}:rich`);
     clearSession(`${key}:photos`);
   }
 
@@ -149,6 +157,8 @@ export function JobItemDialog({
           found: string;
           done: string;
           number: string | null;
+          foundRich: unknown;
+          doneRich: unknown;
           photos: { stage: JobPhotoStage; fileId: string }[];
         };
         if (stale) return;
@@ -163,6 +173,16 @@ export function JobItemDialog({
                 number: item.number ?? "",
               },
         );
+        setWritten((current) => {
+          if (Object.keys(current).length > 0) return current;
+          // Anything written before there was anywhere to put emphasis is read
+          // back as what it is: paragraphs, and a dash at the start of a line
+          // as a dot point.
+          return {
+            found: clean(item.foundRich).length > 0 ? clean(item.foundRich) : fromPlain(item.found),
+            done: clean(item.doneRich).length > 0 ? clean(item.doneRich) : fromPlain(item.done),
+          };
+        });
         setPhotos((current) => {
           if (JOB_STAGES.some((stage) => (current[stage]?.length ?? 0) > 0)) return current;
           const held: Partial<Record<JobPhotoStage, Pending[]>> = {};
@@ -205,12 +225,16 @@ export function JobItemDialog({
   const allPhotos = JOB_STAGES.flatMap((stage) =>
     (photos[stage] ?? []).map(() => ({ stage })),
   );
+  /** A rich field's plain text is what decides whether it is filled in. */
+  const plainOf = (field: Field) =>
+    field.rich ? toPlain(written[field.key] ?? []) : values[field.key] ?? "";
+
   const missing = whatIsMissing(
     {
       title: values.title,
       location: values.location,
-      found: values.found,
-      done: values.done,
+      found: toPlain(written.found ?? []) || values.found,
+      done: toPlain(written.done ?? []) || values.done,
       number: values.number,
       photos: allPhotos,
     },
@@ -226,7 +250,7 @@ export function JobItemDialog({
    * on the way out, and the work sits in the report marked unfinished.
    */
   const anything =
-    allPhotos.length > 0 || fields.some((field) => values[field.key]?.trim());
+    allPhotos.length > 0 || fields.some((field) => plainOf(field).trim());
 
   /**
    * Take a selection — a handful of photos, or a whole folder off the phone or
@@ -244,10 +268,10 @@ export function JobItemDialog({
     );
     if (pictures.length === 0) return;
 
-    const room = MAX_PHOTOS_PER_STAGE - (photos[stage]?.length ?? 0);
+    const room = cap - (photos[stage]?.length ?? 0);
     if (room <= 0) {
       setError(
-        `${stageLabel(stage, kind)} already holds its ${MAX_PHOTOS_PER_STAGE} photos.`,
+        `${stageLabel(stage, kind)} already holds its ${cap} photos.`,
       );
       return;
     }
@@ -258,7 +282,7 @@ export function JobItemDialog({
     const over = pictures.length - taking.length;
     setError(
       over > 0
-        ? `${stageLabel(stage, kind)} holds ${MAX_PHOTOS_PER_STAGE} photos — a page of three by three. ` +
+        ? `${stageLabel(stage, kind)} holds ${cap} photos. ` +
           `The first ${taking.length} went in; the other ${over} did not.`
         : null,
     );
@@ -285,7 +309,7 @@ export function JobItemDialog({
       const kept = added.filter((photo): photo is Pending => photo !== null);
       setPhotos((current) => ({
         ...current,
-        [stage]: [...(current[stage] ?? []), ...kept].slice(0, MAX_PHOTOS_PER_STAGE),
+        [stage]: [...(current[stage] ?? []), ...kept].slice(0, cap),
       }));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
@@ -314,6 +338,8 @@ export function JobItemDialog({
         body: JSON.stringify({
           jobId,
           ...values,
+          foundRich: written.found ?? [],
+          doneRich: written.done ?? [],
           photos: JOB_STAGES.flatMap((stage) =>
             (photos[stage] ?? []).map((photo) => ({ stage, fileId: photo.fileId })),
           ),
@@ -361,7 +387,15 @@ export function JobItemDialog({
           {fields.map((field) => (
             <label className="dialog-field" key={field.key}>
               <span className="dialog-label">{field.label}</span>
-              {field.multiline ? (
+              {field.rich ? (
+                <RichTextBox
+                  value={written[field.key] ?? []}
+                  placeholder={field.placeholder}
+                  onChange={(next) =>
+                    setWritten((current) => ({ ...current, [field.key]: next }))
+                  }
+                />
+              ) : field.multiline ? (
                 <textarea
                   rows={2}
                   className="dialog-input dialog-textarea"
@@ -388,14 +422,14 @@ export function JobItemDialog({
         <div className="issue-slots">
           {stages.map((stage) => {
             const held = photos[stage] ?? [];
-            const full = held.length >= MAX_PHOTOS_PER_STAGE;
+            const full = held.length >= cap;
             const uploading = busy === stage;
             return (
               <section className="issue-slot" key={stage}>
                 <div className="issue-slot-head">
                   <h3 className="board-section-title">{stageLabel(stage, kind)}</h3>
                   <span className="issue-count">
-                    {held.length} of {MAX_PHOTOS_PER_STAGE}
+                    {held.length} of {cap}
                   </span>
                   {uploading ? (
                     <span className="issue-add is-busy">

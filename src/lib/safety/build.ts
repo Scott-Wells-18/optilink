@@ -10,7 +10,7 @@ import { canFill, fillSwms, type SwmsValues } from "@/lib/safety/fillSwms";
 import { pdfBytes, signatureBytes, templateBytes, templateFor } from "@/lib/safety/library";
 import { signatories as profileSignatories } from "@/lib/profiles.server";
 import { personName } from "@/lib/contacts";
-import { clean, toPlain, type RichText } from "@/lib/safety/richText";
+import { clean, toPlain, type RichText } from "@/lib/richText";
 import { scopePage } from "@/lib/safety/scopePage";
 import { CIRCUMSTANCES, HAZARDS, conditionOf, type Whs002 } from "@/lib/safety/whs002";
 

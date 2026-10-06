@@ -224,6 +224,16 @@ body {
 
   --accent: #1b9bd8;
   --accent-deep: #14528f;
+  /*
+   * The blue the cards are filled with.
+   *
+   * --accent-deep is the colour of a header bar on a printed page, where it
+   * sits behind a line of white type. A whole card of it is a slab, and a
+   * column of slabs reads heavier than anything underneath it is worth. This
+   * is the same hue brought up between the two, which carries white type at
+   * the sizes the cards use and still reads as OptiLink blue.
+   */
+  --accent-card: #2a7fc4;
   --accent-wash: rgba(27, 155, 216, 0.08);
 
   /* Layered shadows — a tight contact shadow plus a wide ambient one. */
@@ -5397,7 +5407,12 @@ a.dialog-cancel {
    stand apart — OptiLink blue at rest, inverting to white on hover the way
    every other card lifts, the text inverting with the card.
 
-   One list, named once: adding a section to it is adding an id to :is().
+   The rows that set a report up rather than record work — who prepared it,
+   who it is for, which customer it is about, and the one that turns a
+   recommendation into a works completed report — are the same kind of thing
+   at a smaller size, so they take the same blue.
+
+   One list, named once: adding to it is adding a selector to :is().
    =========================================================================== */
 
 :root {
@@ -5409,10 +5424,14 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) {
-  border-color: var(--accent-deep);
-  background: var(--accent-deep);
+  border-color: var(--accent-card);
+  background: var(--accent-card);
   color: #fff;
 }
 
@@ -5420,7 +5439,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) :is(.tree-node-label, .tree-node-index, .tree-node-chevron) {
   color: #fff;
 }
@@ -5429,7 +5452,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) .tree-node-detail {
   color: var(--own-ink);
 }
@@ -5439,7 +5466,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 )::before {
   background: rgba(255, 255, 255, 0.5);
 }
@@ -5453,7 +5484,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) {
   background: #fff;
   border-color: var(--accent-deep);
@@ -5468,7 +5503,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) :is(.tree-node-label, .tree-node-index, .tree-node-chevron) {
   color: var(--accent-deep);
 }
@@ -5481,7 +5520,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 ) .tree-node-detail {
   color: var(--own-ink-open);
 }
@@ -5494,7 +5537,11 @@ a.dialog-cancel {
   [data-node="profiles"],
   [data-node="clients"],
   [data-node="equipment"],
-  [data-node="optilink"]
+  [data-node="optilink"],
+  [data-node^="preparedby:"],
+  [data-node^="contact:"],
+  [data-node^="convert:"],
+  [data-node^="taggroup:"]
 )::before {
   background: var(--accent-deep);
 }

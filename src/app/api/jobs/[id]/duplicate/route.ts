@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { badRequest, notFound, serverError } from "@/lib/api";
+import { badRequest, notFound, readJson, serverError } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -26,11 +26,12 @@ export const runtime = "nodejs";
  * The original is untouched: the recommendation is still a recommendation.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   try {
+    const body = (await readJson(request).catch(() => ({}))) as { name?: string };
     const source = await prisma.job.findUnique({
       where: { id },
       include: {
@@ -49,9 +50,12 @@ export async function POST(
       data: {
         siteId: source.siteId,
         kind: "COMPLETED",
-        // Named after the recommendation it came from, so the pair can be
-        // found together in a list of a year's reports.
-        name: `${source.name?.trim() || "Rectifications"} — works completed`,
+        // Whatever it was called on the way in. Falling back to the
+        // recommendation's own name keeps the pair findable together in a
+        // list of a year's reports.
+        name:
+          body.name?.trim().slice(0, 180) ||
+          `${source.name?.trim() || "Rectifications"} — works completed`,
         contactId: source.contactId,
         preparedBy: source.preparedBy,
         recommendations: [],
@@ -63,8 +67,10 @@ export async function POST(
             // so they come across empty and the work reads as unfinished.
             location: "",
             found: "",
-            // What we proposed, as a starting point for what was carried out.
+            // What we proposed, as a starting point for what was carried out —
+            // with its dot points and emphasis, not flattened on the way over.
             done: item.done,
+            doneRich: item.doneRich ?? undefined,
             position,
             photos: {
               create: item.photos

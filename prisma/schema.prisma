@@ -536,6 +536,18 @@ model JobItem {
   done     String
 
   /**
+   * The same two, as they were written.
+   *
+   * Dot points, bold, italic, underline and the line breaks somebody typed.
+   * The plain columns above stay as the mirror of them — they are what decides
+   * whether a piece of work is finished, what the contents table ellipsises
+   * and what anything searching would look at — so a description written
+   * before there was anywhere to put emphasis still reads correctly.
+   */
+  foundRich Json?
+  doneRich  Json?
+
+  /**
    * Hand-ordered within the job.
    */
   position Int @default(0)

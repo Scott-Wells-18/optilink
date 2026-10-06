@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import { isComplete, readJobPhotos, whatIsMissing, type JobPhotoInput } from "@/lib/jobs";
+import { clean, toPlain } from "@/lib/richText";
 import { releaseFiles } from "@/lib/storage";
 
 /** Everything a piece of work holds, for finishing one off later. */
@@ -19,6 +20,8 @@ export async function GET(
       location: true,
       found: true,
       done: true,
+      foundRich: true,
+      doneRich: true,
       number: true,
       photos: {
         orderBy: [{ stage: "asc" }, { position: "asc" }],
@@ -57,6 +60,8 @@ export async function PATCH(
       found?: string;
       done?: string;
       number?: string;
+      foundRich?: unknown;
+      doneRich?: unknown;
       photos?: JobPhotoInput[];
     };
 
@@ -74,19 +79,36 @@ export async function PATCH(
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const data: Record<string, string> = {};
+    const data: Record<string, unknown> = {};
     const limits = {
       title: 200,
       location: 200,
-      found: 2000,
-      done: 2000,
+      found: 4000,
+      done: 4000,
       number: 60,
     } as const;
     for (const key of ["title", "location", "found", "done", "number"] as const) {
       if (key in body) data[key] = body[key]?.trim().slice(0, limits[key]) ?? "";
     }
 
-    const photos = "photos" in body ? readJobPhotos(body.photos) : null;
+    // The written version, and the plain mirror of it the rest of the app
+    // reads. Sending one sets the other.
+    for (const [rich, plain] of [
+      ["foundRich", "found"],
+      ["doneRich", "done"],
+    ] as const) {
+      if (rich in body) {
+        const blocks = clean(body[rich]);
+        data[rich] = blocks.length > 0 ? (JSON.parse(JSON.stringify(blocks)) as never) : null;
+        data[plain] = toPlain(blocks).slice(0, 4000);
+      } else if (plain in body) {
+        // Plain text on its own replaces what was written: keeping the old
+        // formatted version would print something nobody can see on screen.
+        data[rich] = null;
+      }
+    }
+
+    const photos = "photos" in body ? readJobPhotos(body.photos, existing.job.kind) : null;
     if (photos) {
       await prisma.jobPhoto.deleteMany({ where: { itemId: id } });
       await prisma.jobPhoto.createMany({

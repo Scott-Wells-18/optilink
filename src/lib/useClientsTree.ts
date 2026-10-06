@@ -948,6 +948,30 @@ export function useClientsTree(enabled: boolean) {
     [refresh],
   );
 
+  /**
+   * What a report is called.
+   *
+   * Asked for rather than derived: "Botany rectifications" is what somebody
+   * will look for in a year, and the date it was written is not.
+   */
+  const setJobName = useCallback(
+    async (id: string, current: string) => {
+      const name = window.prompt("What is this report called?", current);
+      if (name === null) return;
+      const response = await fetch(`/api/jobs/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!response.ok) {
+        setError("That name could not be saved.");
+        return;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   const setJobDate = useCallback(
     async (id: string, date: string) => {
       const response = await fetch(`/api/jobs/${id}`, {
@@ -974,16 +998,21 @@ export function useClientsTree(enabled: boolean) {
    */
   const convertJob = useCallback(
     async (id: string, title: string) => {
-      if (
-        !window.confirm(
-          `Copy "${title}" into a new works completed report? The photos come across as before ` +
-            "photos and each job keeps its name, number and description. Nothing is marked finished, " +
-            "and the recommendation itself is untouched.",
-        )
-      ) {
-        return;
-      }
-      const response = await fetch(`/api/jobs/${id}/duplicate`, { method: "POST" });
+      // Named on the way in rather than derived from the recommendation's
+      // name: it is a different report that a client will look for separately.
+      const name = window.prompt(
+        `Copy "${title}" into a new works completed report? The photos come across as before ` +
+          "photos and each job keeps its name, number and description. Nothing is marked " +
+          "finished, and the recommendation itself is untouched.\n\nWhat should the new report " +
+          "be called?",
+        `${title} — works completed`,
+      );
+      if (name === null) return;
+      const response = await fetch(`/api/jobs/${id}/duplicate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         setError(payload.error ?? "That report could not be converted.");
@@ -1041,19 +1070,21 @@ export function useClientsTree(enabled: boolean) {
                 const title = jobTitle(job);
                 return {
                   id: `job:${job.id}`,
-                  label: title,
+                  // A report is known by what it was for, not by the day it
+                  // was written: three visits to one site in a month are three
+                  // dates and nothing to tell them apart. The date is under
+                  // it, where a date belongs.
+                  label: job.name?.trim() || "Unnamed report",
                   detail: (() => {
                     const unfinished = job.items.filter(
                       (item) => whatIsMissing(item, job.kind).length > 0,
                     ).length;
                     const all = countLabel(job.items.length, "item", "items");
-                    // Which of the two it is comes first: it is what somebody
-                    // opening the section is looking for.
                     const what =
                       job.kind === "RECTIFICATION" ? "Recommended rectifications" : "Works completed";
                     const counts =
                       unfinished > 0 ? `${all}  ·  ${unfinished} unfinished` : all;
-                    return `${what}  ·  ${counts}`;
+                    return `${isoLabel(job.date)}  ·  ${what}  ·  ${counts}`;
                   })(),
                   editDate: {
                     value: isoDate(job.date),
@@ -1119,6 +1150,26 @@ export function useClientsTree(enabled: boolean) {
                       onActivate: () =>
                         setJobItem({ jobId: job.id, jobTitle: title, kind: job.kind }),
                     },
+                    {
+                      id: `jobname:${job.id}`,
+                      label: job.name?.trim() || "Name this report",
+                      detail: job.name?.trim() ? "Change what it is called" : "It has no name yet",
+                      variant: "info" as const,
+                      onActivate: () => void setJobName(job.id, job.name ?? ""),
+                    },
+                    {
+                      id: `jobdate:${job.id}`,
+                      label: isoLabel(job.date),
+                      detail: "The day the work was done",
+                      variant: "info" as const,
+                      editDate: {
+                        value: isoDate(job.date),
+                        onSave: (value) => void setJobDate(job.id, value),
+                      },
+                      onActivate: () => {
+                        /* The date is changed by double-clicking this row. */
+                      },
+                    },
                     // Only on a recommendation: there is nothing to convert a
                     // works completed report into.
                     ...(job.kind === "RECTIFICATION"
@@ -1174,7 +1225,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startJob, setJobDate, setJobItem, setContact, moveJobItem, convertJob],
+    [clients, remove, startJob, setJobDate, setJobName, setJobItem, setContact, moveJobItem, convertJob],
   );
 
   const setRcdDate = useCallback(

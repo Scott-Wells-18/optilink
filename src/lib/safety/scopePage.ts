@@ -2,7 +2,7 @@ import PDFDocument from "pdfkit";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { COLOURS } from "@/lib/report/theme";
-import type { RichText } from "@/lib/safety/richText";
+import type { RichText } from "@/lib/richText";
 
 /**
  * The scope of works, as a page.

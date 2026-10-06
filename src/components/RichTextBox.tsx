@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { toHtml, type Block, type RichText, type Run } from "@/lib/safety/richText";
+import { toHtml, type Block, type RichText, type Run } from "@/lib/richText";
 
 /**
  * A box for writing the scope of works in.
@@ -58,6 +58,15 @@ export function RichTextBox({
         </button>
         <button type="button" className="rich-tool" onMouseDown={hold} onClick={() => command("italic")}>
           <em>I</em>
+        </button>
+        <button
+          type="button"
+          className="rich-tool"
+          onMouseDown={hold}
+          onClick={() => command("underline")}
+          aria-label="Underline"
+        >
+          <u>U</u>
         </button>
         <button
           type="button"
@@ -160,10 +169,17 @@ function split(nodes: Node[]): Run[][] {
 
 function runsOf(node: Node): Run[] {
   const out: Run[] = [];
-  const walk = (current: Node, bold: boolean, italic: boolean) => {
+  const walk = (current: Node, bold: boolean, italic: boolean, underline: boolean) => {
     if (current.nodeType === Node.TEXT_NODE) {
       const text = current.textContent ?? "";
-      if (text) out.push({ text, ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}) });
+      if (text) {
+        out.push({
+          text,
+          ...(bold ? { bold: true } : {}),
+          ...(italic ? { italic: true } : {}),
+          ...(underline ? { underline: true } : {}),
+        });
+      }
       return;
     }
     if (current.nodeName.toUpperCase() === "BR") {
@@ -177,9 +193,16 @@ function runsOf(node: Node): Run[] {
     const nextBold =
       bold || tag === "B" || tag === "STRONG" || weight === "bold" || Number(weight) >= 600;
     const nextItalic = italic || tag === "I" || tag === "EM" || style === "italic";
-    for (const child of Array.from(current.childNodes)) walk(child, nextBold, nextItalic);
+    // execCommand("underline") emits <u> in most browsers and a styled span in
+    // the rest, so both are read.
+    const decoration = element.style?.textDecoration ?? "";
+    const nextUnderline =
+      underline || tag === "U" || tag === "INS" || decoration.includes("underline");
+    for (const child of Array.from(current.childNodes)) {
+      walk(child, nextBold, nextItalic, nextUnderline);
+    }
   };
-  walk(node, false, false);
+  walk(node, false, false, false);
   return out;
 }
 
@@ -188,7 +211,12 @@ function merge(runs: Run[]): Run[] {
   const out: Run[] = [];
   for (const run of runs) {
     const last = out[out.length - 1];
-    if (last && Boolean(last.bold) === Boolean(run.bold) && Boolean(last.italic) === Boolean(run.italic)) {
+    if (
+      last &&
+      Boolean(last.bold) === Boolean(run.bold) &&
+      Boolean(last.italic) === Boolean(run.italic) &&
+      Boolean(last.underline) === Boolean(run.underline)
+    ) {
       last.text += run.text;
       continue;
     }

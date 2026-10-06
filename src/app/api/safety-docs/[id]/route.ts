@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { notFound, readJson, serverError } from "@/lib/api";
 import { BY_CODE } from "@/lib/safety/catalogue";
 import { decide } from "@/lib/safety/decide";
-import { clean } from "@/lib/safety/richText";
+import { clean } from "@/lib/richText";
 
 export const runtime = "nodejs";
 

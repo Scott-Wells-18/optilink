@@ -15,7 +15,7 @@ import {
 import { STANDING_RULES, rules } from "@/lib/safety/rules";
 import { titleCase } from "@/lib/writing";
 import { RichTextBox } from "@/components/RichTextBox";
-import { isEmpty, summarise, type RichText } from "@/lib/safety/richText";
+import { isEmpty, summarise, type RichText } from "@/lib/richText";
 import { Whs002Form, type BoardOption } from "@/components/Whs002Form";
 import { whsGaps, type Whs002 } from "@/lib/safety/whs002";
 import { clearSession, usePersisted } from "@/lib/session";

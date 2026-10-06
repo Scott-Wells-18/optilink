@@ -35,6 +35,8 @@ import {
   type Section,
 } from "@/lib/report/flow";
 import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
+import { clean, fromPlain, type RichText } from "@/lib/richText";
+import { drawRich, measureRich } from "@/lib/report/richText";
 import { preparedByFor } from "@/lib/profiles.server";
 
 /**
@@ -78,6 +80,9 @@ type Item = {
   done: string;
   /** The job number on a rectification, where one was given. */
   number: string;
+  /** How it was written: dot points, emphasis, and the line breaks typed. */
+  foundRich: RichText;
+  doneRich: RichText;
   photos: Photo[];
 };
 
@@ -94,6 +99,19 @@ export type JobReport = PageMeta & {
 };
 
 /* --- gathering ------------------------------------------------------------ */
+
+/**
+ * What was written, or the plain text read as if it had been.
+ *
+ * A description typed before there was anywhere to put emphasis is still a
+ * description with paragraphs in it, and a line somebody opened with a dash is
+ * still a dot point. Reading it that way means nothing written earlier comes
+ * out as one long run-on paragraph.
+ */
+function richOr(stored: unknown, plain: string): RichText {
+  const blocks = clean(stored);
+  return blocks.length > 0 ? blocks : fromPlain(plain);
+}
 
 export async function loadJobReport(jobId: string): Promise<JobReport | null> {
   const job = await prisma.job.findUnique({
@@ -130,6 +148,12 @@ export async function loadJobReport(jobId: string): Promise<JobReport | null> {
       location: safe(titleCase(item.location)),
       found: safe(tidy(item.found)),
       done: safe(tidy(item.done)),
+      // What was written, where it was; otherwise the plain text read as
+      // paragraphs, so a description typed before there was anywhere to put
+      // emphasis still comes out with its line breaks and its dashes as dot
+      // points.
+      foundRich: richOr(item.foundRich, item.found),
+      doneRich: richOr(item.doneRich, item.done),
       number: safe(item.number?.trim() ?? ""),
       // Before, then during, then after — the order the story is told in.
       photos: photos.sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage)),
@@ -230,6 +254,12 @@ function cover(doc: Doc, data: JobReport) {
         ? "Recommended electrical rectification works"
         : "Electrical maintenance works",
     rows: [
+      // What the report is called, where it has been given a name. A client
+      // filing three of these in a month needs the name to tell them apart,
+      // and the date is in the row beneath it either way.
+      ...(data.jobTitle && data.jobTitle !== shortDate(data.jobDate)
+        ? ([["Report", data.jobTitle]] as [string, string][])
+        : []),
       ["Site contact", data.contactName ?? data.clientName],
       ["Report date", shortDate(data.reportDate)],
       [proposed ? "Jobs recommended" : "Items of work", `${listed.length}`],
@@ -405,7 +435,7 @@ function drawTile(doc: Doc, bytes: Buffer, x: number, y: number, width: number, 
 /* --- how an item's photographs fall onto pages ---------------------------- */
 
 /** A line of explanation that belongs to a particular stage's photographs. */
-type Note = { tag: string; body: string };
+type Note = { tag: string; body: RichText };
 
 /** One stage's photographs, or as many of them as one page will take. */
 type Grid = {
@@ -536,8 +566,8 @@ function tileHeight(doc: Doc, leaves: Leaf[], underBar: boolean, head: number): 
 const NOTE_INDENT = 46;
 const NOTE_WIDTH = CONTENT - NOTE_INDENT;
 
-function noteHeight(doc: Doc, body: string): number {
-  return measureText(doc, body, { width: NOTE_WIDTH, size: 9.5, lineGap: 1 }) + 5;
+function noteHeight(doc: Doc, body: RichText): number {
+  return measureRich(doc, body, NOTE_WIDTH, { size: 9.5, lineGap: 1, gap: 3 }) + 5;
 }
 
 /** "FOUND  Socket loose in the wall" — the line above a stage's photographs. */
@@ -547,8 +577,11 @@ function notePiece(doc: Doc, note: Note): Piece {
     draw: (y) => {
       doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.accent);
       doc.text(note.tag.toUpperCase(), MARGIN + 12, y + 1, { width: 34 });
-      doc.font("Helvetica").fontSize(9.5).fillColor(COLOURS.ink);
-      doc.text(note.body, MARGIN + NOTE_INDENT, y, { width: NOTE_WIDTH, lineGap: 1 });
+      drawRich(doc, note.body, MARGIN + NOTE_INDENT, y, NOTE_WIDTH, {
+        size: 9.5,
+        lineGap: 1,
+        gap: 3,
+      });
     },
   };
 }
@@ -596,12 +629,12 @@ function work(doc: Doc, data: JobReport): Section {
       const note =
         data.kind === "RECTIFICATION"
           ? stage === "BEFORE"
-            ? { tag: "Scope", body: item.done }
+            ? { tag: "Scope", body: item.doneRich }
             : null
           : stage === "BEFORE"
-            ? { tag: "Found", body: item.found }
+            ? { tag: "Found", body: item.foundRich }
             : stage === "AFTER"
-              ? { tag: "Done", body: item.done }
+              ? { tag: "Done", body: item.doneRich }
               : null;
       return cut(stage, shots, note);
     });
@@ -613,10 +646,10 @@ function work(doc: Doc, data: JobReport): Section {
     // last of them where nothing was photographed as left.
     const has = (stage: JobPhotoStage) => grids.some((grid) => grid.stage === stage);
     if (data.kind === "RECTIFICATION") {
-      if (!has("BEFORE")) leaves[0].lead = { tag: "Scope", body: item.done };
+      if (!has("BEFORE")) leaves[0].lead = { tag: "Scope", body: item.doneRich };
     } else {
-      if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.found };
-      if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.done };
+      if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.foundRich };
+      if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.doneRich };
     }
 
     const head = headHeight(doc, item);

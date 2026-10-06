@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, readJson, serverError } from "@/lib/api";
 import { isComplete, readJobPhotos, whatIsMissing, type JobPhotoInput } from "@/lib/jobs";
+import { clean, toPlain } from "@/lib/richText";
 
 /**
  * One piece of work, arriving whole or arriving half-done.
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
       found?: string;
       done?: string;
       number?: string;
+      foundRich?: unknown;
+      doneRich?: unknown;
       photos?: JobPhotoInput[];
     };
 
@@ -37,12 +40,19 @@ export async function POST(request: Request) {
     });
     if (!job) return badRequest("That report could not be found.");
 
-    const photos = readJobPhotos(body.photos);
+    const photos = readJobPhotos(body.photos, job.kind);
+
+    // The written version is what the report draws; the plain one is what
+    // decides whether the work is finished and what the contents table shows.
+    // Where only one of them arrives, the other is derived from it.
+    const foundRich = clean(body.foundRich);
+    const doneRich = clean(body.doneRich);
+
     const fields = {
       title: body.title?.trim().slice(0, 200) ?? "",
       location: body.location?.trim().slice(0, 200) ?? "",
-      found: body.found?.trim().slice(0, 2000) ?? "",
-      done: body.done?.trim().slice(0, 2000) ?? "",
+      found: (foundRich.length > 0 ? toPlain(foundRich) : body.found?.trim() ?? "").slice(0, 4000),
+      done: (doneRich.length > 0 ? toPlain(doneRich) : body.done?.trim() ?? "").slice(0, 4000),
       number: body.number?.trim().slice(0, 60) ?? "",
     };
 
@@ -60,6 +70,8 @@ export async function POST(request: Request) {
         jobId: body.jobId,
         ...fields,
         position: (last?.position ?? -1) + 1,
+        foundRich: foundRich.length > 0 ? JSON.parse(JSON.stringify(foundRich)) : undefined,
+        doneRich: doneRich.length > 0 ? JSON.parse(JSON.stringify(doneRich)) : undefined,
         photos: { create: photos },
       },
       select: { id: true },

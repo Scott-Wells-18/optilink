@@ -26,6 +26,20 @@ export const STAGE_NOTES: Record<JobPhotoStage, string> = {
 export const MAX_PHOTOS_PER_STAGE = 9;
 
 /**
+ * How many a recommendation holds.
+ *
+ * A works completed report photographs one job three times over — found, in
+ * progress, left — so nine a stage is twenty-seven across the three. A
+ * recommendation photographs one thing, how the job stands, so it gets the
+ * same twenty-seven in the one place rather than a third of them.
+ */
+export const MAX_PHOTOS_PER_JOB = 27;
+
+export function photoCapFor(kind: JobKind): number {
+  return kind === "RECTIFICATION" ? MAX_PHOTOS_PER_JOB : MAX_PHOTOS_PER_STAGE;
+}
+
+/**
  * The budget a works photograph is resized to before it is uploaded.
  *
  * A tile on the finished page is about 162 points across — a shade over two
@@ -43,16 +57,17 @@ export type JobPhotoInput = { stage?: string; fileId?: string };
  * The photos as they will be stored: grouped by stage, in the order they were
  * added, and never more than a page of any one stage.
  */
-export function readJobPhotos(input: JobPhotoInput[] | undefined) {
+export function readJobPhotos(input: JobPhotoInput[] | undefined, kind: JobKind = "COMPLETED") {
   const wanted = (input ?? []).filter(
     (photo): photo is { stage: JobPhotoStage; fileId: string } =>
       Boolean(photo?.fileId) && JOB_STAGES.includes(photo?.stage as JobPhotoStage),
   );
 
+  const cap = photoCapFor(kind);
   return JOB_STAGES.flatMap((stage) =>
     wanted
       .filter((photo) => photo.stage === stage)
-      .slice(0, MAX_PHOTOS_PER_STAGE)
+      .slice(0, cap)
       .map((photo, position) => ({ stage, fileId: photo.fileId, position })),
   );
 }
@@ -119,7 +134,7 @@ export function stageLabel(stage: JobPhotoStage, kind: JobKind): string {
 
 export function stageNote(stage: JobPhotoStage, kind: JobKind): string {
   if (kind === "RECTIFICATION" && stage === "BEFORE") {
-    return "How the job stands now. Required. Up to nine.";
+    return `How the job stands now. Required. Up to ${MAX_PHOTOS_PER_JOB}.`;
   }
   return STAGE_NOTES[stage];
 }

@@ -1,17 +1,25 @@
 /**
- * The scope of works, as something that can be written and then drawn.
+ * Text that was written with some shape to it, kept so it can be drawn again.
  *
- * The scope is typed once, in a box that does paragraphs, dot points, bold and
- * italics, and it ends up in three places: a new first page on every document,
- * the scope panel the SWMS templates leave blank, and the screen it was typed
- * on. So it is not kept as HTML. HTML would mean sanitising whatever a browser
- * decided to emit and then parsing it again in a PDF renderer that has no DOM;
- * instead the editor hands back this — a list of paragraphs and dot points,
- * each made of runs of text that are bold, italic, both or neither. It is the
- * smallest thing that survives all three.
+ * Typed once, in a box that does paragraphs, dot points, bold, italic and
+ * underline, and it ends up in several places: a page of a PDF, a panel inside
+ * somebody else's template, and the screen it was typed on. So it is not kept
+ * as HTML. HTML would mean sanitising whatever a browser decided to emit and
+ * then parsing it again in a PDF renderer that has no DOM; instead the editor
+ * hands back this — a list of paragraphs and dot points, each made of runs of
+ * text carrying their own emphasis. It is the smallest thing that survives all
+ * of them.
+ *
+ * It started as the scope of works on a SWMS and is now also what a piece of
+ * work is described with, which is why it lives here rather than under safety.
  */
 
-export type Run = { text: string; bold?: boolean; italic?: boolean };
+export type Run = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+};
 export type Block = { kind: "p" | "li"; runs: Run[] };
 export type RichText = Block[];
 
@@ -36,6 +44,7 @@ export function clean(value: unknown): RichText {
         text: run.text.slice(0, MAX_TEXT),
         ...(run.bold ? { bold: true } : {}),
         ...(run.italic ? { italic: true } : {}),
+        ...(run.underline ? { underline: true } : {}),
       });
     }
     out.push({ kind, runs });
@@ -110,6 +119,7 @@ export function toHtml(blocks: RichText | null | undefined): string {
 
 function runHtml(run: Run): string {
   let html = escape(run.text);
+  if (run.underline) html = `<u>${html}</u>`;
   if (run.italic) html = `<em>${html}</em>`;
   if (run.bold) html = `<strong>${html}</strong>`;
   return html;
@@ -120,4 +130,28 @@ function escape(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+/**
+ * Plain text, read as rich text.
+ *
+ * What was typed before there was anywhere to put emphasis, and what arrives
+ * from anything that still sends a plain string. Blank lines separate
+ * paragraphs and a line opening with a dash or a bullet is a dot point, which
+ * is how somebody writes a list in a plain box and expects it to come out as
+ * one.
+ */
+export function fromPlain(text: string | null | undefined): RichText {
+  if (!text?.trim()) return [];
+  return text
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      const bullet = /^[-*\u2022]\s+/.exec(trimmed);
+      return bullet
+        ? { kind: "li" as const, runs: [{ text: trimmed.slice(bullet[0].length) }] }
+        : { kind: "p" as const, runs: trimmed ? [{ text: trimmed }] : [] };
+    })
+    .slice(0, MAX_BLOCKS);
 }
