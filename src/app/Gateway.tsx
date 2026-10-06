@@ -25,6 +25,9 @@ import { AmpsDialog } from "@/components/AmpsDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { PreparedByDialog } from "@/components/PreparedByDialog";
 import { EquipmentDialog } from "@/components/EquipmentDialog";
+import { TaggingSettingsDialog } from "@/components/TaggingSettingsDialog";
+import { TagUploadDialog } from "@/components/TagUploadDialog";
+import { TagGroupDialog } from "@/components/TagGroupDialog";
 import { isFreeBoard } from "@/lib/board";
 import { ITEM_ISSUE_TYPES } from "@/lib/issues";
 import { useSpringScroll } from "@/lib/useSpringScroll";
@@ -191,6 +194,27 @@ export function Gateway({
           itemId={clients.jobItem.itemId}
           onCancel={clients.closeJobItem}
           onSaved={clients.closeJobItem}
+        />
+      ) : null}
+
+      {open && clients.taggingSettings ? (
+        <TaggingSettingsDialog onClose={clients.closeTaggingSettings} />
+      ) : null}
+
+      {open && clients.tagUpload ? (
+        <TagUploadDialog
+          siteId={clients.tagUpload.siteId}
+          siteName={clients.tagUpload.siteName}
+          onCancel={clients.closeTagUpload}
+          onStarted={clients.startedTagReport}
+        />
+      ) : null}
+
+      {open && clients.tagGroup ? (
+        <TagGroupDialog
+          reportId={clients.tagGroup}
+          onClose={clients.closeTagGroup}
+          onSaved={clients.savedTagGroup}
         />
       ) : null}
 

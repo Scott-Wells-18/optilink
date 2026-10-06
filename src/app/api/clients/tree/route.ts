@@ -112,6 +112,25 @@ export async function GET() {
               },
             },
           },
+          tagReports: {
+            where: { kind: "CLIENT" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+            select: {
+              preparedBy: true,
+              id: true,
+              name: true,
+              date: true,
+              customer: true,
+              siteLabel: true,
+              itemCount: true,
+              passCount: true,
+              failCount: true,
+              reviewCount: true,
+              notes: true,
+              source: { select: { originalName: true } },
+            },
+          },
           safetyDocs: {
             // Newest first: the report wanted is nearly always the last made.
             orderBy: [{ date: "desc" }, { createdAt: "desc" }],

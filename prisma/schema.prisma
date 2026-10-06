@@ -92,6 +92,8 @@ model UploadedFile {
   profileSignatures Profile[]        @relation("ProfileSignature")
   equipmentCerts    TestEquipment[]  @relation("TestEquipmentCert")
   equipmentPhotos   TestEquipment[]  @relation("TestEquipmentPhoto")
+  taggingReference  TaggingSettings[] @relation("TaggingReference")
+  taggingSnapshots  TagReport[]      @relation("TagReportSource")
 }
 
 /**
@@ -217,6 +219,7 @@ model Site {
   safetyDocs  SafetyDoc[]
   powerRuns   PowerAnalysis[]
   ampReports  AmpReport[]
+  tagReports  TagReport[]
 
   @@index([clientId])
 }
@@ -1356,4 +1359,89 @@ model AmpRecording {
 
   @@index([reportId])
   @@index([fileId])
+}
+
+
+/* ===========================================================================
+   Test and tag
+   =========================================================================== */
+
+/**
+ * The reference spreadsheet behind our own equipment register.
+ *
+ * One row, like Settings, because there is one truck's worth of gear and one
+ * export of it. Replacing the file changes what the next report is made from
+ * and nothing else: a report already generated holds its own copy of the rows
+ * it was made from, so last month's register still says what it said.
+ */
+model TaggingSettings {
+  id String @id @default("singleton")
+
+  fileId String?
+  file   UploadedFile? @relation("TaggingReference", fields: [fileId], references: [id], onDelete: SetNull)
+
+  /** When the file on it was last replaced, for saying how old it is. */
+  uploadedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+}
+
+enum TagReportKind {
+  /** Our own gear, out of the reference file. */
+  INTERNAL
+  /** A client's gear, out of the file uploaded for this report. */
+  CLIENT
+}
+
+/**
+ * One generated register, kept so it can be reopened and downloaded again.
+ *
+ * The rows are stored on the report rather than read back off a file, because
+ * the file they came from is replaced and a report that changed when the
+ * reference was replaced would not be a record of anything. The spreadsheet is
+ * kept beside them all the same, so the original is always recoverable.
+ */
+model TagReport {
+  id   String        @id @default(cuid())
+  kind TagReportKind
+
+  /** A client report belongs to a site; our own register belongs to nobody. */
+  siteId String?
+  site   Site?   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /** The day it is issued. Editable, and never an item's test date. */
+  date DateTime @default(now()) @db.Date
+  name String?
+
+  /** The spreadsheet it was made from, kept byte for byte. */
+  sourceId String?
+  source   UploadedFile? @relation("TagReportSource", fields: [sourceId], references: [id], onDelete: SetNull)
+
+  /** The rows as they were read, so the report never changes under anyone. */
+  items Json
+
+  /**
+   * What is in them, counted once.
+   *
+   * Kept beside the rows rather than counted out of them, so the navigation
+   * can say "22 items · 2 failed" without loading every row of every report
+   * on the site. They describe the stored rows and so never change either.
+   */
+  itemCount   Int @default(0)
+  passCount   Int @default(0)
+  failCount   Int @default(0)
+  reviewCount Int @default(0)
+
+  /** Which customer and site out of the file this report is about. */
+  customer String?
+  siteLabel String?
+
+  /** Anything the reader wanted said about the file. */
+  notes String[]
+
+  preparedBy String[]
+
+  createdAt DateTime @default(now())
+
+  @@index([siteId])
+  @@index([kind, date])
 }

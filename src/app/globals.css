@@ -5498,3 +5498,31 @@ a.dialog-cancel {
 )::before {
   background: var(--accent-deep);
 }
+
+/* ===========================================================================
+   Equipment tagging
+   ===========================================================================
+
+   The reference spreadsheet, shown as a thing rather than as a filename on a
+   line of its own: what it is called, how much is in it and when it arrived,
+   so replacing it is a decision somebody can make without opening it.
+   =========================================================================== */
+
+.tagging-reference {
+  padding: 14px 16px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.tagging-file {
+  margin: 0 0 6px;
+  font-weight: 650;
+  font-size: 14px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.tagging-reference .amp-figures {
+  margin: 0 0 4px;
+}

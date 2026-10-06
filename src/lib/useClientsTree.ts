@@ -155,6 +155,22 @@ type SafetyDocRecord = {
   sourceFileId: string | null;
 };
 
+/** One generated register, ours or a client's. */
+type TagReportRecord = {
+  preparedBy?: string[];
+  id: string;
+  name: string | null;
+  date: string;
+  customer: string | null;
+  siteLabel: string | null;
+  itemCount: number;
+  passCount: number;
+  failCount: number;
+  reviewCount: number;
+  notes: string[];
+  source: { originalName: string } | null;
+};
+
 type SiteRecord = {
   id: string;
   name: string;
@@ -167,6 +183,7 @@ type SiteRecord = {
   safetyDocs: SafetyDocRecord[];
   powerRuns: PowerRunRecord[];
   ampReports: AmpReportRecord[];
+  tagReports: TagReportRecord[];
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -257,6 +274,9 @@ export type SafetySpec = {
   /** The switchboards drawn for the site, for the energised-testing form. */
   boards: { id: string; name: string; board: unknown }[];
 };
+
+/** Starting a client's test & tag report, which needs a spreadsheet first. */
+export type TagUploadSpec = { siteId: string; siteName: string };
 
 /** Adding one piece of work to a job. */
 export type JobItemSpec = {
@@ -358,6 +378,11 @@ export function useClientsTree(enabled: boolean) {
   const [viewer, setViewer] = usePersisted<ViewerSpec | null>("viewer", null);
   const [motorIssue, setMotorIssue] = usePersisted<MotorIssueSpec | null>("motor", null);
   const [jobItem, setJobItem] = usePersisted<JobItemSpec | null>("jobitem", null);
+  /** Our own registers, which hang off the company rather than a site. */
+  const [ownTagReports, setOwnTagReports] = useState<TagReportRecord[]>([]);
+  const [taggingSettings, setTaggingSettings] = usePersisted<boolean>("tagsettings", false);
+  const [tagUpload, setTagUpload] = usePersisted<TagUploadSpec | null>("tagupload", null);
+  const [tagGroup, setTagGroup] = usePersisted<string | null>("taggroup", null);
   const [rcd, setRcd] = usePersisted<RcdSpec | null>("rcd", null);
   const [safety, setSafety] = usePersisted<SafetySpec | null>("safety", null);
   const [rcdLimits, setRcdLimits] = usePersisted("rcdlimits", false);
@@ -1645,10 +1670,194 @@ export function useClientsTree(enabled: boolean) {
     },
   ];
 
-  const taggingNodes = useMemo<TreeNode[]>(() => soon("tagging"), []);
   const installNodes = useMemo<TreeNode[]>(() => soon("install"), []);
-  const testTagNodes = useMemo<TreeNode[]>(() => soon("testtag"), []);
   const gateNodes = useMemo<TreeNode[]>(() => soon("gates"), []);
+
+  /* --- test and tag ----------------------------------------------------- */
+
+  const refreshTagging = useCallback(async () => {
+    try {
+      const response = await fetch("/api/tagging/reports", { cache: "no-store" });
+      if (response.ok) setOwnTagReports(await response.json());
+    } catch {
+      // The section simply shows nothing; the rest of the hub is unaffected.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (enabled) void refreshTagging();
+  }, [enabled, refreshTagging]);
+
+  const startTagReport = useCallback(
+    async (body: Record<string, unknown>) => {
+      const response = await fetch("/api/tag-reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error ?? "That report could not be started.");
+        return;
+      }
+      await Promise.all([refreshTagging(), refresh()]);
+    },
+    [refresh, refreshTagging],
+  );
+
+  const setTagDate = useCallback(
+    async (id: string, date: string) => {
+      const response = await fetch(`/api/tag-reports/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        setError("The date could not be changed.");
+        return;
+      }
+      await Promise.all([refreshTagging(), refresh()]);
+    },
+    [refresh, refreshTagging],
+  );
+
+  const removeTagReport = useCallback(
+    async (id: string, what: string) => {
+      if (!window.confirm(`Remove ${what}?`)) return;
+      const response = await fetch(`/api/tag-reports/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        setError(`${what} could not be removed.`);
+        return;
+      }
+      await Promise.all([refreshTagging(), refresh()]);
+    },
+    [refresh, refreshTagging],
+  );
+
+  /**
+   * A register report as a row.
+   *
+   * The detail says how many items and, where any are not a plain pass, how
+   * many — because that is what somebody scanning a list of registers is
+   * looking for.
+   */
+  const tagRow = useCallback(
+    (report: TagReportRecord, kind: "INTERNAL" | "CLIENT"): TreeNode => {
+      const title = report.name?.trim() || isoLabel(report.date);
+      return {
+        id: `tag:${report.id}`,
+        label: title,
+        detail:
+          [
+            countLabel(report.itemCount, "item", "items"),
+            report.failCount > 0 ? `${report.failCount} failed` : null,
+            report.reviewCount > 0 ? `${report.reviewCount} to review` : null,
+          ]
+            .filter(Boolean)
+            .join("  ·  ") || "Nothing on it",
+        variant: "info",
+        editDate: {
+          value: isoDate(report.date),
+          onSave: (value) => void setTagDate(report.id, value),
+        },
+        onActivate: () => window.open(`/api/tag-reports/${report.id}/report?preview=1`, "_blank"),
+        onDownload: () => download(`/api/tag-reports/${report.id}/report`),
+        onRemove: () => void removeTagReport(report.id, title),
+        children: [
+          {
+            id: `taggroup:${report.id}`,
+            label:
+              report.customer && report.siteLabel
+                ? `${report.customer}  —  ${report.siteLabel}`
+                : "Whose equipment",
+            detail:
+              report.customer && report.siteLabel
+                ? "Change which customer and site this is about"
+                : "Every customer in the file, each named on its own group",
+            variant: "info",
+            onActivate: () => setTagGroup(report.id),
+          },
+          preparedByRow(
+            `tag:${report.id}`,
+            `/api/tag-reports/${report.id}`,
+            kind === "CLIENT" ? "test & tag report" : "equipment register",
+            report.preparedBy ?? [],
+            profileNames,
+            setPreparedBy,
+          ),
+          ...(report.notes.length > 0
+            ? [
+                {
+                  id: `tagnotes:${report.id}`,
+                  label: "About this file",
+                  detail: report.notes.join("  ·  "),
+                  variant: "info" as const,
+                  onActivate: () =>
+                    setInfo({ title: "About this file", body: report.notes.join("\n\n") }),
+                },
+              ]
+            : []),
+        ],
+      };
+    },
+    [setTagDate, removeTagReport, profileNames, setPreparedBy, setInfo, setTagGroup],
+  );
+
+  /** Our own register: one reference file, and the reports made from it. */
+  const taggingNodes = useMemo<TreeNode[]>(
+    () => [
+      {
+        id: "tagging:settings",
+        label: "Settings",
+        detail: "The reference spreadsheet",
+        variant: "info",
+        onActivate: () => setTaggingSettings(true),
+      },
+      ...ownTagReports.map((report) => tagRow(report, "INTERNAL")),
+      {
+        id: "add:tagging",
+        label: "New report",
+        detail: "Dated today, from the saved spreadsheet",
+        variant: "add",
+        onActivate: () => void startTagReport({ kind: "INTERNAL" }),
+      },
+    ],
+    [ownTagReports, tagRow, startTagReport, setTaggingSettings],
+  );
+
+  /** A client's register: a spreadsheet per report, under their site. */
+  const testTagNodes = useMemo<TreeNode[]>(
+    () =>
+      clients
+        .map<TreeNode>((client) => {
+          const sites = client.sites.map<TreeNode>((site) => ({
+            id: `testtag:site:${site.id}`,
+            label: site.name,
+            detail:
+              site.location?.trim() ||
+              countLabel(site.tagReports.length, "report", "reports"),
+            children: [
+              ...site.tagReports.map((report) => tagRow(report, "CLIENT")),
+              {
+                id: `add:testtag:${site.id}`,
+                label: "Add new",
+                detail: "Upload a spreadsheet",
+                variant: "add",
+                onActivate: () => setTagUpload({ siteId: site.id, siteName: site.name }),
+              },
+            ],
+          }));
+
+          return {
+            id: `testtag:client:${client.id}`,
+            label: client.name,
+            detail: countLabel(sites.length, "site", "sites"),
+            children: sites,
+          };
+        })
+        .filter((client) => (client.children?.length ?? 0) > 0),
+    [clients, tagRow, setTagUpload],
+  );
 
   const equipmentNodes = useMemo<TreeNode[]>(
     () => [
@@ -1705,6 +1914,20 @@ export function useClientsTree(enabled: boolean) {
     rcdNodes,
     swmsNodes,
     taggingNodes,
+    taggingSettings,
+    closeTaggingSettings: () => setTaggingSettings(false),
+    tagUpload,
+    closeTagUpload: () => setTagUpload(null),
+    tagGroup,
+    closeTagGroup: () => setTagGroup(null),
+    savedTagGroup: () => {
+      setTagGroup(null);
+      void Promise.all([refreshTagging(), refresh()]);
+    },
+    startedTagReport: () => {
+      setTagUpload(null);
+      void refresh();
+    },
     powerNodes,
     ampNodes,
     installNodes,

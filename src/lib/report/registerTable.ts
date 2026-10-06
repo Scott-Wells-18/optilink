@@ -223,6 +223,33 @@ function statusChip(doc: Doc, x: number, y: number, width: number, item: Item) {
  * redrawn under it every time, because a page of rows with no headings is a
  * page of numbers.
  */
+/**
+ * A band across the table, naming whose equipment the rows under it are.
+ *
+ * Only drawn where a file holds more than one customer or site. A register of
+ * one customer's gear does not need telling whose it is on every page; a
+ * register of three does, because the alternative is one customer's name
+ * standing over another customer's equipment, which is the worst thing this
+ * report could print.
+ */
+const BAND_HEIGHT = 18;
+
+export function groupBand(item: Item): string {
+  return `${item.customer || "(no customer)"}  \u2014  ${item.site || "(no site)"}`;
+}
+
+function drawBand(doc: Doc, y: number, text: string) {
+  doc.rect(LAND_MARGIN, y, LAND_CONTENT, BAND_HEIGHT).fill(COLOURS.band);
+  doc.rect(LAND_MARGIN, y, 3, BAND_HEIGHT).fill(COLOURS.accent);
+  doc.fillColor(COLOURS.bar).font("Helvetica-Bold").fontSize(8.5);
+  doc.text(safe(text), LAND_MARGIN + 12, y + 5, {
+    width: LAND_CONTENT - 24,
+    lineBreak: false,
+    ellipsis: true,
+  });
+  doc.fillColor(COLOURS.ink);
+}
+
 export function drawTable(
   doc: Doc,
   items: Item[],
@@ -231,14 +258,32 @@ export function drawTable(
   onPage: () => number,
   headFill: string = COLOURS.bar,
   note?: Annotate,
+  /** True where the report covers more than one customer or site. */
+  banded = false,
 ): number {
   let y = headingRow(doc, start, columns, headFill);
+  let band: string | null = null;
 
   items.forEach((item, index) => {
+    const wanted = banded ? groupBand(item) : null;
+    const opening = wanted !== null && wanted !== band;
     const height = rowHeight(doc, item, columns, note);
-    if (y + height > TABLE_FLOOR) {
+
+    if (y + height + (opening ? BAND_HEIGHT : 0) > TABLE_FLOOR) {
       y = headingRow(doc, onPage(), columns, headFill);
+      // A page that carries on inside a group repeats whose it is, so a loose
+      // page is never anonymous.
+      if (banded && wanted) {
+        drawBand(doc, y, wanted);
+        y += BAND_HEIGHT;
+        band = wanted;
+      }
+    } else if (opening && wanted) {
+      drawBand(doc, y, wanted);
+      y += BAND_HEIGHT;
+      band = wanted;
     }
+
     drawRow(doc, y, item, columns, index, height, note);
     y += height;
   });

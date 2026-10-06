@@ -68,11 +68,24 @@ export async function buildRegisterReport(data: RegisterReport): Promise<Buffer>
   if (data.kind === "CLIENT") clientSections(doc, data);
   else internalSections(doc, data);
 
-  stampWideFeet(doc, data, {
-    width: LAND.width,
-    height: LAND.height,
-    margin: LAND_MARGIN,
-  });
+  // The foot of every page says whose equipment is on it. Where the report
+  // covers several customers and none has been chosen, it says so rather than
+  // naming the site the report happens to be filed under — a foot reading one
+  // contractor's name under another contractor's welder is the thing this
+  // report must never do.
+  const spread = pairings(data.items).length > 1 && !(data.customer && data.site);
+  stampWideFeet(
+    doc,
+    spread
+      ? {
+          ...data,
+          clientName: "Several customers",
+          siteName: "named above each group",
+          siteLocation: null,
+        }
+      : data,
+    { width: LAND.width, height: LAND.height, margin: LAND_MARGIN },
+  );
   doc.end();
   return done;
 }
@@ -119,11 +132,32 @@ function cover(doc: Doc, data: RegisterReport) {
   doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(19);
   doc.text(longDate(data.reportDate), dateX + 16, y + 20, { width: dateWidth - 32 });
 
-  const facts: [string, string][] = [
-    ["Customer", data.customer || data.clientName],
-    ["Site", data.site || data.siteName],
-    ["Equipment listed", String(data.items.length)],
-  ];
+  /*
+   * Whose equipment this is.
+   *
+   * Where a pairing has been chosen, or the file held only one, it is named.
+   * Where it has not, the cover says how many there are rather than naming the
+   * first — a heading reading "Harbourside Storage" over a page that includes
+   * another contractor's welder is the worst thing this report could print.
+   */
+  const pairs = pairings(data.items);
+  const named = Boolean(data.customer && data.site);
+  const facts: [string, string][] = named
+    ? [
+        ["Customer", data.customer!],
+        ["Site", data.site!],
+        ["Equipment listed", String(data.items.length)],
+      ]
+    : [
+        [
+          "Customer",
+          pairs.length === 1
+            ? pairs[0].customer
+            : `${pairs.length} customers and sites, named on each section`,
+        ],
+        ["Site", pairs.length === 1 ? pairs[0].site : "—"],
+        ["Equipment listed", String(data.items.length)],
+      ];
   const split = byVerdict(data.items);
   facts.push([
     "Result",
@@ -188,6 +222,32 @@ function cover(doc: Doc, data: RegisterReport) {
   doc.fillColor(COLOURS.ink);
 }
 
+/**
+ * The customer and site pairings in a set of rows, in the order they appear.
+ *
+ * Read off the rows rather than taken from the report, because the report's
+ * own customer and site are what it has been told it is about and these are
+ * what it actually holds. Where the two disagree the rows win.
+ */
+function pairings(items: Item[]): { customer: string; site: string }[] {
+  const seen = new Map<string, { customer: string; site: string }>();
+  for (const item of items) {
+    const customer = item.customer || "(no customer)";
+    const site = item.site || "(no site)";
+    const id = `${customer}\u0000${site}`;
+    if (!seen.has(id)) seen.set(id, { customer, site });
+  }
+  return [...seen.values()];
+}
+
+/** How a report says whose equipment it is listing, on every running head. */
+function whose(data: RegisterReport): string {
+  if (data.customer && data.site) return `${data.customer}  ·  ${data.site}`;
+  const pairs = pairings(data.items);
+  if (pairs.length === 1) return `${pairs[0].customer}  ·  ${pairs[0].site}`;
+  return `${pairs.length} customers and sites — named above each group`;
+}
+
 /* --- running head --------------------------------------------------------- */
 
 function head(doc: Doc, data: RegisterReport, title: string, note?: string): number {
@@ -221,16 +281,24 @@ function head(doc: Doc, data: RegisterReport, title: string, note?: string): num
 /* --- our own register ----------------------------------------------------- */
 
 function internalSections(doc: Doc, data: RegisterReport) {
+  const banded = pairings(data.items).length > 1;
   for (const [index, table] of TABLES.entries()) {
     doc.addPage();
-    const note = `${data.customer || data.clientName}  ·  ${data.site || data.siteName}  ·  ${
-      data.items.length
-    } items`;
+    const note = `${whose(data)}  ·  ${data.items.length} items`;
     let y = head(doc, data, table.title, note);
-    y = drawTable(doc, data.items, table.columns, y, () => {
-      doc.addPage();
-      return head(doc, data, `${table.title} (continued)`, note);
-    });
+    y = drawTable(
+      doc,
+      data.items,
+      table.columns,
+      y,
+      () => {
+        doc.addPage();
+        return head(doc, data, `${table.title} (continued)`, note);
+      },
+      COLOURS.bar,
+      undefined,
+      banded,
+    );
     if (index === TABLES.length - 1) tail(doc, y, data);
   }
 }
@@ -269,7 +337,8 @@ const SECTION_TONE: Record<Verdict, { fill: string; blurb: string; empty: string
 
 function clientSections(doc: Doc, data: RegisterReport) {
   const split = byVerdict(data.items);
-  const where = `${data.customer || data.clientName}  ·  ${data.site || data.siteName}`;
+  const where = whose(data);
+  const banded = pairings(data.items).length > 1;
 
   // Passed and failed always appear, even empty — a client needs to be told
   // there were no failures rather than left to infer it from a missing page.
@@ -325,6 +394,7 @@ function clientSections(doc: Doc, data: RegisterReport) {
         verdict === "FAIL" && index === 0
           ? (item) => (item.comments.trim() ? safe(item.comments.trim()) : null)
           : undefined,
+        banded,
       );
 
       if (last && index === TABLES.length - 1) tail(doc, y, data);
