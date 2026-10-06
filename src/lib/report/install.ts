@@ -9,13 +9,11 @@ import {
   MEASUREMENT_LABELS,
   TERMINALS,
   resistanceReads,
-  voltsAt,
   voltsReads,
   type InstallRow,
   type Terminals,
 } from "@/lib/install/parse";
 import {
-  EXPECTED,
   PHASE_LABELS,
   reasonFor,
   type Anomaly,
@@ -387,13 +385,24 @@ function cover(doc: Doc, data: InstallReport) {
     doc.y += 22;
   }
 
-  doc.y = Math.max(doc.y + 10, SHEET.height - MARGIN - 110);
-  note(
-    doc,
+  /*
+   * The closing line, kept on the cover.
+   *
+   * It used to be dropped near the foot of the page whatever was above it, so
+   * a cover with a long installation description and a note about the records
+   * pushed it past the bottom — and the second half of one sentence took a
+   * page of its own with nothing else on it. It is measured and placed where
+   * it fits: low on the page when there is room, straight under what is above
+   * it when there is not.
+   */
+  const closing =
     "This report sets out the readings the test instrument recorded on the date shown, at the points " +
-      "listed inside. It states what was measured. It is not a certificate of compliance for the " +
-      "installation, and the limitations inside form part of it.",
-  );
+    "listed inside. It states what was measured. It is not a certificate of compliance for the " +
+    "installation, and the limitations inside form part of it.";
+  doc.font("Helvetica").fontSize(8.5);
+  const tall = doc.heightOfString(safe(closing), { width: CONTENT, lineGap: 1.6 });
+  doc.y = Math.min(Math.max(doc.y + 10, SHEET.height - MARGIN - 110), FLOOR - tall);
+  note(doc, closing);
 }
 
 /* --- what the readings show -------------------------------------------------- */
@@ -406,14 +415,13 @@ function basis(doc: Doc, data: InstallReport) {
 
   const insulationRows = data.rows.filter((row) => row.kind === "INSULATION");
   const rcdRows = data.rows.filter((row) => row.kind === "RCD");
-  const expected = EXPECTED[data.phases];
 
   note(
     doc,
-    `This is a ${PHASE_LABELS[data.phases].toLowerCase()} installation, so the scope expects ` +
-      `${expected.insulation} insulation test and ${expected.rcd} RCD auto ` +
-      `${expected.rcd === 1 ? "sequence" : "sequences"}. The file holds ${insulationRows.length} and ` +
-      `${rcdRows.length} respectively.`,
+    `This report records ${insulationRows.length} insulation resistance ` +
+      `${insulationRows.length === 1 ? "test" : "tests"} and ${rcdRows.length} RCD automatic test ` +
+      `${rcdRows.length === 1 ? "sequence" : "sequences"} for the ` +
+      `${PHASE_LABELS[data.phases].toLowerCase()} installation.`,
     9,
   );
   doc.y += 6;
@@ -421,54 +429,55 @@ function basis(doc: Doc, data: InstallReport) {
   /*
    * What a voltage between two terminals does and does not establish.
    *
-   * This paragraph is the reason the report does not say "polarity verified".
-   * A reading between L and PE of about 240 V, between L and N of about 240 V
-   * and between N and PE of near zero is consistent with correct connection —
-   * and it is also what a reading at one point on one day is. It is not a
-   * polarity test, it does not cover the points that were not tested, and
-   * saying so is the difference between a record and a claim.
+   * The second paragraph is the reason the report does not say "polarity
+   * verified". A reading between L and PE of about 240 V, between L and N of
+   * about 240 V and between N and PE of near zero is consistent with correct
+   * connection — and it is also what a reading at one point on one day is. It
+   * is not a polarity test, it does not cover the points that were not tested,
+   * and saying so is the difference between a record and a claim.
    */
   doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("The voltage readings", MARGIN, doc.y, { width: CONTENT });
+  doc.text("Voltage readings", MARGIN, doc.y, { width: CONTENT });
   doc.y += 14;
   note(
     doc,
-    "Each tested point has a reading taken between line and earth, between line and neutral, and " +
-      "between neutral and earth. Together these show the voltage present between each pair of " +
-      "terminals at that point when the reading was taken. Readings of roughly nominal supply " +
-      "voltage line-to-earth and line-to-neutral, with a low neutral-to-earth reading, are " +
-      "consistent with a correctly connected point.",
+    "Each tested point includes voltage measurements between line and earth (L–PE), line and " +
+      "neutral (L–N), and neutral and earth (N–PE). These readings show the voltage present " +
+      "between those terminals at the time of testing.",
   );
   note(
     doc,
-    "They are not, on their own, a polarity verification: that is a separate test, and this " +
-      "instrument export does not contain one. Nor do they say anything about the points that were " +
-      "not tested. This report states the voltages measured at the points listed and draws no " +
-      "wider conclusion from them.",
+    "Readings close to nominal supply voltage between L–PE and L–N, together with a low N–PE " +
+      "voltage, are consistent with the expected voltage relationships. These measurements alone " +
+      "do not confirm polarity or establish that all installation verification tests have been " +
+      "completed. The results apply only to the points tested.",
   );
   doc.y += 6;
 
   doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("The insulation reading", MARGIN, doc.y, { width: CONTENT });
+  doc.text("Insulation resistance", MARGIN, doc.y, { width: CONTENT });
   doc.y += 14;
   note(
     doc,
-    "An insulation resistance reading written by the instrument as a “greater than” value is " +
-      "a floor, not a measurement: the resistance was above the instrument's range. It is printed " +
-      "here exactly as the instrument wrote it rather than being turned into a number.",
+    "A result displayed with a “greater than” symbol means the insulation resistance exceeded the " +
+      "instrument’s displayed measurement limit. The report preserves this result as recorded " +
+      "rather than presenting it as an exact resistance value.",
   );
   doc.y += 6;
 
   doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("The RCD readings", MARGIN, doc.y, { width: CONTENT });
+  doc.text("RCD readings", MARGIN, doc.y, { width: CONTENT });
   doc.y += 14;
   note(
     doc,
-    "The auto sequence records the disconnection time at half, one and five times the rated " +
-      "residual current, each at 0° and 180°. At half rated current the device must not trip, " +
-      "which the instrument writes as a “greater than” time. The assessment of those times " +
-      "against AS/NZS 3017 is made in the RCD report, which is a separate document; the times are " +
-      "reproduced here as measured.",
+    "The automatic test sequence records results at half, one and five times the RCD’s rated " +
+      "residual current, at both 0° and 180°. The half-rated-current test checks for " +
+      "non-operation; the remaining tests record the device’s disconnection times.",
+  );
+  note(
+    doc,
+    "Results are reproduced as recorded by the instrument. Assessment against the applicable " +
+      "requirements is provided in the separate RCD report.",
   );
 
   if (data.header.notes.length > 0) {
@@ -479,10 +488,17 @@ function basis(doc: Doc, data: InstallReport) {
 
 /* --- insulation --------------------------------------------------------------- */
 
+/**
+ * Insulation and the RCD results share a page.
+ *
+ * An installation has one insulation reading on it, and one reading does not
+ * need a page of its own with three quarters of it empty. It opens the page
+ * and the RCD results follow underneath.
+ */
 function insulation(doc: Doc, data: InstallReport) {
   const found = data.rows.filter((row) => row.kind === "INSULATION");
   doc.addPage();
-  head(doc, data, "Insulation resistance");
+  head(doc, data, "Insulation resistance and RCD results");
   sectionBar(doc, "Insulation resistance", doc.y, SPAN);
   doc.y += 34;
 
@@ -564,8 +580,10 @@ const TRIPS: { key: "ratedAt0" | "ratedAt180" | "fiveAt0" | "fiveAt180"; label: 
 
 function rcd(doc: Doc, data: InstallReport) {
   const found = data.rows.filter((row) => row.kind === "RCD" && row.rcd);
-  doc.addPage();
-  head(doc, data, "RCD results");
+  // Under the insulation reading where there is room for it, on its own page
+  // where there is not.
+  const y = room(doc, data, 150, "Insulation resistance and RCD results");
+  doc.y = y + 10;
   sectionBar(doc, "RCD results", doc.y, SPAN);
   doc.y += 34;
 
@@ -604,14 +622,19 @@ function rcd(doc: Doc, data: InstallReport) {
     );
     doc.y += 16;
 
-    const half = [test.halfAt0, test.halfAt180];
+    /*
+     * Half rated current, said once where both say the same thing.
+     *
+     * The instrument takes it at 0° and at 180°, and on a device that passes
+     * both read the same — "did not trip  /  did not trip" is the same fact
+     * twice. Where they differ both are printed, because then it matters.
+     */
+    const half = [test.halfAt0, test.halfAt180].map((reading) =>
+      reading === "NO_TRIP" ? "did not trip" : reading === null ? "no reading" : `${reading} ms`,
+    );
     doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
     doc.text(
-      `At half rated current: ${half
-        .map((reading) =>
-          reading === "NO_TRIP" ? "did not trip" : reading === null ? "no reading" : `${reading} ms`,
-        )
-        .join("  /  ")}`,
+      `At half rated current: ${half[0] === half[1] ? half[0] : half.join("  /  ")}`,
       MARGIN,
       doc.y,
       { width: CONTENT },
@@ -644,15 +667,6 @@ function rcd(doc: Doc, data: InstallReport) {
 
 /* --- the points ---------------------------------------------------------------- */
 
-/**
- * The line readings and the neutral-to-earth reading, drawn apart.
- *
- * A line reading near 240 V and a neutral-to-earth reading near half a volt on
- * the same axis makes the second one a flat line on the floor, which is where
- * somebody looks to see whether there is a neutral problem. Two charts, two
- * scales, and each says its own unit.
- */
-const LINE_PAIRS: Terminals[] = ["L-PE", "L-N"];
 
 function points(doc: Doc, data: InstallReport) {
   doc.addPage();
@@ -718,59 +732,13 @@ function points(doc: Doc, data: InstallReport) {
     doc.y += 4;
   }
 
-  /* --- the two voltage charts ------------------------------------------- */
-  const named = (point: Point) => point.name || point.ref;
-
-  const lineBars: Bar[] = data.points.flatMap((point) =>
-    LINE_PAIRS.flatMap((terminal) => {
-      const reading = point.readings[terminal];
-      const volts = reading ? voltsAt(reading, terminal) : null;
-      if (!reading || volts === null) return [];
-      return [
-        {
-          label: `${named(point)} ${terminal}`,
-          value: volts,
-          reads: safe(voltsReads(reading, terminal)),
-        },
-      ];
-    }),
-  );
-  if (lineBars.length > 0) {
-    barChart(
-      doc,
-      data,
-      "Line voltages at each point",
-      "V",
-      lineBars,
-      null,
-      "Tested points",
-    );
-  }
-
-  const earthBars: Bar[] = data.points.flatMap((point) => {
-    const reading = point.readings["N-PE"];
-    const volts = reading ? voltsAt(reading, "N-PE") : null;
-    if (!reading || volts === null) return [];
-    return [{ label: named(point), value: volts, reads: safe(voltsReads(reading, "N-PE")) }];
-  });
-  if (earthBars.length > 0) {
-    barChart(
-      doc,
-      data,
-      "Neutral to earth at each point",
-      "V",
-      earthBars,
-      null,
-      "Tested points",
-    );
-    note(
-      doc,
-      "Drawn on its own scale. A neutral-to-earth reading is a fraction of a line voltage, and on " +
-        "the same axis as one it is a flat line along the bottom of the chart — which is where it " +
-        "would be looked at.",
-      8,
-    );
-  }
+  /*
+   * No charts here.
+   *
+   * The readings are a table of three voltages a point, and a chart of them is
+   * eight bars all the same height: it takes a page to say what the table has
+   * already said in a line. The table is the result.
+   */
 }
 
 /* --- what was set aside --------------------------------------------------------- */
