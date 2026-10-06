@@ -36,7 +36,7 @@ import {
 } from "@/lib/report/flow";
 import { COLOURS, CONTENT, MARGIN, PAGE, longDate, safe, shortDate } from "@/lib/report/theme";
 import { clean, fromPlain, type RichText } from "@/lib/richText";
-import { drawRich, measureRich } from "@/lib/report/richText";
+import { drawRich, measureRich, splitBlock } from "@/lib/report/richText";
 import { preparedByFor } from "@/lib/profiles.server";
 
 /**
@@ -395,41 +395,85 @@ function summary(doc: Doc, data: JobReport, laid: Layout) {
 /* --- how a strip of photos is laid out ------------------------------------ */
 
 /**
- * The grid: three tiles across, three rows deep, nine to a page.
+ * The well a photograph sits in, and how many go across a page.
  *
- * Holding to three across whatever a stage holds keeps every tile on the page
- * the same size: a before of nine beside an after of four still reads as one
- * record rather than two different documents.
+ * These are phone photographs held upright — nine wide to sixteen tall — so
+ * the well is that shape and a photograph fills it corner to corner instead of
+ * standing as a stamp in the middle of a short landscape box with white down
+ * both sides. That was the old shape, and with three rows forced onto a page
+ * it squeezed every well to about 110pt tall: nine photographs in the top half
+ * of a page, each too small to show what it was taken to show.
+ *
+ * Two rows of an upright well fill a page, so two is what a page takes.
  */
-const ACROSS = 3;
-const DOWN = 3;
-const PER_PAGE = ACROSS * DOWN;
-
-const TILE_WIDTH = (CONTENT - TILE_GAP * (ACROSS - 1)) / ACROSS;
+const RATIO = 16 / 9;
+const MAX_ACROSS = 3;
 
 /**
- * How tall a tile is allowed to get, and how short it may be squeezed.
+ * How many go across, for one item of work.
  *
- * The photographs are taken on a phone and held upright, so the well they sit
- * in is upright too — four tall to three wide, which is the shape of the
- * photograph itself. A portrait then fills its well edge to edge instead of
- * sitting as a stamp in the middle of a square with bars down both sides.
+ * Three where there are enough to need three. Fewer where there are not: a
+ * report with one rectification on it and two photographs should not print
+ * them at the size it would print nine, leaving two thirds of the page white.
+ * One photograph on its own gets the page to itself.
  *
- * Three rows of a well that tall do not fit on a page, so a page of three rows
- * takes what the page has; the floor is the point below which a photograph
- * stops being worth printing.
+ * Decided once per item rather than per stage, so a before of nine and an
+ * after of one are photographed at one size and read as one record.
  */
-const TALL = Math.round((TILE_WIDTH * 4) / 3);
-const SHORT = 112;
+function acrossFor(counts: number[]): number {
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total <= 1) return 1;
+  return Math.min(MAX_ACROSS, Math.max(2, ...counts));
+}
 
-/** A photo in its well: contained, centred, never cropped. */
+/**
+ * What else has to fit on the page a photograph first lands on.
+ *
+ * The section bar, the item's heading, the stage's label, a line or two of
+ * explanation, and the gaps around them. Reserved so that a report with one
+ * photograph on it does not print the heading on one page and the photograph
+ * on the next with both pages mostly white — which is what happens when the
+ * well is sized to the page and then will not share it with anything.
+ */
+const FIRST_PAGE_FURNITURE = HEAD_HEIGHT + LABEL_HEIGHT + 40 + ROW_GAP + TAIL_PAD;
+
+/**
+ * The well's width and height at a given number across, as large as fits.
+ *
+ * Width first, because three across a page is what sets it in the ordinary
+ * case. Height has the last word only where one or two across would otherwise
+ * make a well taller than the page it has to share.
+ */
+function wellFor(across: number): { width: number; height: number } {
+  const byWidth = (CONTENT - TILE_GAP * (across - 1)) / across;
+  const room = pageRoom(true) - FIRST_PAGE_FURNITURE;
+  const width = Math.min(byWidth, room / RATIO);
+  return { width, height: width * RATIO };
+}
+
+/** The OptiLink blue a photograph is framed in. */
+const FRAME = 2;
+
+/**
+ * A photo in its well: contained, centred, never cropped, framed in blue.
+ *
+ * The frame is drawn after the photograph rather than before, so that a
+ * picture filling its well to the edge sits inside the line instead of over
+ * the top of it.
+ */
 function drawTile(doc: Doc, bytes: Buffer, x: number, y: number, width: number, height: number) {
-  doc.rect(x, y, width, height).fillAndStroke(COLOURS.well, COLOURS.hair);
-  doc.image(bytes, x + 4, y + 4, {
-    fit: [width - 8, height - 8],
+  doc.save();
+  doc.rect(x, y, width, height).fill(COLOURS.well);
+  doc.image(bytes, x + FRAME, y + FRAME, {
+    fit: [width - FRAME * 2, height - FRAME * 2],
     align: "center",
     valign: "center",
   });
+  doc
+    .rect(x + FRAME / 2, y + FRAME / 2, width - FRAME, height - FRAME)
+    .lineWidth(FRAME)
+    .stroke(COLOURS.accent);
+  doc.restore();
 }
 
 /* --- how an item's photographs fall onto pages ---------------------------- */
@@ -437,76 +481,15 @@ function drawTile(doc: Doc, bytes: Buffer, x: number, y: number, width: number, 
 /** A line of explanation that belongs to a particular stage's photographs. */
 type Note = { tag: string; body: RichText };
 
-/** One stage's photographs, or as many of them as one page will take. */
+/** One stage's photographs, with the line that explains them. */
 type Grid = {
   stage: JobPhotoStage;
   shots: Photo[];
-  rows: number;
-  /** How many the stage holds in all, for the label over the first of them. */
+  /** How many the stage holds, for the label over the first of them. */
   total: number;
-  /** True where this is the rest of a stage carried over from the page before. */
-  carried: boolean;
   /** What was found, or what was done — whichever this stage is showing. */
   note: Note | null;
 };
-
-/** What one page of an item carries. */
-type Leaf = {
-  grids: Grid[];
-  rows: number;
-  /** A line with no photographs of its own to sit above. */
-  lead: Note | null;
-  tail: Note | null;
-};
-
-/**
- * A stage, cut into pagefuls.
- *
- * Nine to a page is the rule, and a stage is capped at nine when it is saved,
- * so this only ever does anything for a stage photographed before that cap
- * existed. Its label says the total and the rest are marked as carried over,
- * so nobody reads the second half of a stage as a stage of its own.
- */
-function cut(stage: JobPhotoStage, shots: Photo[], note: Note | null): Grid[] {
-  const out: Grid[] = [];
-  for (let at = 0; at < shots.length; at += PER_PAGE) {
-    const slice = shots.slice(at, at + PER_PAGE);
-    out.push({
-      stage,
-      shots: slice,
-      rows: Math.ceil(slice.length / ACROSS),
-      total: shots.length,
-      carried: at > 0,
-      note: at === 0 ? note : null,
-    });
-  }
-  return out;
-}
-
-/**
- * The item's stages dealt onto pages, three rows to a page.
- *
- * A stage is never split across a page break — the photographs of one stage
- * belong together — so a stage that will not fit in the rows left starts the
- * next page. Three before photographs and three after share a page; seven
- * before fill one on their own and whatever follows begins the next.
- */
-function pagefuls(grids: Grid[]): Leaf[] {
-  const leaves: Leaf[] = [];
-  let leaf: Leaf = { grids: [], rows: 0, lead: null, tail: null };
-
-  for (const grid of grids) {
-    if (leaf.grids.length > 0 && leaf.rows + grid.rows > DOWN) {
-      leaves.push(leaf);
-      leaf = { grids: [], rows: 0, lead: null, tail: null };
-    }
-    leaf.grids.push(grid);
-    leaf.rows += grid.rows;
-  }
-
-  leaves.push(leaf);
-  return leaves;
-}
 
 /**
  * How tall an item's heading is.
@@ -533,73 +516,82 @@ function headText(item: Item): string {
   return `${item.index}.  ${item.title}`;
 }
 
-/** How tall a leaf is before its tiles: headings, labels and explanations. */
-function furnitureOf(doc: Doc, leaf: Leaf, head: number): number {
-  const notes = [leaf.lead, ...leaf.grids.map((grid) => grid.note), leaf.tail];
-  return (
-    head +
-    leaf.grids.length * LABEL_HEIGHT +
-    notes.reduce((total, note) => total + (note ? noteHeight(doc, note.body) : 0), 0) +
-    leaf.rows * ROW_GAP +
-    TAIL_PAD
-  );
-}
-
-/**
- * How tall the tiles are for one item of work.
- *
- * As tall as the page allows, up to the upright well — but the same on every
- * page of the item, so a stage of three and a stage of seven are photographed
- * at one size rather than the reader being shown two. The page with the most
- * rows on it is therefore what decides the size for all of them.
- */
-function tileHeight(doc: Doc, leaves: Leaf[], underBar: boolean, head: number): number {
-  let height = TALL;
-  leaves.forEach((leaf, at) => {
-    if (leaf.rows === 0) return;
-    const room = pageRoom(underBar && at === 0) - furnitureOf(doc, leaf, at === 0 ? head : 0);
-    height = Math.min(height, Math.floor(room / leaf.rows));
-  });
-  return Math.max(SHORT, height);
-}
-
 const NOTE_INDENT = 46;
 const NOTE_WIDTH = CONTENT - NOTE_INDENT;
+const NOTE_SHAPE = { size: 9.5, lineGap: 1, gap: 3 } as const;
 
-function noteHeight(doc: Doc, body: RichText): number {
-  return measureRich(doc, body, NOTE_WIDTH, { size: 9.5, lineGap: 1, gap: 3 }) + 5;
-}
+/**
+ * A written explanation, as one piece per paragraph so it can flow.
+ *
+ * Measured as a single piece, a long description asks for more room than any
+ * page has. The engine turns the page, finds it still does not fit, and leaves
+ * a page holding a title and nothing else, then another holding one line —
+ * which is how a works report came out with two near-empty pages and a wall of
+ * text running through the footer of the third.
+ *
+ * A paragraph at a time, it flows: whatever fits goes on this page and the
+ * rest starts the next. A paragraph longer than a whole page is cut at a word
+ * boundary first, so nothing can be left with nowhere to go.
+ */
+function notePieces(doc: Doc, note: Note): Piece[] {
+  const limit = pageRoom(false) - TAIL_PAD;
+  const blocks = note.body.flatMap((block) =>
+    splitBlock(doc, block, NOTE_WIDTH, limit, NOTE_SHAPE),
+  );
+  if (blocks.length === 0) return [];
 
-/** "FOUND  Socket loose in the wall" — the line above a stage's photographs. */
-function notePiece(doc: Doc, note: Note): Piece {
-  return {
-    height: noteHeight(doc, note.body),
-    draw: (y) => {
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.accent);
-      doc.text(note.tag.toUpperCase(), MARGIN + 12, y + 1, { width: 34 });
-      drawRich(doc, note.body, MARGIN + NOTE_INDENT, y, NOTE_WIDTH, {
-        size: 9.5,
-        lineGap: 1,
-        gap: 3,
-      });
+  return blocks.map((block, at) => ({
+    // The tag sits beside the first line, so that piece keeps the next with it
+    // rather than standing alone at the foot of a page.
+    height: measureRich(doc, [block], NOTE_WIDTH, NOTE_SHAPE) + (at === blocks.length - 1 ? 5 : 0),
+    keepWith: at === 0 && blocks.length > 1 ? 1 : 0,
+    draw: (y: number) => {
+      if (at === 0) {
+        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.accent);
+        doc.text(note.tag.toUpperCase(), MARGIN + 12, y + 1, { width: 34 });
+      }
+      drawRich(doc, [block], MARGIN + NOTE_INDENT, y, NOTE_WIDTH, NOTE_SHAPE);
     },
-  };
+  }));
 }
 
-/** "BEFORE · 7", or "BEFORE · CONTINUED" where the stage ran onto this page. */
-function gridLabel(grid: Grid, kind: JobKind): string {
+/** "BEFORE · 7" — the label over a stage's photographs. */
+function gridLabel(grid: Grid, kind: JobKind, carried = false): string {
   // Nothing has been done on a rectification, so there is no before and after
   // to speak of: the photographs are of the job as it stands.
   const name =
     kind === "RECTIFICATION" ? "THE JOB" : STAGE_LABELS[grid.stage].toUpperCase();
-  if (grid.carried) return `${name}  ·  CONTINUED`;
+  if (carried) return `${name}  ·  CONTINUED`;
   return grid.total > 1 ? `${name}  ·  ${grid.total}` : name;
+}
+
+/** The label piece itself, drawn the same whether it is the first or a repeat. */
+function labelPiece(doc: Doc, text: string, keepWith: number): Piece {
+  return {
+    height: LABEL_HEIGHT,
+    keepWith,
+    draw: (y: number) => {
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
+      doc.text(text, MARGIN + 1, y + 2, { width: CONTENT, characterSpacing: 0.6 });
+      doc.fillColor(COLOURS.ink);
+    },
+  };
 }
 
 /* --- the work ------------------------------------------------------------- */
 
 function work(doc: Doc, data: JobReport): Section {
   const pieces: Piece[] = [];
+  /*
+   * What to write again when a page opens part way through a stage.
+   *
+   * A stage's photographs are no longer dealt into fixed pagefuls — the rows
+   * flow, so a stage of sixteen runs over as many pages as it needs. A page
+   * that opens on the middle of one would otherwise show photographs with
+   * nothing saying what they are of, so the label comes again marked
+   * CONTINUED, keyed by the tag its rows carry.
+   */
+  const carried = new Map<string, string>();
 
   if (data.items.length === 0) {
     pieces.push({
@@ -618,7 +610,7 @@ function work(doc: Doc, data: JobReport): Section {
   };
   }
 
-  for (const [at, item] of data.items.entries()) {
+  for (const item of data.items) {
     const grids = JOB_STAGES.flatMap((stage) => {
       const shots = item.photos.filter((photo) => photo.stage === stage);
       if (shots.length === 0) return [];
@@ -636,114 +628,119 @@ function work(doc: Doc, data: JobReport): Section {
             : stage === "AFTER"
               ? { tag: "Done", body: item.doneRich }
               : null;
-      return cut(stage, shots, note);
+      return [{ stage, shots, total: shots.length, note }];
     });
-
-    const leaves = pagefuls(grids);
 
     // A line with no photographs of its own to sit above still has to be said:
     // above everything where nothing was photographed as found, and under the
     // last of them where nothing was photographed as left.
     const has = (stage: JobPhotoStage) => grids.some((grid) => grid.stage === stage);
-    if (data.kind === "RECTIFICATION") {
-      if (!has("BEFORE")) leaves[0].lead = { tag: "Scope", body: item.doneRich };
-    } else {
-      if (!has("BEFORE")) leaves[0].lead = { tag: "Found", body: item.foundRich };
-      if (!has("AFTER")) leaves[leaves.length - 1].tail = { tag: "Done", body: item.doneRich };
+    const lead: Note | null =
+      data.kind === "RECTIFICATION"
+        ? has("BEFORE")
+          ? null
+          : { tag: "Scope", body: item.doneRich }
+        : has("BEFORE")
+          ? null
+          : { tag: "Found", body: item.foundRich };
+    const tail: Note | null =
+      data.kind === "RECTIFICATION" || has("AFTER")
+        ? null
+        : { tag: "Done", body: item.doneRich };
+
+    const across = acrossFor(grids.map((grid) => grid.shots.length));
+    const well = wellFor(across);
+    const head = headHeight(doc, item);
+    const start = pieces.length;
+
+    // Every item of work opens a page. It is a piece of work in its own right,
+    // and reading one that starts halfway down under the last one's after
+    // photographs is what this report is not for.
+    pieces.push({
+      height: head,
+      // The heading brings the label and the first line of the explanation
+      // with it, so it is never left standing alone at the top of a page.
+      keepWith: 2,
+      breakBefore: true,
+      mark: `item:${item.index}`,
+      draw: (y) => {
+        // The rule beside the heading runs its whole height, so a title that
+        // takes two lines is marked down both of them.
+        doc.rect(MARGIN, y + 1, 3, head - 10).fill(COLOURS.accent);
+        doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(HEAD_SIZE);
+        doc.text(headText(item), MARGIN + HEAD_INSET, y, {
+          width: CONTENT - HEAD_ASIDE,
+          lineGap: 1,
+        });
+        doc
+          .font("Helvetica")
+          .fontSize(9.5)
+          .fillColor(COLOURS.inkSoft)
+          .text(
+            data.kind === "RECTIFICATION"
+              ? item.number
+                ? `Job ${item.number}`
+                : item.location
+              : item.location,
+            MARGIN + CONTENT - 150,
+            y + 2,
+            { width: 150, align: "right" },
+          );
+      },
+    });
+
+    if (lead) pieces.push(...notePieces(doc, lead));
+
+    for (const [index, grid] of grids.entries()) {
+      const rows = Math.ceil(grid.shots.length / across);
+      const label = gridLabel(grid, data.kind);
+
+      // The label brings its explanation and its first row of photographs with
+      // it; a label alone at the foot of a page says nothing.
+      pieces.push(labelPiece(doc, label, grid.note ? 2 : 1));
+      if (grid.note) pieces.push(...notePieces(doc, grid.note));
+
+      for (let row = 0; row < rows; row += 1) {
+        const inRow = grid.shots.slice(row * across, row * across + across);
+        // A row short of its full width is centred rather than left with a
+        // hole in the side of the page: a stage of one reads as one
+        // photograph rather than as two that failed to load.
+        const indent = ((across - inRow.length) * (well.width + TILE_GAP)) / 2;
+        /*
+         * A page opening on this row says what the photographs are of.
+         *
+         * The first row says the label plainly — the label itself is then up
+         * on the page before, above the explanation. Any row after it says
+         * CONTINUED, because photographs of that stage have already been
+         * shown and these are the rest of them.
+         */
+        const tag = `grid:${item.index}:${index}:${row}`;
+        carried.set(tag, row === 0 ? label : gridLabel(grid, data.kind, true));
+        pieces.push({
+          height: well.height + ROW_GAP,
+          tag,
+          draw: (y) => {
+            inRow.forEach((photo, column) => {
+              const x = MARGIN + indent + column * (well.width + TILE_GAP);
+              drawTile(doc, photo.bytes, x, y, well.width, well.height);
+            });
+          },
+        });
+      }
     }
 
-    const head = headHeight(doc, item);
-    const height = tileHeight(doc, leaves, at === 0, head);
-
-    leaves.forEach((leaf, page) => {
-      const start = pieces.length;
-
-      // Every item of work opens a page. It is a piece of work in its own
-      // right, and reading one that starts halfway down under the last one's
-      // after photographs is what this report is not for.
-      if (page === 0) {
-        pieces.push({
-          height: head,
-          keepWith: 2,
-          mark: `item:${item.index}`,
-          draw: (y) => {
-            // The rule beside the heading runs its whole height, so a title
-            // that takes two lines is marked down both of them.
-            doc.rect(MARGIN, y + 1, 3, head - 10).fill(COLOURS.accent);
-            doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(HEAD_SIZE);
-            doc.text(headText(item), MARGIN + HEAD_INSET, y, {
-              width: CONTENT - HEAD_ASIDE,
-              lineGap: 1,
-            });
-            doc
-              .font("Helvetica")
-              .fontSize(9.5)
-              .fillColor(COLOURS.inkSoft)
-              .text(
-                data.kind === "RECTIFICATION"
-                  ? item.number
-                    ? `Job ${item.number}`
-                    : item.location
-                  : item.location,
-                MARGIN + CONTENT - 150,
-                y + 2,
-                { width: 150, align: "right" },
-              );
-          },
-        });
-      }
-
-      if (leaf.lead) pieces.push(notePiece(doc, leaf.lead));
-
-      for (const grid of leaf.grids) {
-        // The label, its explanation and every row of the grid go together:
-        // the pages were worked out above, and this is what holds them to it.
-        pieces.push({
-          height: LABEL_HEIGHT,
-          keepWith: (grid.note ? 1 : 0) + grid.rows,
-          draw: (y) => {
-            doc.font("Helvetica-Bold").fontSize(8).fillColor(COLOURS.inkSoft);
-            doc.text(gridLabel(grid, data.kind), MARGIN + 1, y + 2, {
-              width: CONTENT,
-              characterSpacing: 0.6,
-            });
-            doc.fillColor(COLOURS.ink);
-          },
-        });
-
-        if (grid.note) pieces.push(notePiece(doc, grid.note));
-
-        for (let row = 0; row < grid.rows; row += 1) {
-          const inRow = grid.shots.slice(row * ACROSS, row * ACROSS + ACROSS);
-          // A row short of three is centred rather than left with a hole in
-          // the side of the page: a stage of one reads as one photograph
-          // rather than as two that failed to load.
-          const indent = ((ACROSS - inRow.length) * (TILE_WIDTH + TILE_GAP)) / 2;
-          pieces.push({
-            height: height + ROW_GAP,
-            draw: (y) => {
-              inRow.forEach((photo, column) => {
-                const x = MARGIN + indent + column * (TILE_WIDTH + TILE_GAP);
-                drawTile(doc, photo.bytes, x, y, TILE_WIDTH, height);
-              });
-            },
-          });
-        }
-      }
-
-      if (leaf.tail) pieces.push(notePiece(doc, leaf.tail));
-
-      // The first piece of every page of the item starts that page, whatever
-      // room is left on the one before.
-      if (pieces.length > start) pieces[start].breakBefore = true;
-    });
+    if (tail) pieces.push(...notePieces(doc, tail));
+    if (pieces.length > start) pieces[start].breakBefore = true;
   }
-
 
   return {
     id: "work",
     title: data.kind === "RECTIFICATION" ? "Recommended Rectifications" : "The Work",
     pieces,
+    repeat: (next) => {
+      const label = next.tag ? carried.get(next.tag) : undefined;
+      return label ? labelPiece(doc, label, 1) : null;
+    },
   };
 }
 
