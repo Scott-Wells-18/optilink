@@ -1226,12 +1226,30 @@ body {
   backdrop-filter: blur(3px);
 }
 
+/*
+ * No dialog is ever taller than the screen it is on.
+ *
+ * The layer centres what it holds, so a dialog taller than the window had its
+ * top and its bottom hanging off the screen with nothing to scroll: on a
+ * laptop the installation test came out 1583px tall in an 820px window, and
+ * the whole lower half of it — every field below the fold, and both buttons —
+ * was simply unreachable. Capping the height here rather than on each dialog
+ * means a form that grows later cannot bring the fault back.
+ *
+ * `dvh` so that a phone's address bar sliding in and out does not leave the
+ * last row under it, with `vh` first for anything that does not know `dvh`.
+ */
 .dialog {
   position: relative;
   width: min(400px, 92vw);
   display: flex;
   flex-direction: column;
   gap: 20px;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  /* Scrolling the end of a dialog must not start scrolling what is behind it. */
+  overscroll-behavior: contain;
   padding: 26px 26px 22px;
   border: 1px solid var(--hair);
   border-radius: 20px;
