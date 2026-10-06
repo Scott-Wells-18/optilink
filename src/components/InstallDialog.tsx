@@ -6,6 +6,7 @@ import {
   MEASUREMENT_LABELS,
   TERMINALS,
   resistanceReads,
+  voltsLine,
   voltsReads,
   type InstallRow,
   type Terminals,
@@ -324,7 +325,7 @@ export function InstallDialog({
                           >
                             <span className="install-reading-pair">{terminal}</span>
                             <span className="install-reading-value">
-                              {reading ? voltsReads(reading) : "Not taken"}
+                              {reading ? voltsReads(reading, terminal) : "Not taken"}
                             </span>
                             {reading ? (
                               <span className="install-reading-ref">{reading.name}</span>
@@ -376,7 +377,7 @@ export function InstallDialog({
                         {row.kind === "INSULATION"
                           ? resistanceReads(row)
                           : row.kind === "VOLTAGE_PHASE"
-                            ? `${row.terminals ?? "?"}  ${voltsReads(row)}`
+                            ? voltsLine(row)
                             : row.kind === "RCD"
                               ? `${row.rcd?.ratingMa ?? "?"} mA`
                               : "—"}

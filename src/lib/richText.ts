@@ -20,7 +20,16 @@ export type Run = {
   italic?: boolean;
   underline?: boolean;
 };
-export type Block = { kind: "p" | "li"; runs: Run[] };
+export type Block = {
+  kind: "p" | "li";
+  runs: Run[];
+  /**
+   * Set only while drawing, on the tail of a block that was split over a page
+   * break, so the second half of a dot point does not grow a second bullet.
+   * Never stored: `clean` rebuilds every block and drops it.
+   */
+  continued?: boolean;
+};
 export type RichText = Block[];
 
 const MAX_BLOCKS = 200;

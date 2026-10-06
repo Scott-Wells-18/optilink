@@ -1,5 +1,5 @@
 import { COLOURS, safe } from "@/lib/report/theme";
-import type { RichText, Run } from "@/lib/richText";
+import type { Block, RichText, Run } from "@/lib/richText";
 import type { Doc } from "@/lib/report/furniture";
 
 /**
@@ -104,7 +104,9 @@ export function drawRich(
       continue;
     }
 
-    if (block.kind === "li") {
+    // The bullet belongs to the start of a dot point, not to the half of one
+    // that carried over onto the next page.
+    if (block.kind === "li" && !block.continued) {
       doc.fillColor(COLOURS.accent).font("Helvetica-Bold").fontSize(size);
       doc.text("•", x + 2, top, { width: 10, lineBreak: false });
     }
@@ -126,4 +128,79 @@ export function drawRich(
   }
 
   return top;
+}
+
+/**
+ * One block, cut into pieces none of which is taller than `limit`.
+ *
+ * A description is laid out a block at a time so it can flow down a page and
+ * onto the next, which handles everything anyone actually types. What it does
+ * not handle is a single paragraph longer than a whole page — a wall of text
+ * pasted in with no line breaks — and a block taller than the page it is on
+ * has nowhere to go: it used to be drawn anyway, straight through the footer.
+ *
+ * So an over-long block is cut at a word boundary, as many times as it takes.
+ * The runs are walked rather than the text, so a word that happens to be bold
+ * stays bold on whichever side of the break it lands.
+ */
+export function splitBlock(
+  doc: Doc,
+  block: Block,
+  width: number,
+  limit: number,
+  shape: Partial<Shape> = {},
+): Block[] {
+  if (limit <= 0) return [block];
+  if (measureRich(doc, [block], width, shape) <= limit) return [block];
+
+  const out: Block[] = [];
+  let runs: Run[] = [];
+  let carried = false;
+
+  /** The piece built so far, as a block. */
+  const sofar = (): Block => ({
+    kind: block.kind,
+    runs,
+    ...(carried ? { continued: true } : {}),
+  });
+
+  const flush = () => {
+    if (runs.length === 0) return;
+    out.push(sofar());
+    runs = [];
+    carried = true;
+  };
+
+  for (const run of block.runs) {
+    // Split on the spaces, keeping them, so rebuilt text reads as it was typed.
+    for (const word of run.text.split(/(\s+)/)) {
+      if (!word) continue;
+      const last = runs[runs.length - 1];
+      const same =
+        last &&
+        Boolean(last.bold) === Boolean(run.bold) &&
+        Boolean(last.italic) === Boolean(run.italic) &&
+        Boolean(last.underline) === Boolean(run.underline);
+
+      const before = last?.text;
+      if (same) last.text += word;
+      else runs.push({ ...run, text: word });
+
+      if (measureRich(doc, [sofar()], width, shape) > limit) {
+        // One word too far: take it back off and start the next piece with it.
+        if (same && before !== undefined) last.text = before;
+        else runs.pop();
+        // A single word wider than the limit would otherwise loop for ever.
+        if (runs.length === 0) {
+          out.push({ kind: block.kind, runs: [{ ...run, text: word }], ...(carried ? { continued: true } : {}) });
+          carried = true;
+          continue;
+        }
+        flush();
+        runs.push({ ...run, text: word.replace(/^\s+/, "") });
+      }
+    }
+  }
+  flush();
+  return out.length > 0 ? out : [block];
 }

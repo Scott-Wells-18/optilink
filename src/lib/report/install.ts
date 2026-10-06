@@ -6,6 +6,7 @@ import {
   MEASUREMENT_LABELS,
   TERMINALS,
   resistanceReads,
+  voltsAt,
   voltsReads,
   type InstallRow,
   type Terminals,
@@ -644,7 +645,7 @@ function points(doc: Doc, data: InstallReport) {
       const x = MARGIN + columns[0] + columns[1] + 74 * index;
       if (reading) {
         doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-        doc.text(safe(voltsReads(reading)), x, at + 7, { width: 70, align: "center" });
+        doc.text(safe(voltsReads(reading, terminal)), x, at + 7, { width: 70, align: "center" });
         doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
         doc.text(reading.name, x, at + 17, { width: 70, align: "center", lineBreak: false });
       } else {
@@ -676,12 +677,13 @@ function points(doc: Doc, data: InstallReport) {
   const lineBars: Bar[] = data.points.flatMap((point) =>
     LINE_PAIRS.flatMap((terminal) => {
       const reading = point.readings[terminal];
-      if (!reading || reading.volts === null) return [];
+      const volts = reading ? voltsAt(reading, terminal) : null;
+      if (!reading || volts === null) return [];
       return [
         {
           label: `${named(point)} ${terminal}`,
-          value: reading.volts,
-          reads: safe(voltsReads(reading)),
+          value: volts,
+          reads: safe(voltsReads(reading, terminal)),
         },
       ];
     }),
@@ -700,8 +702,9 @@ function points(doc: Doc, data: InstallReport) {
 
   const earthBars: Bar[] = data.points.flatMap((point) => {
     const reading = point.readings["N-PE"];
-    if (!reading || reading.volts === null) return [];
-    return [{ label: named(point), value: reading.volts, reads: safe(voltsReads(reading)) }];
+    const volts = reading ? voltsAt(reading, "N-PE") : null;
+    if (!reading || volts === null) return [];
+    return [{ label: named(point), value: volts, reads: safe(voltsReads(reading, "N-PE")) }];
   });
   if (earthBars.length > 0) {
     barChart(

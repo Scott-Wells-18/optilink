@@ -117,11 +117,23 @@ export function layout(sections: Section[], firstPage: number): Layout {
 
     for (const [index, piece] of section.pieces.entries()) {
       // A heading has to bring some of its section with it or it is stranded.
-      const needs =
-        piece.height +
-        section.pieces
-          .slice(index + 1, index + 1 + (piece.keepWith ?? 0))
-          .reduce((total, next) => total + next.height, 0);
+      const follows = section.pieces
+        .slice(index + 1, index + 1 + (piece.keepWith ?? 0))
+        .reduce((total, next) => total + next.height, 0);
+
+      /*
+       * What it asks for, and what is worth asking for.
+       *
+       * A heading that wants to keep a page and a half of description with it
+       * cannot have it on any page, so insisting turns the page, finds it
+       * still does not fit, and leaves the heading alone on a page of its own
+       * — which is exactly how a works report came out with a page holding a
+       * title and nothing else, and another holding one line. Where what is
+       * wanted will not fit on an empty page, the piece asks only for itself.
+       */
+      const whole = BOTTOM - MARGIN;
+      const wanted = piece.height + follows;
+      const needs = wanted > whole ? piece.height : wanted;
 
       if (page.items.length > 0 && (piece.breakBefore || y + needs > BOTTOM)) turn(piece);
 

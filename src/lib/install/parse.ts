@@ -53,7 +53,15 @@ export type InstallRow = {
   rawFunction: string;
   rawParameters: string;
   rawResult: string;
-  takenAt: Date | null;
+  /**
+   * When the instrument recorded it.
+   *
+   * A Date when the file has just been read, and the string that Date became
+   * once the rows were stored as JSON on the report. Both, because both are
+   * what callers are handed, and a type saying only `Date` is what let a
+   * `.getTime()` through on a row read back out of the database.
+   */
+  takenAt: Date | string | null;
 
   /* --- insulation ------------------------------------------------------- */
   /** The test voltage the instrument was set to, in volts. */
@@ -64,8 +72,33 @@ export type InstallRow = {
   megohmsAtLeast: number | null;
 
   /* --- voltage and phase ------------------------------------------------ */
+  /**
+   * The pair the instrument was set to, off the parameters column.
+   *
+   * It is what the operator selected, not the extent of what was measured —
+   * see `readings`.
+   */
   terminals: Terminals | null;
-  volts: number | null;
+  /**
+   * Every voltage the record states, by the pair it was taken between.
+   *
+   * A real export settles what a voltage record is. The instrument writes the
+   * selected pair in the parameters and then all three readings in the result:
+   *
+   *     V/Phase=N-PE    50HZ,L-PE=240V,N-PE=1V,L-N=241V
+   *
+   * So one record is a whole polarity test, not a third of one. Reading it as
+   * a third of one both split each test across three points and took the
+   * first number on the line as the answer for whichever pair the record was
+   * filed under — which printed a neutral-to-earth reading of 240 V where the
+   * instrument had recorded 1 V.
+   *
+   * A record stating a single bare voltage still lands here, under the pair
+   * its parameters name, so an export written the other way still reads.
+   */
+  readings: Partial<Record<Terminals, number>>;
+  /** Supply frequency, where the record states it. */
+  hertz: number | null;
 
   /* --- rcd -------------------------------------------------------------- */
   /** The six trip times and the touch voltage, read by the RCD parser. */
@@ -183,7 +216,8 @@ function readRow(
     terminalVolts: kind === "INSULATION" ? terminalVoltage(chunk) : null,
     ...(kind === "INSULATION" ? resistance(chunk) : { megohms: null, megohmsAtLeast: null }),
     terminals: kind === "VOLTAGE_PHASE" ? terminalsOf(chunk) : null,
-    volts: kind === "VOLTAGE_PHASE" ? voltage(chunk) : null,
+    readings: kind === "VOLTAGE_PHASE" ? readingsOf(chunk) : {},
+    hertz: kind === "VOLTAGE_PHASE" ? hertzOf(chunk) : null,
     rcd: kind === "RCD" ? rcd : null,
   };
 }
@@ -322,15 +356,58 @@ function terminalsOf(chunk: string): Terminals | null {
 }
 
 /**
- * The voltage, which is the number that is not the terminal pair.
+ * Every voltage on the record, filed under the pair it was taken between.
+ *
+ * The instrument labels them — "L-PE=240V,N-PE=1V,L-N=241V" — so they are read
+ * by their labels rather than by position. Taking the first number on the line
+ * is what reported a 1 V neutral-to-earth reading as 240 V.
+ *
+ * Where nothing is labelled, the record is the other shape: one pair named in
+ * the parameters and one bare voltage. That reading is filed under that pair,
+ * so both shapes come out of here the same way.
+ */
+function readingsOf(chunk: string): Partial<Record<Terminals, number>> {
+  const out: Partial<Record<Terminals, number>> = {};
+
+  for (const match of chunk.matchAll(
+    /\b(L\s*-\s*PE|L\s*-\s*N|N\s*-\s*PE)\s*=\s*(\d+(?:\.\d+)?)\s*V/gi,
+  )) {
+    const pair = match[1].replace(/\s+/g, "").toUpperCase() as Terminals;
+    const value = Number.parseFloat(match[2]);
+    // First one wins: a pair written twice on one line is the instrument's
+    // doing, and taking the later one would silently prefer the right-hand one.
+    if (TERMINALS.includes(pair) && Number.isFinite(value) && out[pair] === undefined) {
+      out[pair] = value;
+    }
+  }
+  if (Object.keys(out).length > 0) return out;
+
+  const pair = terminalsOf(chunk);
+  const bare = bareVoltage(chunk);
+  if (pair && bare !== null) out[pair] = bare;
+  return out;
+}
+
+/**
+ * A single unlabelled voltage.
  *
  * "L-N" has an N in it and "N-PE" has a PE, so the pair is taken out of the
  * chunk before a number is looked for — otherwise a reading of "L-N 239.4V"
- * can be read off the wrong part of the line.
+ * can be read off the wrong part of the line. The frequency goes too, so
+ * "50HZ" is never mistaken for a reading.
  */
-function voltage(chunk: string): number | null {
-  const without = chunk.replace(/\b[LN]\s*-\s*(?:PE|N)\b/gi, " ");
+function bareVoltage(chunk: string): number | null {
+  const without = chunk
+    .replace(/\b\d+(?:\.\d+)?\s*HZ\b/gi, " ")
+    .replace(/\b[LN]\s*-\s*(?:PE|N)\b/gi, " ");
   const match = /(\d+(?:\.\d+)?)\s*V\b/i.exec(without);
+  if (!match) return null;
+  const value = Number.parseFloat(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function hertzOf(chunk: string): number | null {
+  const match = /\b(\d+(?:\.\d+)?)\s*HZ\b/i.exec(chunk);
   if (!match) return null;
   const value = Number.parseFloat(match[1]);
   return Number.isFinite(value) ? value : null;
@@ -352,9 +429,36 @@ export function resistanceReads(row: InstallRow): string {
   return "—";
 }
 
-/** "239.4 V", or nothing. */
-export function voltsReads(row: InstallRow): string {
-  return row.volts === null ? "—" : `${trim(row.volts)} V`;
+/** "239.4 V" at one pair of terminals, or nothing. */
+export function voltsReads(row: InstallRow, pair: Terminals): string {
+  const value = row.readings[pair];
+  return value === undefined ? "—" : `${trim(value)} V`;
+}
+
+/**
+ * Everything one record states, on one line.
+ *
+ * A whole polarity test holds three readings, so a row that shows one of them
+ * shows the wrong amount: "N-PE 1 V" alone hides that the same record also
+ * recorded 240 V to earth and 241 V across.
+ */
+export function voltsLine(row: InstallRow): string {
+  const parts = TERMINALS.filter((pair) => row.readings[pair] !== undefined).map(
+    (pair) => `${pair} ${trim(row.readings[pair] as number)} V`,
+  );
+  if (parts.length === 0) return "\u2014";
+  const line = parts.join("  \u00b7  ");
+  return row.hertz === null ? line : `${line}  \u00b7  ${trim(row.hertz)} Hz`;
+}
+
+/** The number itself, for a chart. */
+export function voltsAt(row: InstallRow, pair: Terminals): number | null {
+  return row.readings[pair] ?? null;
+}
+
+/** Whether this record is a whole polarity test rather than one leg of one. */
+export function isWholeSet(row: InstallRow): boolean {
+  return Object.keys(row.readings).length > 1;
 }
 
 function trim(value: number): string {

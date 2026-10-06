@@ -1,4 +1,4 @@
-import { TERMINALS, type InstallRow, type Terminals } from "@/lib/install/parse";
+import { TERMINALS, isWholeSet, type InstallRow, type Terminals } from "@/lib/install/parse";
 
 /**
  * Turning a run of voltage readings into tested points.
@@ -57,14 +57,40 @@ export function groupPoints(
   names: Record<string, string> = {},
 ): Grouping {
   const voltage = rows.filter((row) => row.kind === "VOLTAGE_PHASE");
-  const stray = voltage.filter((row) => row.terminals === null);
-  const placed = voltage.filter((row) => row.terminals !== null);
+  // A record states no pair at all and carries no labelled reading: there is
+  // nowhere to put it, so it is listed rather than guessed at.
+  const stray = voltage.filter(
+    (row) => row.terminals === null && Object.keys(row.readings).length === 0,
+  );
+  const placed = voltage.filter((row) => !stray.includes(row));
 
   type Set = { readings: Partial<Record<Terminals, InstallRow>>; openedOnRepeat: boolean };
   const sets: Set[] = [];
   let current: Set | null = null;
 
   for (const row of placed) {
+    /*
+     * A record that carries its own readings is a point on its own.
+     *
+     * The instrument writes all three voltages on one line and names the pair
+     * it was set to in the parameters, so one record is a whole polarity test.
+     * Grouping three of those into a point split every test across three
+     * points and left each of them short two readings — four tests read as two
+     * incomplete points. A record like that closes whatever was being built
+     * and stands as its own point.
+     */
+    if (isWholeSet(row)) {
+      if (current) sets.push(current);
+      current = null;
+      sets.push({
+        readings: Object.fromEntries(
+          (Object.keys(row.readings) as Terminals[]).map((pair) => [pair, row]),
+        ) as Partial<Record<Terminals, InstallRow>>,
+        openedOnRepeat: false,
+      });
+      continue;
+    }
+
     const pair = row.terminals as Terminals;
 
     if (!current) {
@@ -146,6 +172,26 @@ export const EXPECTED: Record<Phases, { insulation: number; rcd: number }> = {
   THREE: { insulation: 1, rcd: 3 },
 };
 
+/**
+ * How close in time two identical tests have to be to look like one test
+ * pressed twice rather than two outlets that read the same.
+ */
+const BACK_TO_BACK = 90;
+
+/**
+ * When a row was recorded, in milliseconds.
+ *
+ * A freshly read row carries a Date; the same row read back off the report
+ * carries the string that Date was stored as. Both are handled here so that
+ * neither caller has to know which it is holding.
+ */
+function timeOf(row: InstallRow): number | null {
+  if (!row.takenAt) return null;
+  const at = row.takenAt instanceof Date ? row.takenAt : new Date(row.takenAt);
+  const ms = at.getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 export type Anomaly = {
   /** What to call it in a list. */
   title: string;
@@ -214,9 +260,57 @@ export function anomaliesOf(
     });
   });
 
+  /*
+   * The same test, recorded twice.
+   *
+   * Where a record is a whole polarity test, a repeat is not a surplus leg —
+   * it is a second record saying exactly what the one before it said, which is
+   * what the instrument leaves behind when test is pressed twice without the
+   * probes moving.
+   *
+   * Equal readings on their own are not enough to say so. Four powerpoints on
+   * one circuit will all read about 240 V, 241 V and a volt to earth, and
+   * calling each of them a duplicate of the one before would bury the real
+   * ones. What marks a double-press is that it happened moments later: the
+   * same readings a few seconds apart, rather than the minutes it takes to
+   * move to the next outlet and probe it. So both have to hold, and where the
+   * instrument wrote no time there is nothing to go on and nothing is said.
+   */
+  const whole = rows.filter((row) => row.kind === "VOLTAGE_PHASE" && isWholeSet(row));
+  const sameAs = (a: InstallRow, b: InstallRow) =>
+    TERMINALS.every((pair) => a.readings[pair] === b.readings[pair]);
+  for (let at = 1; at < whole.length; at += 1) {
+    const row = whole[at];
+    const before = whole[at - 1];
+    if (!sameAs(before, row)) continue;
+    const when = timeOf(row);
+    const earlier = timeOf(before);
+    if (when === null || earlier === null) continue;
+    const apart = Math.abs(when - earlier) / 1000;
+    if (apart > BACK_TO_BACK) continue;
+    out.push({
+      title: `${row.name} repeats ${before.name}, ${Math.round(apart)} seconds later`,
+      detail:
+        `${before.name} and ${row.name} state the same voltage at every pair and were taken ` +
+        `${Math.round(apart)} seconds apart, which is what test pressed twice looks like rather ` +
+        `than two points. If that is what happened, set ${row.name} aside as a duplicate and the ` +
+        "points either side of it close up. If they really were two outlets on the same circuit, " +
+        "leave both — they would be expected to read alike.",
+      rows: [before.name, row.name],
+      surplus: true,
+    });
+  }
+
+  /*
+   * One pair recorded more often than the others.
+   *
+   * Only meaningful where a record is one leg of a test: counting the selected
+   * pair of records that each carry all three would say nothing about how many
+   * legs were taken.
+   */
   const byPair = new Map<Terminals, InstallRow[]>();
   for (const row of rows) {
-    if (row.kind !== "VOLTAGE_PHASE" || !row.terminals) continue;
+    if (row.kind !== "VOLTAGE_PHASE" || !row.terminals || isWholeSet(row)) continue;
     byPair.set(row.terminals, [...(byPair.get(row.terminals) ?? []), row]);
   }
   const counts = TERMINALS.map((terminal) => byPair.get(terminal)?.length ?? 0);
