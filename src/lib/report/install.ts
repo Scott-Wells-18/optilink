@@ -2,6 +2,9 @@ import PDFDocument from "pdfkit";
 import { PDFDocument as Lib } from "pdf-lib";
 import { COLOURS, SEVERITY, longDate, safe, shortDate } from "@/lib/report/theme";
 import { guarded, mastheadLines, sectionBar, stampWideFeet, tableHead, type Doc, type PageMeta } from "@/lib/report/furniture";
+import { equipmentPagesPortrait } from "@/lib/report/equipment";
+import { fitted, stampCertificate, type Box, type Certificate, type Slot } from "@/lib/report/certificate";
+import type { Instrument } from "@/lib/report/instrument";
 import {
   MEASUREMENT_LABELS,
   TERMINALS,
@@ -41,10 +44,27 @@ import {
  * otherwise.
  */
 
-const PAGE = { width: 595.28, height: 841.89 };
-const MARGIN = 42;
-const CONTENT = PAGE.width - MARGIN * 2;
-const FLOOR = PAGE.height - 72;
+/*
+ * Read landscape, with its appendices portrait.
+ *
+ * The results are tables — a point and its three readings, a record and the
+ * line the instrument wrote for it — and a table reads better across than
+ * down. The three things this report reproduces rather than retypes are all
+ * A4 portrait documents: the instrument's calibration certificate and the
+ * tester's own export. Those keep their own shape, so they come out nearly
+ * full size instead of small with white down either side.
+ */
+const SHEET = { width: 841.89, height: 595.28 };
+const MARGIN = 34;
+const CONTENT = SHEET.width - MARGIN * 2;
+const FLOOR = SHEET.height - 72;
+
+/** The upright page the certificate and the instrument's export go on. */
+const UPRIGHT = { width: 595.28, height: 841.89, margin: 42, top: 104, foot: 76 };
+const UPRIGHT_CONTENT = UPRIGHT.width - UPRIGHT.margin * 2;
+
+/** What a full-width bar spans on the landscape page. */
+const SPAN = { x: MARGIN, width: CONTENT };
 
 export type InstallReport = PageMeta & {
   reportDate: Date;
@@ -74,15 +94,21 @@ export type InstallReport = PageMeta & {
     notes: string[];
   };
 
-  /** The tester's own export, bound in at the back and attached. */
-  original: Buffer | null;
+  /** What took the readings, with its calibration certificate. */
+  instrument: Instrument | null;
+
+  /**
+   * The tester's own export: its page sizes, so the gaps can be drawn, and the
+   * bytes, so the untouched file goes along as an attachment.
+   */
+  original: { pages: Certificate; bytes: Buffer } | null;
   originalName: string | null;
 };
 
 export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
   const doc = guarded(
     new PDFDocument({
-      size: [PAGE.width, PAGE.height],
+      size: [SHEET.width, SHEET.height],
       margin: MARGIN,
       bufferPages: true,
     }),
@@ -99,16 +125,34 @@ export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
   rcd(doc, data);
   points(doc, data);
   setAside(doc, data);
-  divider(doc, data);
+
+  /*
+   * The pages that carry somebody else's document, all of them upright.
+   *
+   * The gaps are drawn here — borders, captions and all — and the documents
+   * themselves are stamped into them afterwards, because pdfkit cannot place a
+   * page of another PDF and pdf-lib cannot draw the report. Both sets of gaps
+   * are collected before anything is stamped.
+   */
+  const certificate = equipmentPagesPortrait(doc, data.instrument, (note) =>
+    uprightHead(doc, data, "Equipment Used", note), UPRIGHT);
+  const original = originalPages(doc, data);
 
   stampWideFeet(doc, data, {
-    width: PAGE.width,
-    height: PAGE.height,
+    width: SHEET.width,
+    height: SHEET.height,
     margin: MARGIN,
   });
   doc.end();
 
-  return appendOriginal(await done, data);
+  let out = await done;
+  if (data.original?.pages && original.length > 0) {
+    out = await stampCertificate(out, data.original.pages, original);
+  }
+  if (data.instrument?.certificate && certificate.length > 0) {
+    out = await stampCertificate(out, data.instrument.certificate, certificate);
+  }
+  return attachOriginals(out, data);
 }
 
 /* --- small helpers ---------------------------------------------------------- */
@@ -340,7 +384,7 @@ function cover(doc: Doc, data: InstallReport) {
     doc.y += 22;
   }
 
-  doc.y = Math.max(doc.y + 10, PAGE.height - MARGIN - 110);
+  doc.y = Math.max(doc.y + 10, SHEET.height - MARGIN - 110);
   note(
     doc,
     "This report sets out the readings the test instrument recorded on the date shown, at the points " +
@@ -354,7 +398,7 @@ function cover(doc: Doc, data: InstallReport) {
 function basis(doc: Doc, data: InstallReport) {
   doc.addPage();
   head(doc, data, "What these readings show");
-  sectionBar(doc, "What these readings show", doc.y);
+  sectionBar(doc, "What these readings show", doc.y, SPAN);
   doc.y += 34;
 
   const insulationRows = data.rows.filter((row) => row.kind === "INSULATION");
@@ -436,7 +480,7 @@ function insulation(doc: Doc, data: InstallReport) {
   const found = data.rows.filter((row) => row.kind === "INSULATION");
   doc.addPage();
   head(doc, data, "Insulation resistance");
-  sectionBar(doc, "Insulation resistance", doc.y);
+  sectionBar(doc, "Insulation resistance", doc.y, SPAN);
   doc.y += 34;
 
   if (found.length === 0) {
@@ -519,7 +563,7 @@ function rcd(doc: Doc, data: InstallReport) {
   const found = data.rows.filter((row) => row.kind === "RCD" && row.rcd);
   doc.addPage();
   head(doc, data, "RCD results");
-  sectionBar(doc, "RCD results", doc.y);
+  sectionBar(doc, "RCD results", doc.y, SPAN);
   doc.y += 34;
 
   if (found.length === 0) {
@@ -610,7 +654,7 @@ const LINE_PAIRS: Terminals[] = ["L-PE", "L-N"];
 function points(doc: Doc, data: InstallReport) {
   doc.addPage();
   head(doc, data, "Tested points");
-  sectionBar(doc, "Tested points", doc.y);
+  sectionBar(doc, "Tested points", doc.y, SPAN);
   doc.y += 34;
 
   if (data.points.length === 0) {
@@ -738,7 +782,7 @@ function setAside(doc: Doc, data: InstallReport) {
 
   doc.addPage();
   head(doc, data, "Records set aside");
-  sectionBar(doc, "Duplicates and accidental tests", doc.y);
+  sectionBar(doc, "Duplicates and accidental tests", doc.y, SPAN);
   doc.y += 34;
 
   if (out.length === 0) {
@@ -795,7 +839,7 @@ function setAside(doc: Doc, data: InstallReport) {
 
   if (unplaced.length > 0) {
     const y = room(doc, data, 60, "Records set aside");
-    sectionBar(doc, "Records not recognised", y);
+    sectionBar(doc, "Records not recognised", y, SPAN);
     doc.y = y + 34;
     note(
       doc,
@@ -820,7 +864,7 @@ function setAside(doc: Doc, data: InstallReport) {
 
   if (data.anomalies.length > 0) {
     const y = room(doc, data, 70, "Records set aside");
-    sectionBar(doc, "Raised for review", y);
+    sectionBar(doc, "Raised for review", y, SPAN);
     doc.y = y + 34;
     for (const anomaly of data.anomalies) {
       const at = room(doc, data, 46, "Records set aside");
@@ -843,67 +887,148 @@ function setAside(doc: Doc, data: InstallReport) {
 
 /* --- the instrument's own export ------------------------------------------------ */
 
-/**
- * The page that says what follows is not ours.
- *
- * Without it the tester's own export reads as more of this report, and a
- * client comparing the two could reasonably think we had typed it.
- */
-function divider(doc: Doc, data: InstallReport) {
-  if (!data.original) return;
-  doc.addPage();
-  head(doc, data, "Original instrument report");
-  sectionBar(doc, "Original instrument report", doc.y);
-  doc.y += 40;
+/* --- the instrument's own export, reproduced ------------------------------- */
 
-  doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOURS.ink);
-  doc.text("The pages that follow are the test instrument's own export.", MARGIN, doc.y, {
-    width: CONTENT,
-    lineGap: 2,
+/** The heading on an upright page, which is a narrower page than the rest. */
+function uprightHead(doc: Doc, data: InstallReport, title: string, note?: string) {
+  const { margin } = UPRIGHT;
+  if (data.logo) doc.image(data.logo, margin, 26, { fit: [104, 34] });
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOURS.ink);
+  doc.text(title, margin + 120, 32, {
+    width: UPRIGHT_CONTENT - 120,
+    lineBreak: false,
+    ellipsis: true,
   });
-  doc.y += 14;
-  note(
-    doc,
-    "They are reproduced exactly as the instrument wrote them, at their own size, and nothing has " +
-      "been removed from them — every record is there, including any this report has set aside. " +
-      "The file itself is also attached to this PDF, so the original bytes can be taken out of it.",
-    9.5,
+  doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
+  doc.text(
+    safe(note ?? [data.clientName, data.siteName].filter(Boolean).join("  ·  ")),
+    margin + 120,
+    48,
+    { width: UPRIGHT_CONTENT - 120, lineBreak: false, ellipsis: true },
   );
-  if (data.originalName) {
-    doc.y += 6;
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(safe(`Attached as ${data.originalName}`), MARGIN, doc.y, { width: CONTENT });
-  }
+  doc.rect(margin, 66, UPRIGHT_CONTENT, 0.8).fill(COLOURS.hair);
   doc.fillColor(COLOURS.ink);
 }
 
+/** How a borrowed page is set in from its blue rule, and the rule from it. */
+const BORDER_GAP = 5;
+const BORDER_WIDTH = 1.4;
+
 /**
- * The tester's report, bound in at the back and attached.
+ * The gaps the tester's own export is stamped into, two to an upright page.
  *
- * Its pages are copied in whole and at their own size rather than scaled into
- * a frame, because the point of including it is that it is the untouched
- * original. The file is attached as well, so the bytes are recoverable from
- * the PDF rather than only the picture of them.
+ * Reproduced rather than appended. An appended page is the instrument's page
+ * with our page numbers running off the end of it; a reproduced one sits on
+ * our page, inside an Optilink rule, captioned with which page of theirs it
+ * is — the same way the RCD report carries a board's export. The untouched
+ * file still goes along as an attachment, so nothing is lost by it.
  */
-async function appendOriginal(ours: Buffer, data: InstallReport): Promise<Buffer> {
-  if (!data.original) return ours;
+function originalPages(doc: Doc, data: InstallReport): Slot[] {
+  const sizes = data.original?.pages.sizes ?? [];
+  if (sizes.length === 0) return [];
+
+  const slots: Slot[] = [];
+  const perPage = 2;
+
+  for (let from = 0; from < sizes.length; from += perPage) {
+    const chunk = sizes.slice(from, from + perPage);
+    doc.addPage({ size: [UPRIGHT.width, UPRIGHT.height], margin: UPRIGHT.margin });
+    uprightHead(
+      doc,
+      data,
+      "Original Instrument Report",
+      `${data.instrument?.name ?? data.instrumentName ?? "The test instrument"}'s own export, reproduced unaltered.`,
+    );
+
+    const page = doc.bufferedPageRange().count - 1;
+    const region: Box = {
+      x: UPRIGHT.margin,
+      y: UPRIGHT.top,
+      width: UPRIGHT_CONTENT,
+      height: UPRIGHT.height - UPRIGHT.foot - UPRIGHT.top,
+    };
+    const gap = 16;
+    const share = (region.width - gap * (chunk.length - 1)) / chunk.length;
+
+    chunk.forEach((size, at) => {
+      const inset = BORDER_GAP + BORDER_WIDTH + 2;
+      const box = fitted(
+        {
+          x: region.x + at * (share + gap) + inset,
+          y: region.y + inset,
+          width: share - inset * 2,
+          height: region.height - inset * 2 - 12,
+        },
+        size,
+      );
+
+      // A hairline on the page's own edge, so a white export has a definite
+      // boundary; the blue rule sits outside it rather than on top of it, so a
+      // document that has a border of its own keeps it.
+      doc.lineWidth(0.5).strokeColor(COLOURS.hair);
+      doc.rect(box.x, box.y, box.width, box.height).stroke();
+      doc.lineWidth(BORDER_WIDTH).strokeColor(COLOURS.accent);
+      doc
+        .rect(
+          box.x - BORDER_GAP,
+          box.y - BORDER_GAP,
+          box.width + BORDER_GAP * 2,
+          box.height + BORDER_GAP * 2,
+        )
+        .stroke();
+      doc.lineWidth(1).strokeColor("#000000");
+
+      doc.font("Helvetica-Bold").fontSize(7).fillColor(COLOURS.inkSoft);
+      doc.text(
+        `PAGE ${from + at + 1} OF ${sizes.length}`,
+        box.x - BORDER_GAP,
+        box.y + box.height + BORDER_GAP + 5,
+        { width: box.width + BORDER_GAP * 2, align: "center", characterSpacing: 1.1 },
+      );
+      doc.fillColor(COLOURS.ink);
+
+      slots.push({ ...box, page, source: from + at });
+    });
+  }
+
+  return slots;
+}
+
+/**
+ * The originals, attached whole as well as reproduced.
+ *
+ * A page reproduced on our paper is readable; the file itself is the evidence.
+ * Both go in, so the report can be read and the original pulled out of it.
+ */
+async function attachOriginals(ours: Buffer, data: InstallReport): Promise<Buffer> {
+  if (!data.original && !data.instrument?.certificate) return ours;
 
   try {
     const target = await Lib.load(ours);
-    const source = await Lib.load(new Uint8Array(data.original), { ignoreEncryption: true });
-
-    const pages = await target.copyPages(source, source.getPageIndices());
-    for (const page of pages) target.addPage(page);
-
-    await target.attach(new Uint8Array(data.original), data.originalName ?? "instrument-export.pdf", {
-      mimeType: "application/pdf",
-      description: "The test instrument's own export, unaltered.",
-    });
-
+    if (data.original) {
+      await target.attach(
+        new Uint8Array(data.original.bytes),
+        data.originalName ?? "instrument-export.pdf",
+        {
+          mimeType: "application/pdf",
+          description: "The test instrument's own export, unaltered.",
+        },
+      );
+    }
+    if (data.instrument?.certificate) {
+      await target.attach(
+        new Uint8Array(data.instrument.certificate.bytes),
+        "calibration-certificate.pdf",
+        {
+          mimeType: "application/pdf",
+          description: "The instrument's calibration certificate, as issued.",
+        },
+      );
+    }
     return Buffer.from(await target.save());
   } catch {
-    // A report without the original bound in is still a report; one that
-    // failed to build is not.
+    // A report without its attachments is still a report; one that failed to
+    // build is not.
     return ours;
   }
 }

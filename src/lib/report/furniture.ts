@@ -75,9 +75,16 @@ export function guarded(doc: Doc): Doc {
 /* --- bars and tables ------------------------------------------------------ */
 
 /** A full-width heading bar, the thing that opens every section. */
-export function sectionBar(doc: Doc, title: string, y: number) {
-  doc.rect(MARGIN, y, CONTENT, 22).fill(COLOURS.bar);
-  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(10.5).text(title, MARGIN + 10, y + 7);
+export function sectionBar(
+  doc: Doc,
+  title: string,
+  y: number,
+  // A report on its side has a wider page than the portrait default, and a bar
+  // that stops two thirds of the way across it looks like a mistake.
+  span: { x: number; width: number } = { x: MARGIN, width: CONTENT },
+) {
+  doc.rect(span.x, y, span.width, 22).fill(COLOURS.bar);
+  doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(10.5).text(title, span.x + 10, y + 7);
   doc.fillColor(COLOURS.ink);
 }
 
@@ -103,10 +110,19 @@ export function bar(
   doc.fillColor(COLOURS.ink);
 }
 
-export function tableHead(doc: Doc, y: number, titles: string[], columns: number[]) {
-  doc.rect(MARGIN, y, CONTENT, 20).fill(COLOURS.bar);
+export function tableHead(
+  doc: Doc,
+  y: number,
+  titles: string[],
+  columns: number[],
+  left = MARGIN,
+) {
+  // As wide as the columns it heads, rather than as wide as a portrait page:
+  // the bar and the table under it are then the same table.
+  const width = columns.reduce((total, column) => total + column, 0);
+  doc.rect(left, y, width, 20).fill(COLOURS.bar);
   doc.fillColor(COLOURS.onBar).font("Helvetica-Bold").fontSize(9.5);
-  let x = MARGIN;
+  let x = left;
   titles.forEach((title, index) => {
     const centred = index > 0 && columns[index] < 140;
     doc.text(title, centred ? x : x + 8, y + 6, {
@@ -457,7 +473,6 @@ export function stampWideFeet(
   page: { width: number; height: number; margin: number },
 ) {
   const range = doc.bufferedPageRange();
-  const content = page.width - page.margin * 2;
 
   // From page two: a cover carries its own details at the top of it.
   for (let index = 1; index < range.count; index += 1) {
@@ -465,10 +480,27 @@ export function stampWideFeet(
     const bottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
-    const y = page.height - 44;
-    if (meta.logo) doc.image(meta.logo, page.margin, y - 3, { fit: [84, 26] });
+    /*
+     * Each page's own size, not the report's.
+     *
+     * A report can turn a page on its side — the installation report is
+     * landscape and binds its instrument, its calibration certificate and the
+     * tester's own export in portrait — and a foot stamped at the width of the
+     * wrong orientation lands off the paper. The argument is the fallback for
+     * a page that has not been switched to yet.
+     */
+    const sheetWidth = doc.page?.width ?? page.width;
+    const sheetHeight = doc.page?.height ?? page.height;
+    // Its own margin as well as its own size: an upright page bound into a
+    // landscape report is set in further, and a foot measured off the wider
+    // page's margin reaches past the narrower page's.
+    const margin = doc.page?.margins?.left || page.margin;
+    const content = sheetWidth - margin * 2;
 
-    const middle = page.margin + 100;
+    const y = sheetHeight - 44;
+    if (meta.logo) doc.image(meta.logo, margin, y - 3, { fit: [84, 26] });
+
+    const middle = margin + 100;
     const width = content - 240;
     doc.fillColor(COLOURS.bar).font("Helvetica-Bold").fontSize(9);
     doc.text(safe(meta.clientName), middle, y, { width, align: "center", lineBreak: false });
@@ -478,7 +510,7 @@ export function stampWideFeet(
       align: "center",
       lineBreak: false,
     });
-    doc.text(`Page ${index + 1} of ${range.count}`, page.margin + content - 140, y + 6, {
+    doc.text(`Page ${index + 1} of ${range.count}`, margin + content - 140, y + 6, {
       width: 140,
       align: "right",
     });
