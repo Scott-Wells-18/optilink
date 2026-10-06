@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import { PDFDocument as Lib } from "pdf-lib";
 import { COLOURS, SEVERITY, longDate, safe, shortDate } from "@/lib/report/theme";
-import { guarded, mastheadLines, sectionBar, stampWideFeet, tableHead, type Doc, type PageMeta } from "@/lib/report/furniture";
+import { guarded, mastheadLines, ohmText, sectionBar, stampWideFeet, tableHead, type Doc, type PageMeta } from "@/lib/report/furniture";
 import { equipmentPagesPortrait } from "@/lib/report/equipment";
 import { fitted, stampCertificate, type Box, type Certificate, type Slot } from "@/lib/report/certificate";
 import type { Instrument } from "@/lib/report/instrument";
@@ -185,18 +185,18 @@ function rows(doc: Doc, data: InstallReport, pairs: [string, string][], title: s
   for (const [name, value] of pairs) {
     doc.font("Helvetica-Bold").fontSize(9);
     const height = Math.max(
-      20,
+      18,
       doc.heightOfString(safe(value) || "—", {
         width: CONTENT - labelWidth - 4,
         lineGap: 1.4,
-      }) + 12,
+      }) + 9,
     );
     const y = room(doc, data, height + 4, title);
     doc.rect(MARGIN, y, CONTENT, 0.5).fill(COLOURS.hair);
     doc.fillColor(COLOURS.inkSoft).font("Helvetica").fontSize(9);
-    doc.text(name, MARGIN + 2, y + 6, { width: labelWidth - 8 });
+    doc.text(name, MARGIN + 2, y + 5, { width: labelWidth - 8 });
     doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(9);
-    doc.text(safe(value) || "—", MARGIN + labelWidth, y + 6, {
+    doc.text(safe(value) || "—", MARGIN + labelWidth, y + 5, {
       width: CONTENT - labelWidth - 4,
       lineGap: 1.4,
     });
@@ -245,7 +245,11 @@ function barChart(
   const top = room(doc, data, height + 46, section);
 
   doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  doc.text(safe(`${title.toUpperCase()}  (${unit})`), MARGIN, top, { characterSpacing: 0.6 });
+  ohmText(doc, `${title.toUpperCase()}  (${unit})`, MARGIN, top, {
+    width: CONTENT,
+    size: 8.5,
+    font: "Helvetica-Bold",
+  });
 
   const plot = { x: MARGIN + 34, y: top + 16, width: CONTENT - 40, height };
   const ceiling = Math.max(
@@ -276,10 +280,11 @@ function barChart(
     );
 
     doc.font("Helvetica-Bold").fontSize(7).fillColor(bar.alarm ? SEVERITY.fail.fill : COLOURS.ink);
-    doc.text(safe(bar.reads), x - slot * 0.2, y - 10, {
+    ohmText(doc, bar.reads, x - slot * 0.2, y - 10, {
       width: width + slot * 0.4,
       align: "center",
-      lineBreak: false,
+      size: 7,
+      font: "Helvetica-Bold",
     });
 
     doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
@@ -297,10 +302,11 @@ function barChart(
     doc.lineWidth(0.9).strokeColor(SEVERITY.fail.fill).stroke();
     doc.restore();
     doc.font("Helvetica-Bold").fontSize(6.5).fillColor(SEVERITY.fail.fill);
-    doc.text(safe(limit.label), plot.x + plot.width - 120, y - 9, {
+    ohmText(doc, limit.label, plot.x + plot.width - 120, y - 9, {
       width: 120,
       align: "right",
-      lineBreak: false,
+      size: 6.5,
+      font: "Helvetica-Bold",
     });
   }
 
@@ -327,7 +333,7 @@ function cover(doc: Doc, data: InstallReport) {
   doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(21);
   doc.text("Installation Test Report", MARGIN + 16, y + 16, { width: CONTENT - 16 });
 
-  y = 196;
+  y = 188;
   doc.font("Helvetica").fontSize(8).fillColor(COLOURS.bar);
   doc.text("PREPARED FOR", MARGIN, y, { characterSpacing: 1.2 });
   doc.fillColor(COLOURS.ink).font("Helvetica-Bold").fontSize(15);
@@ -339,7 +345,7 @@ function cover(doc: Doc, data: InstallReport) {
     doc.text(safe(data.siteLocation), MARGIN, y + 49, { width: CONTENT });
   }
 
-  doc.y = y + 76;
+  doc.y = y + 70;
   const insulationRows = data.rows.filter((row) => row.kind === "INSULATION");
   const rcdRows = data.rows.filter((row) => row.kind === "RCD");
   const complete = data.points.filter((point) => point.missing.length === 0).length;
@@ -382,7 +388,7 @@ function cover(doc: Doc, data: InstallReport) {
       doc.y + 2,
       { width: CONTENT - 14 },
     );
-    doc.y += 22;
+    doc.y += 18;
   }
 
   /*
@@ -399,10 +405,31 @@ function cover(doc: Doc, data: InstallReport) {
     "This report sets out the readings the test instrument recorded on the date shown, at the points " +
     "listed inside. It states what was measured. It is not a certificate of compliance for the " +
     "installation, and the limitations inside form part of it.";
-  doc.font("Helvetica").fontSize(8.5);
-  const tall = doc.heightOfString(safe(closing), { width: CONTENT, lineGap: 1.6 });
-  doc.y = Math.min(Math.max(doc.y + 10, SHEET.height - MARGIN - 110), FLOOR - tall);
-  note(doc, closing);
+  /*
+   * Low on the page, but never above what is already drawn there, and never
+   * past the bottom of it.
+   *
+   * Capping it at the last line that fits put it back up the page when the
+   * details ran long, straight through the note about the records — the two
+   * were drawn over each other. So what is already on the page is the floor,
+   * sitting low is only the preference, and when a long installation
+   * description and a note have taken the room, the line is set a little
+   * smaller rather than being pushed off the page.
+   */
+  const topOf = (tall: number) =>
+    Math.max(doc.y + 6, Math.min(SHEET.height - MARGIN - 110, FLOOR - tall));
+  let size = 8.5;
+  let tall = 0;
+  let top = 0;
+  for (;;) {
+    doc.font("Helvetica").fontSize(size);
+    tall = doc.heightOfString(safe(closing), { width: CONTENT, lineGap: 1.6 });
+    top = topOf(tall);
+    if (top + tall <= FLOOR || size <= 7) break;
+    size -= 0.25;
+  }
+  doc.y = top;
+  note(doc, closing, size);
 }
 
 /* --- what the readings show -------------------------------------------------- */
@@ -524,8 +551,10 @@ function insulation(doc: Doc, data: InstallReport) {
       { width: columns[1] - 8 },
     );
     doc.font("Helvetica-Bold").fontSize(9.5);
-    doc.text(safe(resistanceReads(row)), MARGIN + columns[0] + columns[1] + 4, y + 6, {
+    ohmText(doc, resistanceReads(row), MARGIN + columns[0] + columns[1] + 4, y + 6, {
       width: columns[2] - 8,
+      size: 9.5,
+      font: "Helvetica-Bold",
     });
     doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
     doc.text(
@@ -550,7 +579,7 @@ function insulation(doc: Doc, data: InstallReport) {
       measured.map((row) => ({
         label: row.name,
         value: row.megohms as number,
-        reads: safe(resistanceReads(row)),
+        reads: resistanceReads(row),
       })),
       { value: 1, label: "1 MΩ" },
       "Insulation resistance",

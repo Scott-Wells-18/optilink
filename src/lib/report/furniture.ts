@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import { COMPANY, THERMOGRAPHER } from "@/lib/company";
 import type { Signatory } from "@/lib/profiles.server";
@@ -36,8 +38,13 @@ export type PageMeta = {
  * A call site may still pass `safe(...)` and nothing changes: folding text
  * that is already folded leaves it as it is.
  */
+const RAW = Symbol.for("optilink.report.rawText");
+
 function guard(doc: Doc): Doc {
   const draw = doc.text.bind(doc);
+  // Kept so the few places that embed a font able to carry the real character
+  // can reach past the fold. See `ohmText`.
+  (doc as Doc & { [RAW]?: typeof draw })[RAW] = draw;
   doc.text = ((text: unknown, ...rest: unknown[]) =>
     draw(
       typeof text === "string" ? safe(text) : (text as string),
@@ -633,4 +640,84 @@ export function signOffBlock(
 
   doc.fillColor(COLOURS.ink);
   return y + (options.thermography ? 80 : 66);
+}
+
+/** The ohm sign, in either of the two code points a file can carry it as. */
+const OHM = /[ΩΩ]/;
+
+/**
+ * A font that can carry the ohm sign, registered on the document on first use.
+ *
+ * The fourteen built-in PDF fonts only reach as far as WinAnsi, which has no
+ * omega, so everything else on a page folds "200 MΩ" down to "200 Mohm" rather
+ * than losing the unit. On a resistance — the headline value of an insulation
+ * test — the sign is what an electrician reads, so one font that actually holds
+ * the glyph is shipped with the app and used for those few cells.
+ *
+ * Liberation Sans is metrically identical to Helvetica, so a reading drawn in
+ * it occupies the same space and matches the rest of the table. pdfkit embeds
+ * only the glyphs used, so it costs a report a couple of kilobytes.
+ */
+const OHM_FONT = "OhmSans";
+
+/** How far below the top of a line the current font puts its baseline, per em. */
+function ascenderOf(doc: Doc): number {
+  const face = (doc as Doc & { _font?: { ascender?: number } })._font;
+  return (face?.ascender ?? 718) / 1000;
+}
+
+const OHM_FACE = path.join(process.cwd(), "public", "fonts", "LiberationSans-Regular.ttf");
+let ohmFace: Buffer | null | undefined;
+
+function withOhmFont(doc: Doc): string | null {
+  if (ohmFace === undefined) {
+    try {
+      ohmFace = readFileSync(OHM_FACE);
+    } catch {
+      ohmFace = null;
+    }
+  }
+  if (!ohmFace) return null;
+  try {
+    doc.registerFont(OHM_FONT, ohmFace);
+    return OHM_FONT;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Text that may carry an ohm sign, drawn with the sign rather than the word.
+ *
+ * The whole string goes through the shipped font, so the sign and the number
+ * beside it are one piece of type. If that font cannot be read the text still
+ * prints, folded to "Mohm" the way the rest of the page is.
+ */
+export function ohmText(
+  doc: Doc,
+  text: string,
+  x: number,
+  y: number,
+  options: { width: number; align?: "left" | "center" | "right"; size?: number; font?: string },
+) {
+  const body = options.font ?? "Helvetica";
+  const size = options.size ?? 9;
+  const face = OHM.test(text) ? withOhmFont(doc) : null;
+
+  const raw = (doc as Doc & { [RAW]?: Doc["text"] })[RAW] ?? doc.text.bind(doc);
+
+  // pdfkit places a line by its top, which puts the baseline an ascender below
+  // the y given — and the shipped font's ascender is taller than Helvetica's.
+  // Left alone the cell would sit a couple of points below the rest of its row.
+  doc.font(body).fontSize(size);
+  const sitsAt = ascenderOf(doc);
+  doc.font(face ?? body).fontSize(size);
+  const lift = face ? (sitsAt - ascenderOf(doc)) * size : 0;
+
+  raw(face ? String(text) : safe(String(text)), x, y + lift, {
+    width: options.width,
+    align: options.align ?? "left",
+    lineBreak: false,
+  });
+  doc.font(body).fontSize(size);
 }
