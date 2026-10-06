@@ -1,4 +1,4 @@
-import { TERMINALS, isWholeSet, type InstallRow, type Terminals } from "@/lib/install/parse";
+import { TERMINALS, type InstallRow, type Terminals } from "@/lib/install/parse";
 
 /**
  * Turning a run of voltage readings into tested points.
@@ -57,40 +57,27 @@ export function groupPoints(
   names: Record<string, string> = {},
 ): Grouping {
   const voltage = rows.filter((row) => row.kind === "VOLTAGE_PHASE");
-  // A record states no pair at all and carries no labelled reading: there is
-  // nowhere to put it, so it is listed rather than guessed at.
-  const stray = voltage.filter(
-    (row) => row.terminals === null && Object.keys(row.readings).length === 0,
-  );
-  const placed = voltage.filter((row) => !stray.includes(row));
+  const stray = voltage.filter((row) => row.terminals === null);
+  const placed = voltage.filter((row) => row.terminals !== null);
 
   type Set = { readings: Partial<Record<Terminals, InstallRow>>; openedOnRepeat: boolean };
   const sets: Set[] = [];
   let current: Set | null = null;
 
+  /*
+   * Three records make a point, and the record says which of the three it is.
+   *
+   * The instrument's result column lists all three voltages on every line, but
+   * that is the set of values it currently sees — not three measurements taken
+   * at once. What a record IS is in its parameters: "V/Phase=L-N" is the L-N
+   * reading of the point being worked. So the operator takes L-N, then L-PE,
+   * then N-PE, and those three records are one tested point.
+   *
+   * Which means the result column is read for the record's own pair and no
+   * other. Taking the first number on the line instead is what reported a
+   * neutral-to-earth reading of 240 V where the instrument recorded 1 V.
+   */
   for (const row of placed) {
-    /*
-     * A record that carries its own readings is a point on its own.
-     *
-     * The instrument writes all three voltages on one line and names the pair
-     * it was set to in the parameters, so one record is a whole polarity test.
-     * Grouping three of those into a point split every test across three
-     * points and left each of them short two readings — four tests read as two
-     * incomplete points. A record like that closes whatever was being built
-     * and stands as its own point.
-     */
-    if (isWholeSet(row)) {
-      if (current) sets.push(current);
-      current = null;
-      sets.push({
-        readings: Object.fromEntries(
-          (Object.keys(row.readings) as Terminals[]).map((pair) => [pair, row]),
-        ) as Partial<Record<Terminals, InstallRow>>,
-        openedOnRepeat: false,
-      });
-      continue;
-    }
-
     const pair = row.terminals as Terminals;
 
     if (!current) {
@@ -218,9 +205,54 @@ export function anomaliesOf(
 ): Anomaly[] {
   const out: Anomaly[] = [];
 
+  /*
+   * The same reading, taken twice — found first, because it explains the rest.
+   *
+   * Within a point each pair is taken once, so two records in a row set to the
+   * same pair are the operator pressing test again rather than a new reading.
+   * That is what splits one point into two short ones: the repeat closes the
+   * set before the third pair arrives, and both halves come out incomplete.
+   *
+   * Setting the second one aside is the whole of the fix, so it is named —
+   * S_1, S_2, S_3, S_4 with S_3 repeating S_2 becomes S_1, S_2, S_4, which is
+   * one complete point.
+   *
+   * It is worked out before anything else so that the notes it causes are not
+   * also printed. One duplicate used to raise five: two incomplete sets, a
+   * pair counted more often than the others, a vaguer version of this one, and
+   * this one. Five ways of saying the same thing is harder to act on than one.
+   */
+  const duplicates = new Set<string>();
+  const legs = rows.filter((row) => row.kind === "VOLTAGE_PHASE" && row.terminals);
+  for (let at = 1; at < legs.length; at += 1) {
+    const row = legs[at];
+    const before = legs[at - 1];
+    if (row.terminals !== before.terminals) continue;
+    const pair = row.terminals as Terminals;
+    const same = row.readings[pair] === before.readings[pair];
+    duplicates.add(row.name);
+    duplicates.add(before.name);
+    out.push({
+      title: `${row.name} repeats ${before.name}`,
+      detail:
+        `${before.name} and ${row.name} are both the ${pair} reading, one after the other` +
+        (same ? `, and both read ${row.readings[pair]} V` : "") +
+        ". Within one point each pair is taken once, so this reads as test pressed twice — and it " +
+        `is what has split the readings around it into two incomplete points. Set ${row.name} aside ` +
+        "as a duplicate and the readings either side of it close up into one complete point. If " +
+        "they really were two points, each is short the rest of its set.",
+      rows: [before.name, row.name],
+      surplus: true,
+    });
+  }
+
+  /** A point whose shape the duplicate above already accounts for. */
+  const explained = (point: Point) =>
+    Object.values(point.readings).some((row) => duplicates.has(row.name));
+
   /* --- the points -------------------------------------------------------- */
   for (const point of grouping.points) {
-    if (point.missing.length > 0 && point.missing.length < 3) {
+    if (point.missing.length > 0 && point.missing.length < 3 && !explained(point)) {
       out.push({
         title: `${point.ref} is an incomplete set`,
         detail:
@@ -235,15 +267,14 @@ export function anomaliesOf(
   /*
    * Two short sets either side of a repeated reading.
    *
-   * This is the shape a re-take leaves behind: L-PE, L-N, L-N again, N-PE
-   * reads as two incomplete points when it is one point whose L-N was taken
-   * twice. Saying which record to exclude is the whole of the fix, so it is
-   * named here rather than left to be worked out from two separate
-   * "incomplete set" notes.
+   * The same shape as the duplicate above but without a record to point at —
+   * the pair came round again across a set boundary rather than back to back.
+   * Where a duplicate was already named for these rows, this says nothing new.
    */
   grouping.points.forEach((point, at) => {
     const before = grouping.points[at - 1];
     if (!point.openedOnRepeat || !before || before.missing.length === 0) return;
+    if (explained(point) || explained(before)) return;
     const opener = TERMINALS.map((terminal) => point.readings[terminal]).find(Boolean);
     out.push({
       title: `${before.ref} and ${point.ref} may be one point tested twice`,
@@ -260,57 +291,11 @@ export function anomaliesOf(
     });
   });
 
-  /*
-   * The same test, recorded twice.
-   *
-   * Where a record is a whole polarity test, a repeat is not a surplus leg —
-   * it is a second record saying exactly what the one before it said, which is
-   * what the instrument leaves behind when test is pressed twice without the
-   * probes moving.
-   *
-   * Equal readings on their own are not enough to say so. Four powerpoints on
-   * one circuit will all read about 240 V, 241 V and a volt to earth, and
-   * calling each of them a duplicate of the one before would bury the real
-   * ones. What marks a double-press is that it happened moments later: the
-   * same readings a few seconds apart, rather than the minutes it takes to
-   * move to the next outlet and probe it. So both have to hold, and where the
-   * instrument wrote no time there is nothing to go on and nothing is said.
-   */
-  const whole = rows.filter((row) => row.kind === "VOLTAGE_PHASE" && isWholeSet(row));
-  const sameAs = (a: InstallRow, b: InstallRow) =>
-    TERMINALS.every((pair) => a.readings[pair] === b.readings[pair]);
-  for (let at = 1; at < whole.length; at += 1) {
-    const row = whole[at];
-    const before = whole[at - 1];
-    if (!sameAs(before, row)) continue;
-    const when = timeOf(row);
-    const earlier = timeOf(before);
-    if (when === null || earlier === null) continue;
-    const apart = Math.abs(when - earlier) / 1000;
-    if (apart > BACK_TO_BACK) continue;
-    out.push({
-      title: `${row.name} repeats ${before.name}, ${Math.round(apart)} seconds later`,
-      detail:
-        `${before.name} and ${row.name} state the same voltage at every pair and were taken ` +
-        `${Math.round(apart)} seconds apart, which is what test pressed twice looks like rather ` +
-        `than two points. If that is what happened, set ${row.name} aside as a duplicate and the ` +
-        "points either side of it close up. If they really were two outlets on the same circuit, " +
-        "leave both — they would be expected to read alike.",
-      rows: [before.name, row.name],
-      surplus: true,
-    });
-  }
-
-  /*
-   * One pair recorded more often than the others.
-   *
-   * Only meaningful where a record is one leg of a test: counting the selected
-   * pair of records that each carry all three would say nothing about how many
-   * legs were taken.
-   */
+  /* --- one pair recorded more often than the others ---------------------- */
   const byPair = new Map<Terminals, InstallRow[]>();
   for (const row of rows) {
-    if (row.kind !== "VOLTAGE_PHASE" || !row.terminals || isWholeSet(row)) continue;
+    if (row.kind !== "VOLTAGE_PHASE" || !row.terminals) continue;
+    if (duplicates.has(row.name)) continue;
     byPair.set(row.terminals, [...(byPair.get(row.terminals) ?? []), row]);
   }
   const counts = TERMINALS.map((terminal) => byPair.get(terminal)?.length ?? 0);

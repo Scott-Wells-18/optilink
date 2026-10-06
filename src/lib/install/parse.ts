@@ -456,10 +456,6 @@ export function voltsAt(row: InstallRow, pair: Terminals): number | null {
   return row.readings[pair] ?? null;
 }
 
-/** Whether this record is a whole polarity test rather than one leg of one. */
-export function isWholeSet(row: InstallRow): boolean {
-  return Object.keys(row.readings).length > 1;
-}
 
 function trim(value: number): string {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
