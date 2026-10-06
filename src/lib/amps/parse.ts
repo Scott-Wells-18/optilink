@@ -1,5 +1,5 @@
 import { parseCsv } from "@/lib/csv";
-import { readSheet } from "@/lib/power/xlsx";
+import { readSheet } from "@/lib/sheet";
 
 /**
  * Reading a short current recording off a clamp meter.

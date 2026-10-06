@@ -1,5 +1,5 @@
 import { parseCsv } from "@/lib/csv";
-import { readSheet } from "@/lib/power/xlsx";
+import { readSheet } from "@/lib/sheet";
 import { CHANNELS, type Channel, type Peak, type Summary } from "@/lib/power/channels";
 
 export { CHANNELS, CHANNEL_LABELS, SERIES } from "@/lib/power/channels";

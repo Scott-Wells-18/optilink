@@ -29,6 +29,64 @@ export function readSheet(bytes: Buffer): string[][] {
   return rowsOf(sheet, strings);
 }
 
+/**
+ * The sheets in the workbook, in the order the tabs are in.
+ *
+ * A name is not enough to find the XML part: the workbook names the sheets and
+ * gives each a relationship id, and the relationships part says which file
+ * that id is. Both are read so a workbook whose tabs have been reordered or
+ * deleted still resolves to the right part.
+ */
+export function sheetsOf(bytes: Buffer): { name: string; path: string }[] {
+  const zip = loadSync(bytes);
+  if (!zip) return [];
+
+  const rels = new Map<string, string>();
+  for (const match of (zip.get("xl/_rels/workbook.xml.rels") ?? "").matchAll(
+    /<Relationship\b[^>]*\/>/g,
+  )) {
+    const id = /Id="([^"]+)"/.exec(match[0])?.[1];
+    const target = /Target="([^"]+)"/.exec(match[0])?.[1];
+    if (!id || !target) continue;
+    // Targets are written relative to xl/, sometimes with a leading slash.
+    rels.set(id, target.replace(/^\/?(xl\/)?/, "xl/"));
+  }
+
+  const out: { name: string; path: string }[] = [];
+  for (const match of (zip.get("xl/workbook.xml") ?? "").matchAll(/<sheet\b[^>]*\/?>/g)) {
+    const name = /\bname="([^"]*)"/.exec(match[0])?.[1];
+    const id = /r:id="([^"]+)"/.exec(match[0])?.[1];
+    if (!name) continue;
+    const path = (id ? rels.get(id) : undefined) ?? "";
+    if (path && zip.has(path)) out.push({ name: decode(name), path });
+  }
+  return out;
+}
+
+/**
+ * One named sheet, matched loosely.
+ *
+ * An export's tab is named by whatever wrote it, and the difference between
+ * "Test & Tag Register" and "Test and Tag Register" is not worth refusing a
+ * file over. So the name is matched ignoring case, spacing and the ampersand;
+ * a workbook with no such tab hands back nothing rather than quietly reading
+ * a different one.
+ */
+export function readNamedSheet(bytes: Buffer, wanted: string): string[][] | null {
+  const zip = loadSync(bytes);
+  if (!zip) return null;
+
+  const key = (text: string) =>
+    text.toLocaleLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "");
+  const want = key(wanted);
+  const found = sheetsOf(bytes).find((sheet) => key(sheet.name) === want);
+  if (!found) return null;
+
+  const sheet = zip.get(found.path);
+  if (!sheet) return null;
+  return rowsOf(sheet, sharedStrings(zip.get("xl/sharedStrings.xml") ?? ""));
+}
+
 /* --- the zip -------------------------------------------------------------- */
 
 let cached: { bytes: Buffer; parts: Map<string, string> } | null = null;
@@ -66,7 +124,10 @@ function unzip(bytes: Buffer): Map<string, string> | null {
     const localAt = bytes.readUInt32LE(at + 42);
     const name = bytes.toString("utf8", at + 46, at + 46 + nameLength);
 
-    if (/\.xml$/.test(name)) {
+    // .rels as well as .xml: the part that says which file a named sheet is
+    // held in is "xl/_rels/workbook.xml.rels", and dropping it leaves the
+    // workbook able to name its sheets but not to find them.
+    if (/\.(xml|rels)$/.test(name)) {
       const localNameLength = bytes.readUInt16LE(localAt + 26);
       const localExtraLength = bytes.readUInt16LE(localAt + 28);
       const from = localAt + 30 + localNameLength + localExtraLength;
