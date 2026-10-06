@@ -38,47 +38,25 @@ export type TreeNode = {
   drag?: { group: string; onMove: (fromId: string, toId: string) => void };
 };
 
+/**
+ * The sections, in the order they are worked.
+ *
+ * Three groups, and the order is the order of a working day rather than the
+ * order they were built in: who we are, who we work for and what we work with;
+ * then our own paperwork, which is nobody else's business and is kept behind
+ * one card; then the reports that go to a client, which is most of what the
+ * app is for.
+ *
+ * Labels are short because the cards are all the same size: a label that wraps
+ * makes one card taller than the rest and the column stops being a column.
+ * Whatever a section is actually for goes in the detail line underneath.
+ */
 export const SECTIONS: TreeNode[] = [
+  /* --- us, and who we work for ------------------------------------------- */
   {
     id: "profiles",
     label: "Profiles",
     detail: "Who signs the paperwork",
-    children: [],
-  },
-  {
-    id: "thermal",
-    label: "Thermal",
-    detail: "Infrared surveys",
-    children: [],
-  },
-  {
-    id: "rcd",
-    label: "RCD",
-    detail: "RCD testing",
-    children: [],
-  },
-  {
-    id: "ba",
-    label: "Work Completed/Rectification",
-    detail: "What was done, or what we recommend",
-    children: [],
-  },
-  {
-    id: "swms",
-    label: "SWMS / JSA",
-    detail: "Safe work paperwork",
-    children: [],
-  },
-  {
-    id: "power",
-    label: "Power Analysis",
-    detail: "Current recordings",
-    children: [],
-  },
-  {
-    id: "amps",
-    label: "Amp Readings",
-    detail: "Short current recordings",
     children: [],
   },
   {
@@ -93,4 +71,98 @@ export const SECTIONS: TreeNode[] = [
     detail: "Our test gear & calibration",
     children: [],
   },
+
+  /* --- our own paperwork -------------------------------------------------- */
+  {
+    id: "optilink",
+    label: "Optilink",
+    detail: "Our own paperwork",
+    children: [
+      {
+        id: "swms",
+        label: "SWMS / JSA",
+        detail: "Safe work paperwork",
+        children: [],
+      },
+      {
+        id: "tagging",
+        label: "Equipment Tagging",
+        detail: "Our own test & tag register",
+        children: [],
+      },
+    ],
+  },
+
+  /* --- what goes to a client ---------------------------------------------- */
+  {
+    id: "thermal",
+    label: "Thermal",
+    detail: "Infrared surveys",
+    children: [],
+  },
+  {
+    id: "rcd",
+    label: "RCD Report",
+    detail: "RCD & RCBO testing",
+    children: [],
+  },
+  {
+    id: "power",
+    label: "Power Analysis",
+    detail: "Long current recordings",
+    children: [],
+  },
+  {
+    id: "amps",
+    label: "Amp Readings",
+    detail: "Short current recordings",
+    children: [],
+  },
+  {
+    id: "ba",
+    label: "Works Completed",
+    detail: "Completed works & rectifications",
+    children: [],
+  },
+  {
+    id: "install",
+    label: "Installation",
+    detail: "Insulation, RCD & polarity tests",
+    children: [],
+  },
+  {
+    id: "testtag",
+    label: "Test & Tag",
+    detail: "A client's tagged equipment",
+    children: [],
+  },
+  {
+    id: "gates",
+    label: "Gate Service",
+    detail: "Boom & sliding gate servicing",
+    children: [],
+  },
 ];
+
+/** Every section id, nested ones included, for filling children by id. */
+export function sectionIds(nodes: TreeNode[] = SECTIONS): string[] {
+  return nodes.flatMap((node) => [node.id, ...sectionIds(node.children ?? [])]);
+}
+
+/**
+ * The sections with each one's children filled in.
+ *
+ * Walks the whole tree rather than the top row, because the sections inside
+ * the Optilink card are sections too — they are simply kept behind it.
+ */
+export function withChildren(
+  fill: Record<string, TreeNode[]>,
+  nodes: TreeNode[] = SECTIONS,
+): TreeNode[] {
+  return nodes.map((node) => {
+    const own = fill[node.id];
+    if (own) return { ...node, children: own };
+    const kids = node.children ?? [];
+    return kids.length > 0 ? { ...node, children: withChildren(fill, kids) } : node;
+  });
+}

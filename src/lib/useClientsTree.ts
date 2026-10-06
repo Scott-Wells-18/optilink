@@ -1629,6 +1629,27 @@ export function useClientsTree(enabled: boolean) {
     [profiles, setProfileDialog, removeProfile],
   );
 
+  /*
+   * The sections still being built.
+   *
+   * They are in the navigation from the start rather than appearing one at a
+   * time, so the shape of the hub settles once; each is filled in where it is
+   * built, and until then says so rather than opening onto nothing.
+   */
+  const soon = (what: string): TreeNode[] => [
+    {
+      id: `soon:${what}`,
+      label: "Not built yet",
+      detail: "This section is still being built.",
+      variant: "info" as const,
+    },
+  ];
+
+  const taggingNodes = useMemo<TreeNode[]>(() => soon("tagging"), []);
+  const installNodes = useMemo<TreeNode[]>(() => soon("install"), []);
+  const testTagNodes = useMemo<TreeNode[]>(() => soon("testtag"), []);
+  const gateNodes = useMemo<TreeNode[]>(() => soon("gates"), []);
+
   const equipmentNodes = useMemo<TreeNode[]>(
     () => [
       ...testGear.map<TreeNode>((item) => ({
@@ -1683,8 +1704,12 @@ export function useClientsTree(enabled: boolean) {
     },
     rcdNodes,
     swmsNodes,
+    taggingNodes,
     powerNodes,
     ampNodes,
+    installNodes,
+    testTagNodes,
+    gateNodes,
     profileNodes,
     preparedBy,
     closePreparedBy: () => setPreparedBy(null),

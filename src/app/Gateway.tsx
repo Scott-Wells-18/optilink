@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { BrandMark } from "@/components/BrandMark";
 import { TreeNav } from "@/components/TreeNav";
-import { SECTIONS } from "@/lib/navTree";
+import { withChildren } from "@/lib/navTree";
 import { useClientsTree } from "@/lib/useClientsTree";
 import { AddDialog } from "@/components/AddDialog";
 import { InfoDialog } from "@/components/InfoDialog";
@@ -57,20 +57,25 @@ export function Gateway({
 
   useSpringScroll(scrollerRef);
 
-  // Every section is the same clients → sites walk, read a different way.
+  // Every section is the same clients → sites walk, read a different way. The
+  // ones kept behind the Optilink card are filled the same way as the rest:
+  // being nested changes where they are shown, not what they are.
   const sections = useMemo(
     () =>
-      SECTIONS.map((section) => {
-        if (section.id === "clients") return { ...section, children: clients.nodes };
-        if (section.id === "thermal") return { ...section, children: clients.thermalNodes };
-        if (section.id === "ba") return { ...section, children: clients.baNodes };
-        if (section.id === "rcd") return { ...section, children: clients.rcdNodes };
-        if (section.id === "swms") return { ...section, children: clients.swmsNodes };
-        if (section.id === "power") return { ...section, children: clients.powerNodes };
-        if (section.id === "amps") return { ...section, children: clients.ampNodes };
-        if (section.id === "profiles") return { ...section, children: clients.profileNodes };
-        if (section.id === "equipment") return { ...section, children: clients.equipmentNodes };
-        return section;
+      withChildren({
+        profiles: clients.profileNodes,
+        clients: clients.nodes,
+        equipment: clients.equipmentNodes,
+        swms: clients.swmsNodes,
+        tagging: clients.taggingNodes,
+        thermal: clients.thermalNodes,
+        rcd: clients.rcdNodes,
+        power: clients.powerNodes,
+        amps: clients.ampNodes,
+        ba: clients.baNodes,
+        install: clients.installNodes,
+        testtag: clients.testTagNodes,
+        gates: clients.gateNodes,
       }),
     [
       clients.nodes,
@@ -78,10 +83,14 @@ export function Gateway({
       clients.baNodes,
       clients.rcdNodes,
       clients.swmsNodes,
+      clients.taggingNodes,
       clients.powerNodes,
       clients.ampNodes,
       clients.profileNodes,
       clients.equipmentNodes,
+      clients.installNodes,
+      clients.testTagNodes,
+      clients.gateNodes,
     ],
   );
 

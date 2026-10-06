@@ -635,6 +635,7 @@ body {
   --tree-card-pad: 19px 22px 19px 24px;
   --tree-card-gap: 20px;
   --tree-section-min: 366px;
+  --tree-section-height: 98px;
   --tree-section-pad: 26px 28px 26px 30px;
   --tree-section-gap: 26px;
   --tree-label: 17.5px;
@@ -797,11 +798,40 @@ body {
     transform 520ms var(--ease-out);
 }
 
+/*
+ * Every section card is the same rectangle.
+ *
+ * A column of cards that are each as wide as their own label is a ragged edge
+ * rather than a column, and one that wraps to two lines is taller than its
+ * neighbours. So the width and the height are both fixed, the label is held to
+ * one line, and the detail underneath is given the two lines it needs. The
+ * labels are short enough to fit; that is why they are short.
+ */
 .tree-node.is-section {
+  width: var(--tree-section-min);
   min-width: var(--tree-section-min);
+  height: var(--tree-section-height);
   gap: var(--tree-section-gap);
   padding: var(--tree-section-pad);
   border-radius: 18px;
+}
+
+.tree-node.is-section .tree-node-body {
+  min-width: 0;
+}
+
+.tree-node.is-section .tree-node-label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-node.is-section .tree-node-detail {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /*
@@ -4264,6 +4294,7 @@ body {
     --tree-card-pad: 12px 13px 12px 15px;
     --tree-card-gap: 11px;
     --tree-section-min: 208px;
+    --tree-section-height: 66px;
     --tree-section-pad: 15px 16px 15px 18px;
     --tree-section-gap: 14px;
     --tree-label: 13.5px;
@@ -5357,98 +5388,113 @@ a.dialog-cancel {
 }
 
 /* ===========================================================================
-   The setup sections
+   Our own sections
    ===========================================================================
 
-   Clients, Profiles and Equipment are where the app is set up rather than
-   where work is recorded, so they stand apart from the sections above them:
-   OptiLink blue at rest, and inverting to white on hover the way every other
-   card lifts. The text inverts with the card.
+   Profiles, Clients, Equipment and Optilink are ours: who we are, who we work
+   for, what we work with, and the paperwork nobody outside the company ever
+   sees. Everything below them makes something a client reads. So these four
+   stand apart — OptiLink blue at rest, inverting to white on hover the way
+   every other card lifts, the text inverting with the card.
+
+   One list, named once: adding a section to it is adding an id to :is().
    =========================================================================== */
 
-.tree-node[data-node="clients"],
-.tree-node[data-node="profiles"],
-.tree-node[data-node="equipment"] {
+:root {
+  --own-ink: rgba(255, 255, 255, 0.78);
+  --own-ink-open: rgba(20, 82, 143, 0.72);
+}
+
+.tree-node:is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) {
   border-color: var(--accent-deep);
   background: var(--accent-deep);
   color: #fff;
 }
 
-.tree-node[data-node="clients"] .tree-node-label,
-.tree-node[data-node="profiles"] .tree-node-label,
-.tree-node[data-node="equipment"] .tree-node-label,
-.tree-node[data-node="clients"] .tree-node-index,
-.tree-node[data-node="profiles"] .tree-node-index,
-.tree-node[data-node="equipment"] .tree-node-index,
-.tree-node[data-node="clients"] .tree-node-chevron,
-.tree-node[data-node="profiles"] .tree-node-chevron,
-.tree-node[data-node="equipment"] .tree-node-chevron {
+.tree-node:is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) :is(.tree-node-label, .tree-node-index, .tree-node-chevron) {
   color: #fff;
 }
 
-.tree-node[data-node="clients"] .tree-node-detail,
-.tree-node[data-node="profiles"] .tree-node-detail,
-.tree-node[data-node="equipment"] .tree-node-detail {
-  color: rgba(255, 255, 255, 0.78);
+.tree-node:is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) .tree-node-detail {
+  color: var(--own-ink);
 }
 
 /* The rail that marks a resting card is already white here. */
-.tree-node[data-node="clients"]::before,
-.tree-node[data-node="profiles"]::before,
-.tree-node[data-node="equipment"]::before {
+.tree-node:is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+)::before {
   background: rgba(255, 255, 255, 0.5);
 }
 
 /* --- hovered, or open: white card, blue text ----------------------------- */
-.tree-card-wrap:hover > .tree-node[data-node="clients"],
-.tree-card-wrap:hover > .tree-node[data-node="profiles"],
-.tree-card-wrap:hover > .tree-node[data-node="equipment"],
-.tree-node[data-node="clients"]:focus-visible,
-.tree-node[data-node="profiles"]:focus-visible,
-.tree-node[data-node="equipment"]:focus-visible,
-.tree-node[data-node="clients"].is-open,
-.tree-node[data-node="profiles"].is-open,
-.tree-node[data-node="equipment"].is-open {
+:is(
+  .tree-card-wrap:hover > .tree-node,
+  .tree-node:focus-visible,
+  .tree-node.is-open
+):is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) {
   background: #fff;
   border-color: var(--accent-deep);
   color: var(--accent-deep);
 }
 
-.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-label,
-.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-label,
-.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-label,
-.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-index,
-.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-index,
-.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-index,
-.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-chevron,
-.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-chevron,
-.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-chevron,
-.tree-node[data-node="clients"].is-open .tree-node-label,
-.tree-node[data-node="profiles"].is-open .tree-node-label,
-.tree-node[data-node="equipment"].is-open .tree-node-label,
-.tree-node[data-node="clients"].is-open .tree-node-index,
-.tree-node[data-node="profiles"].is-open .tree-node-index,
-.tree-node[data-node="equipment"].is-open .tree-node-index,
-.tree-node[data-node="clients"].is-open .tree-node-chevron,
-.tree-node[data-node="profiles"].is-open .tree-node-chevron,
-.tree-node[data-node="equipment"].is-open .tree-node-chevron {
+:is(
+  .tree-card-wrap:hover > .tree-node,
+  .tree-node:focus-visible,
+  .tree-node.is-open
+):is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) :is(.tree-node-label, .tree-node-index, .tree-node-chevron) {
   color: var(--accent-deep);
 }
 
-.tree-card-wrap:hover > .tree-node[data-node="clients"] .tree-node-detail,
-.tree-card-wrap:hover > .tree-node[data-node="profiles"] .tree-node-detail,
-.tree-card-wrap:hover > .tree-node[data-node="equipment"] .tree-node-detail,
-.tree-node[data-node="clients"].is-open .tree-node-detail,
-.tree-node[data-node="profiles"].is-open .tree-node-detail,
-.tree-node[data-node="equipment"].is-open .tree-node-detail {
-  color: rgba(20, 82, 143, 0.72);
+:is(
+  .tree-card-wrap:hover > .tree-node,
+  .tree-node:focus-visible,
+  .tree-node.is-open
+):is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+) .tree-node-detail {
+  color: var(--own-ink-open);
 }
 
-.tree-card-wrap:hover > .tree-node[data-node="clients"]::before,
-.tree-card-wrap:hover > .tree-node[data-node="profiles"]::before,
-.tree-card-wrap:hover > .tree-node[data-node="equipment"]::before,
-.tree-node[data-node="clients"].is-open::before,
-.tree-node[data-node="profiles"].is-open::before,
-.tree-node[data-node="equipment"].is-open::before {
+:is(
+  .tree-card-wrap:hover > .tree-node,
+  .tree-node:focus-visible,
+  .tree-node.is-open
+):is(
+  [data-node="profiles"],
+  [data-node="clients"],
+  [data-node="equipment"],
+  [data-node="optilink"]
+)::before {
   background: var(--accent-deep);
 }

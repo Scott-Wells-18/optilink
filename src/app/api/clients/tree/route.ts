@@ -36,7 +36,8 @@ export async function GET() {
             select: { id: true, name: true, email: true, phone: true },
           },
           jobs: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               preparedBy: true,
               id: true,
@@ -62,7 +63,8 @@ export async function GET() {
             },
           },
           rcdReports: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               preparedBy: true,
               id: true,
@@ -84,7 +86,8 @@ export async function GET() {
             },
           },
           powerRuns: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               id: true,
               name: true,
@@ -96,7 +99,8 @@ export async function GET() {
             },
           },
           ampReports: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               id: true,
               name: true,
@@ -109,7 +113,8 @@ export async function GET() {
             },
           },
           safetyDocs: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               id: true,
               date: true,
@@ -122,7 +127,8 @@ export async function GET() {
             },
           },
           inspections: {
-            orderBy: { createdAt: "asc" },
+            // Newest first: the report wanted is nearly always the last made.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             select: {
               preparedBy: true,
               id: true,
