@@ -39,7 +39,18 @@ function readSelection(value: unknown): Selection | null {
         method === "RCD" || method === "THERMAL" || method === "MEASURE",
     ),
     modifierIds: strings("modifierIds"),
+    answers: readFollowUps(body.answers),
   };
+}
+
+/** The follow-up answers saved with the activities, as plain id → value. */
+function readFollowUps(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [id, answer] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof answer === "string" && answer.length <= 40) out[id.slice(0, 40)] = answer;
+  }
+  return out;
 }
 
 function readEdits(value: unknown): Edits {

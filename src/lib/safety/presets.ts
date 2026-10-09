@@ -109,9 +109,22 @@ export const METHODS: Record<
   },
 };
 
-/* --- the presets ----------------------------------------------------------- */
+/* --- the activities -------------------------------------------------------- */
 
-export type PresetGroup = "INSTALL" | "TESTING" | "MONITORING" | "COMMISSIONING";
+/**
+ * The categories the activities are offered under, in order.
+ *
+ * A job is any number of activities from any number of these. Nothing in one
+ * category implies anything in another: an installation does not bring testing
+ * with it, and testing does not imply anything was installed.
+ */
+export type PresetGroup =
+  | "INSTALL"
+  | "TESTING"
+  | "THERMAL"
+  | "MONITORING"
+  | "COMMISSIONING"
+  | "OTHER";
 
 export type Preset = {
   id: string;
@@ -120,58 +133,68 @@ export type Preset = {
   /** The scope paragraph, as supplied. */
   scope: string;
   /**
-   * The testing methods this job normally involves.
+   * The testing methods selecting this activity brings.
    *
-   * `methods` are proposed with their box already ticked; `offers` are shown
-   * unticked. Neither is forced: a job is whatever was selected, and the
-   * wording for a method nobody selected never appears. This is what lets an
-   * installation be booked with no testing at all, and a test to be booked
-   * with no installation.
+   * Only an activity that *is* a test brings one. An installation brings none:
+   * how it is verified is asked as a follow-up, so selecting a GPO never
+   * quietly puts a test method on the paperwork.
    */
   methods?: MethodKey[];
+  /**
+   * A reading with the supply on that may or may not be part of this activity.
+   * Never assumed: it raises the "readings with the supply on" follow-up.
+   */
   offers?: MethodKey[];
   /** The main-job answer this stands for, which decides the SWMS. */
-  nature: string;
-  /** Statements this scope needs beyond the one its nature brings. */
+  nature?: string;
+  /** Statements this activity needs beyond the one its nature brings. */
   requires?: string[];
+  /** JSA risk rows it adds. */
+  hazards?: string[];
   /**
-   * Anything this scope needs confirmed before the wording is true, in the
+   * Anything this activity needs confirmed before the wording is true, in the
    * words the assessor will have to answer. Never guessed at, never filled.
    */
   confirm?: string[];
   /** A sentence added after the scope, about how the job is bounded. */
   bound?: string;
+  /**
+   * An attribute of an RCD test rather than a test of its own — across several
+   * boards, or a retest. Offered under the phase types and only once one of
+   * them is selected, so it can never stand as a contradictory third choice.
+   */
+  rcdAttribute?: boolean;
+  /** Kept so saved jobs still compose; no longer offered. */
+  legacy?: boolean;
 };
 
+/** Said once, however many activities bound an energised stage to the tests. */
+const BOUND_TO_TESTS = "Any energised stage is limited to the tests selected for this job.";
+
 /**
- * The twenty-four, in the order they are offered.
+ * Every activity, in the order it is offered.
  *
  * Testing stands on its own. An RCD test, a thermal survey and a current
- * recording are each a whole day's work with nothing installed, so they are
- * main jobs here rather than something reached by first claiming to be doing
- * an installation — which is how a method statement nobody was following used
- * to end up on the front of the paperwork.
+ * recording are each a whole day's work with nothing installed, and each can
+ * equally sit beside an installation on the same visit.
  */
 export const PRESETS: Preset[] = [
-  /* installation */
+  /* installation and replacement */
   {
     id: "GPO_SINGLE",
     group: "INSTALL",
     label: "Single-phase GPO installation",
     scope:
-      "Install and verify a single-phase socket-outlet circuit, including cable installation, termination, identification and applicable electrical testing.",
+      "Install a single-phase socket-outlet circuit, including cable installation, termination and identification.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
     confirm: ["The circuit rating and protective device, from the job details."],
   },
   {
     id: "GPO_EXTEND",
     group: "INSTALL",
     label: "Additional GPOs on an existing circuit",
-    scope:
-      "Extend the identified existing circuit to additional socket outlets and verify the altered work and affected circuit.",
+    scope: "Extend the identified existing circuit to additional socket outlets.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
     confirm: [
       "Which existing circuit is being extended, and how its identity was established.",
       "The interruption arrangements agreed for that circuit.",
@@ -180,34 +203,27 @@ export const PRESETS: Preset[] = [
   {
     id: "GPO_REPLACE",
     group: "INSTALL",
-    label: "Replacement GPO",
-    scope:
-      "Replace the identified socket outlet under isolation and complete the applicable verification before return to service.",
+    label: "GPO replacement",
+    scope: "Replace the identified socket outlet under isolation.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
-    bound:
-      "Any energised stage is restricted to the tests selected for this job; the replacement itself is carried out isolated.",
+    bound: BOUND_TO_TESTS,
   },
   {
     id: "OUTLET_THREE",
     group: "INSTALL",
     label: "Three-phase outlet installation",
     scope:
-      "Install and verify a three-phase outlet circuit, including conductor identification, termination and applicable electrical tests.",
+      "Install a three-phase outlet circuit, including conductor identification and termination.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
-    confirm: [
-      "Which phases are installed, and the RCD test configuration for the device fitted.",
-    ],
+    confirm: ["Which phases are installed, and the protective device fitted."],
   },
   {
     id: "APPLIANCE_SINGLE",
     group: "INSTALL",
     label: "Single-phase appliance circuit",
     scope:
-      "Install and verify a dedicated single-phase appliance circuit, local isolation and connection arrangements.",
+      "Install a dedicated single-phase appliance circuit, local isolation and connection arrangements.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
     confirm: ["The circuit rating, from the job details."],
   },
   {
@@ -215,9 +231,8 @@ export const PRESETS: Preset[] = [
     group: "INSTALL",
     label: "Three-phase appliance circuit",
     scope:
-      "Install and verify a dedicated three-phase appliance circuit, isolation and connection arrangements.",
+      "Install a dedicated three-phase appliance circuit, isolation and connection arrangements.",
     nature: "GENERAL",
-    offers: ["RCD", "MEASURE"],
     confirm: [
       "Which phases are connected.",
       "The equipment affected, and the restoration arrangements agreed for it.",
@@ -228,45 +243,37 @@ export const PRESETS: Preset[] = [
     group: "INSTALL",
     label: "Circuit breaker or RCBO replacement",
     scope:
-      "Replace the identified protective device under isolation; verify selection, connections, identification and applicable test results before restoration.",
+      "Replace the identified protective device under isolation, checking selection, connections and identification before restoration.",
     nature: "BOARD_MAINT",
-    offers: ["RCD", "MEASURE"],
     confirm: [
-      "Whether the device fitted is an RCBO, and so whether operational RCD testing applies.",
-      "The test points used for that testing.",
+      "Whether the device fitted is an RCBO. If its trip test is done on this visit, select the RCD testing for it under Electrical testing.",
     ],
   },
   {
     id: "CIRCUIT_NEW",
     group: "INSTALL",
-    label: "New outgoing circuit at an existing board",
+    label: "New outgoing circuit",
     scope:
-      "Install and verify a new outgoing circuit at the identified switchboard, with associated cabling, protection and labelling.",
+      "Install a new outgoing circuit at the identified switchboard, with associated cabling, protection and labelling.",
     nature: "BOARD_MAINT",
-    offers: ["RCD", "MEASURE"],
-    bound: "Any energised stage is limited to the tests selected for this job.",
+    bound: BOUND_TO_TESTS,
   },
   {
     id: "SUBBOARD",
     group: "INSTALL",
     label: "Subboard installation",
     scope:
-      "Install and verify a subboard, feeder, outgoing circuits, earthing, protection and identification within the recorded job scope.",
+      "Install a subboard, feeder, outgoing circuits, earthing, protection and identification within the recorded job scope.",
     nature: "BOARD_NEW",
-    offers: ["RCD", "MEASURE"],
-    confirm: [
-      "Which boards are involved, and where the feeder is isolated.",
-      "Which verification tasks are in scope for this visit.",
-    ],
+    confirm: ["Which boards are involved, and where the feeder is isolated."],
   },
   {
     id: "BOARD_REPLACE",
     group: "INSTALL",
     label: "Switchboard replacement",
     scope:
-      "Replace the identified switchboard under controlled isolation, reconnect verified circuits and complete inspection and testing before handover.",
+      "Replace the identified switchboard under controlled isolation and reconnect identified circuits.",
     nature: "BOARD_MODIFY",
-    offers: ["RCD", "MEASURE"],
     confirm: [
       "Every supply to the board, including any second or standby supply.",
       "The staged restoration sequence agreed for it.",
@@ -275,34 +282,35 @@ export const PRESETS: Preset[] = [
       "Testing that needs the supply on is selected separately and is not implied by the replacement itself.",
   },
 
-  /* testing on its own */
+  /* electrical testing */
   {
     id: "RCD_SINGLE",
     group: "TESTING",
-    label: "Single-phase RCD testing only",
+    label: "Single-phase RCD testing",
     scope:
-      "Perform operational RCD testing on the identified single-phase devices and record results and restoration; no installation or repair is included.",
+      "Perform operational RCD testing on the identified single-phase devices and record results and restoration.",
     nature: "RCD",
     methods: ["RCD"],
   },
   {
     id: "RCD_THREE",
     group: "TESTING",
-    label: "Three-phase RCD testing only",
+    label: "Three-phase RCD testing",
     scope:
-      "Perform operational RCD testing on the identified three-phase device using the selected phase test sequence; record each phase and restoration.",
+      "Perform operational RCD testing on the identified three-phase devices using the selected phase test sequence; record each phase and restoration.",
     nature: "RCD",
     methods: ["RCD"],
-    confirm: ["The device type and configuration, and the phase test sequence used."],
+    confirm: ["The three-phase device type and configuration, and the phase test sequence used."],
   },
   {
     id: "RCD_BOARDS",
     group: "TESTING",
-    label: "Multiple-board RCD testing",
+    label: "Across multiple boards",
     scope:
-      "Test selected RCDs across the listed switchboards in the recorded sequence, with board-specific identification, interruption controls and restoration.",
+      "Test the selected RCDs across the listed switchboards in the recorded sequence, with board-specific identification, interruption controls and restoration.",
     nature: "RCD",
     methods: ["RCD"],
+    rcdAttribute: true,
     confirm: [
       "The local conditions at each board, recorded separately rather than once for all of them.",
       "The isolation and interruption arrangements for each board.",
@@ -311,60 +319,15 @@ export const PRESETS: Preset[] = [
   {
     id: "RCD_RETEST",
     group: "TESTING",
-    label: "RCD retest after rectification",
+    label: "Retest after rectification",
     scope:
       "Retest the identified RCD/circuit after recorded rectification and document the final operational result.",
     nature: "RCD",
     methods: ["RCD"],
+    rcdAttribute: true,
     confirm: [
       "The earlier result and the rectification carried out, which are preserved rather than replaced.",
     ],
-  },
-  {
-    id: "THERMAL_CLOSED",
-    group: "TESTING",
-    label: "Thermal inspection with covers closed",
-    scope:
-      "Thermally inspect accessible electrical equipment under representative load using a closed-cover method within its stated limitations.",
-    nature: "THERMAL",
-    methods: ["THERMAL"],
-    confirm: ["The actual electrical exposure of the closed-cover position used."],
-  },
-  {
-    id: "THERMAL_WINDOW",
-    group: "TESTING",
-    label: "Thermal inspection through an infrared window",
-    scope:
-      "Thermally inspect the identified equipment through a suitable infrared window under recorded operating load.",
-    nature: "THERMAL",
-    methods: ["THERMAL"],
-    bound:
-      "The inspection is through the fitted window; no cover is recorded as removed, and the window's own limitations apply to what could be seen.",
-    confirm: ["The window's limitations, and what they prevented being inspected."],
-  },
-  {
-    id: "THERMAL_OPEN",
-    group: "TESTING",
-    label: "Thermal inspection requiring cover access",
-    scope:
-      "Thermally inspect the identified equipment under representative load using the assessed minimum-access method.",
-    nature: "THERMAL",
-    methods: ["THERMAL"],
-    requires: ["WHS002"],
-    confirm: [
-      "The actual justification for the access required, for this equipment on this day.",
-    ],
-  },
-  {
-    id: "RCD_AND_THERMAL",
-    group: "TESTING",
-    label: "Combined RCD testing and thermal imaging",
-    scope:
-      "Perform identified RCD operational tests and thermal inspection under representative load, coordinating interruption and restoration so each result remains valid.",
-    nature: "RCD",
-    methods: ["RCD", "THERMAL"],
-    requires: ["SWMS013"],
-    confirm: ["The order the two were actually carried out in."],
   },
   {
     id: "VOLTAGE_PHASE",
@@ -383,28 +346,61 @@ export const PRESETS: Preset[] = [
       "Complete the selected fault-loop or automatic-disconnection verification method at identified test points and record protection details and results.",
     nature: "RCD",
     offers: ["MEASURE"],
+  },
+
+  /* thermal imaging */
+  {
+    id: "THERMAL_CLOSED",
+    group: "THERMAL",
+    label: "Closed-cover inspection",
+    scope:
+      "Thermally inspect accessible electrical equipment under representative load using a closed-cover method within its stated limitations.",
+    nature: "THERMAL",
+    methods: ["THERMAL"],
+    confirm: ["The actual electrical exposure of the closed-cover position used."],
+  },
+  {
+    id: "THERMAL_WINDOW",
+    group: "THERMAL",
+    label: "Inspection through an infrared window",
+    scope:
+      "Thermally inspect the identified equipment through a suitable infrared window under recorded operating load.",
+    nature: "THERMAL",
+    methods: ["THERMAL"],
+    bound:
+      "The inspection is through the fitted window; no cover is recorded as removed, and the window's own limitations apply to what could be seen.",
+    confirm: ["The window's limitations, and what they prevented being inspected."],
+  },
+  {
+    id: "THERMAL_OPEN",
+    group: "THERMAL",
+    label: "Inspection requiring cover access",
+    scope:
+      "Thermally inspect the identified equipment under representative load using the assessed minimum-access method.",
+    nature: "THERMAL",
+    methods: ["THERMAL"],
+    requires: ["WHS002"],
     confirm: [
-      "Whether the verification method selected needs the supply on. The operating measurement wording is included only where it does.",
+      "The actual justification for the access required, for this equipment on this day.",
     ],
   },
 
-  /* monitoring */
+  /* current monitoring */
   {
     id: "LOGGER",
     group: "MONITORING",
-    label: "Current logger installation and retrieval",
+    label: "Current logger installation or retrieval",
     scope:
       "Fit or retrieve current-monitoring equipment at the identified conductors, using isolation for installation/removal where practicable, and record the monitoring scope.",
     nature: "GENERAL",
     offers: ["MEASURE"],
     bound:
       "Fitting and removal are assessed separately from the recording itself. That a recording is taken with the supply on does not justify fitting or removing the equipment exposed-live.",
-    confirm: ["Whether fitting, removal, or both are in scope for this visit."],
   },
   {
     id: "CURRENT_SHORT",
     group: "MONITORING",
-    label: "Short-duration circuit current recording",
+    label: "Short-duration amp readings",
     scope:
       "Record current on the identified operating circuit using the assessed sensor and access method; record time, conditions and instrument details.",
     nature: "GENERAL",
@@ -413,18 +409,7 @@ export const PRESETS: Preset[] = [
       "A protected test point or closed-cover access is used where one can achieve the measurement.",
   },
 
-  /* commissioning */
-  {
-    id: "MOTOR",
-    group: "COMMISSIONING",
-    label: "Motor or pump commissioning",
-    scope:
-      "Verify the installed motor or pump circuit, rotation and controlled operating response within the recorded commissioning scope.",
-    nature: "GENERAL",
-    offers: ["MEASURE"],
-    bound:
-      "Installation and physical adjustment are carried out isolated. Powered tests are run under the controls recorded for them, including those for moving plant.",
-  },
+  /* gates and equipment */
   {
     id: "GATE_COMMISSION",
     group: "COMMISSIONING",
@@ -437,19 +422,69 @@ export const PRESETS: Preset[] = [
     bound:
       "Exposure to live parts is assessed separately from ordinary powered movement: the two are different risks and are controlled differently.",
   },
+  {
+    id: "MOTOR",
+    group: "COMMISSIONING",
+    label: "Motor or pump commissioning",
+    scope:
+      "Verify the installed motor or pump circuit, rotation and controlled operating response within the recorded commissioning scope.",
+    nature: "GENERAL",
+    offers: ["MEASURE"],
+    bound:
+      "Installation and physical adjustment are carried out isolated. Powered tests are run under the controls recorded for them, including those for moving plant.",
+  },
+
+  /* concrete cutting and other work */
+  {
+    id: "CONCRETE_CUT",
+    group: "OTHER",
+    label: "Concrete cutting with a demolition saw",
+    scope:
+      "Saw-cut concrete at the marked locations with a demolition saw, using wet cutting and prompt slurry collection.",
+    requires: ["SWMS016"],
+    hazards: ["HOT_WORKS"],
+    bound:
+      "Hidden services and the material are verified before cutting, silica exposure is assessed, and the cutting SWMS/JSA is implemented.",
+    confirm: ["How hidden services were located, and what the material is."],
+  },
+
+  /* no longer offered: both of these are now two ticks */
+  {
+    id: "RCD_AND_THERMAL",
+    group: "TESTING",
+    label: "Combined RCD testing and thermal imaging",
+    scope:
+      "Perform identified RCD operational tests and thermal inspection under representative load.",
+    nature: "RCD",
+    methods: ["RCD", "THERMAL"],
+    requires: ["SWMS013"],
+    legacy: true,
+  },
 ];
 
 export const PRESET_BY_ID = new Map(PRESETS.map((preset) => [preset.id, preset]));
 
 export const GROUP_LABELS: Record<PresetGroup, string> = {
-  TESTING: "Testing on its own",
-  INSTALL: "Installation and alteration",
-  MONITORING: "Monitoring and recording",
-  COMMISSIONING: "Commissioning",
+  INSTALL: "Electrical installation and replacement",
+  TESTING: "Electrical testing",
+  THERMAL: "Thermal imaging",
+  MONITORING: "Current monitoring",
+  COMMISSIONING: "Gates and equipment",
+  OTHER: "Concrete cutting and other work",
 };
 
-/** The order the groups are offered in: testing first, because it stands alone. */
-export const GROUP_ORDER: PresetGroup[] = ["TESTING", "INSTALL", "MONITORING", "COMMISSIONING"];
+/** The order the categories are offered in, and the order wording is written in. */
+export const GROUP_ORDER: PresetGroup[] = [
+  "INSTALL",
+  "TESTING",
+  "THERMAL",
+  "MONITORING",
+  "COMMISSIONING",
+  "OTHER",
+];
+
+/** Categories whose activities only test, inspect or record. */
+const TEST_ONLY: PresetGroup[] = ["TESTING", "THERMAL", "MONITORING"];
 
 /* --- the site modifiers ---------------------------------------------------- */
 
@@ -464,6 +499,10 @@ export type Modifier = {
   confirm?: string[];
 };
 
+/*
+ * Concrete cutting used to be a site modifier. It is an activity now, under
+ * its own category; `normalise` moves an old selection across.
+ */
 export const MODIFIERS: Modifier[] = [
   {
     id: "HEIGHT",
@@ -478,7 +517,7 @@ export const MODIFIERS: Modifier[] = [
   {
     id: "OCCUPIED",
     question: "Occupied depot, or public access?",
-    label: "Occupied depot or public access",
+    label: "Occupied site or public access",
     paragraph:
       "Coordinate vehicle and pedestrian movements with site management. Physically segregate the work zone and maintain approved alternative routes and emergency access.",
     hazards: ["OCCUPIED_SITE"],
@@ -500,7 +539,7 @@ export const MODIFIERS: Modifier[] = [
     question: "Critical or sensitive loads affected?",
     label: "Critical or sensitive loads",
     paragraph:
-      "Identify affected critical equipment and persons. Agree interruption, contingency, shutdown and restoration arrangements before testing.",
+      "Identify affected critical equipment and persons. Agree interruption, contingency, shutdown and restoration arrangements before the work.",
     confirm: [
       "Which equipment and which people are affected.",
       "The interruption and contingency arrangements agreed, and with whom.",
@@ -512,16 +551,6 @@ export const MODIFIERS: Modifier[] = [
     label: "Outdoor conditions",
     paragraph:
       "Assess rain, water, wind, lighting and stable footing. Protect equipment and connections; stop where conditions make the selected method unsafe.",
-  },
-  {
-    id: "CUTTING",
-    question: "Any concrete cutting?",
-    label: "Concrete cutting",
-    paragraph:
-      "Verify hidden services and material, use suitable wet cutting and prompt slurry collection, assess silica exposure and implement the applicable cutting SWMS/JSA.",
-    requires: ["SWMS016"],
-    hazards: ["HOT_WORKS"],
-    confirm: ["How hidden services were located, and what the material is."],
   },
   {
     id: "ACCESS",
@@ -545,18 +574,182 @@ export const MODIFIERS: Modifier[] = [
 
 export const MODIFIER_BY_ID = new Map(MODIFIERS.map((modifier) => [modifier.id, modifier]));
 
-/* --- composing ------------------------------------------------------------- */
+/* --- the selection --------------------------------------------------------- */
 
 export type Selection = {
-  /** The main job. */
+  /**
+   * The first activity, in offered order.
+   *
+   * There is no "main" job any more — every ticked activity counts the same —
+   * but saved presets, the API and the stored answers all carry a `presetId`,
+   * so the first activity stands in it and the rest go in `alsoIds`.
+   */
   presetId: string;
-  /** Additional activities, as further preset ids. */
+  /** Every other activity selected. */
   alsoIds?: string[];
-  /** Testing methods actually selected for this job. */
+  /**
+   * Methods ticked by hand under the old layout.
+   *
+   * Methods now follow from the activities and follow-ups. A job saved before
+   * that still carries these and still composes with them, so its paperwork
+   * does not change underneath it; the job step offers to clear them.
+   */
   methods?: MethodKey[];
   /** Site modifiers that apply. */
   modifierIds?: string[];
+  /** Answers to the follow-ups, keyed by follow-up id. */
+  answers?: Record<string, string>;
 };
+
+/** Every activity selected, in offered order, with no repeats. */
+export function activityIds(selection: Selection | null): string[] {
+  if (!selection) return [];
+  const ids = new Set([selection.presetId, ...(selection.alsoIds ?? [])]);
+  return PRESETS.filter((preset) => ids.has(preset.id)).map((preset) => preset.id);
+}
+
+/**
+ * A selection from a flat list of activity ids, or null when there are none.
+ * Everything else on the selection is carried across untouched.
+ */
+export function fromActivities(
+  ids: string[],
+  rest: Omit<Selection, "presetId" | "alsoIds"> = {},
+): Selection | null {
+  const wanted = new Set(ids);
+  const ordered = PRESETS.filter((preset) => wanted.has(preset.id)).map((preset) => preset.id);
+  if (ordered.length === 0) return null;
+  return { ...rest, presetId: ordered[0], alsoIds: ordered.slice(1) };
+}
+
+/**
+ * A selection as it is now written, whatever version saved it.
+ *
+ * Concrete cutting moves from the site modifiers to the activities, and an RCD
+ * attribute left without a phase type is kept (it still composes) — the job
+ * step simply lets it be unticked.
+ */
+export function normalise(selection: Selection): Selection {
+  const mods = selection.modifierIds ?? [];
+  const ids = activityIds(selection);
+  if (mods.includes("CUTTING") && !ids.includes("CONCRETE_CUT")) ids.push("CONCRETE_CUT");
+  const next = fromActivities(ids, {
+    methods: selection.methods ?? [],
+    modifierIds: mods.filter((id) => id !== "CUTTING" && MODIFIER_BY_ID.has(id)),
+    answers: selection.answers ?? {},
+  });
+  return next ?? selection;
+}
+
+/* --- the follow-ups -------------------------------------------------------- */
+
+export type FollowUpOption = {
+  value: string;
+  label: string;
+  note?: string;
+  /** Added to the scope when chosen. */
+  sentence?: string;
+  /** Methods chosen with it. */
+  methods?: MethodKey[];
+};
+
+export type FollowUp = {
+  id: string;
+  question: string;
+  note?: string;
+  options: FollowUpOption[];
+  /** Listed as still to confirm while it has no answer. */
+  outstanding: string;
+};
+
+/**
+ * The few things the activities cannot say for themselves.
+ *
+ * Each is asked only when an activity that raises it is selected. None of them
+ * is answered by default: until one is answered the wording says nothing about
+ * it, and it sits in the still-to-confirm list.
+ */
+export const FOLLOW_UPS: Record<"verify" | "live" | "logger", FollowUp> = {
+  verify: {
+    id: "verify",
+    question: "How is the installed or replaced work verified on this visit?",
+    note: "Nothing is written about testing the installation until this is answered.",
+    options: [
+      {
+        value: "DEAD",
+        label: "De-energised tests only",
+        note: "Continuity, insulation resistance and polarity, with the circuit isolated",
+        sentence:
+          "The installed work is verified by de-energised testing (continuity, insulation resistance and polarity) under isolation; results are recorded as the tests are performed.",
+      },
+      {
+        value: "LIVE",
+        label: "De-energised tests, then live checks once restored",
+        note: "Adds the controlled operating measurement wording",
+        sentence:
+          "The installed work is verified by de-energised testing under isolation, followed by the live verification checks selected once the supply is restored; results are recorded as the tests are performed.",
+        methods: ["MEASURE"],
+      },
+      {
+        value: "NONE",
+        label: "Not part of this visit",
+        sentence:
+          "Testing and verification of the installed work are not part of this visit, and no test results are recorded against it in these documents.",
+      },
+    ],
+    outstanding: "How the installed or replaced work is verified on this visit.",
+  },
+  live: {
+    id: "live",
+    question: "Are any readings taken with the supply on?",
+    note: "Voltage, current or fault-loop readings for the selected activities.",
+    options: [
+      {
+        value: "YES",
+        label: "Yes — readings need the supply on",
+        note: "Adds the controlled operating measurement wording",
+        methods: ["MEASURE"],
+      },
+      {
+        value: "NO",
+        label: "No — nothing is measured live",
+        sentence: "No readings are taken with the supply on as part of this scope.",
+      },
+    ],
+    outstanding: "Whether any readings are taken with the supply on.",
+  },
+  logger: {
+    id: "logger",
+    question: "Logger fitting, retrieval, or both?",
+    options: [
+      { value: "FIT", label: "Fitting only", sentence: "This visit fits the monitoring equipment; retrieval is a separate visit." },
+      { value: "RETRIEVE", label: "Retrieval only", sentence: "This visit retrieves monitoring equipment fitted on an earlier visit." },
+      { value: "BOTH", label: "Both", sentence: "The monitoring equipment is fitted and retrieved on this job." },
+    ],
+    outstanding: "Whether fitting, removal, or both are in scope for this visit.",
+  },
+};
+
+/** The follow-ups that apply to a selection, in the order they are asked. */
+export function followUpsFor(selection: Selection | null): FollowUp[] {
+  const chosen = activityIds(selection).map((id) => PRESET_BY_ID.get(id)!);
+  const out: FollowUp[] = [];
+  const answers = selection?.answers ?? {};
+
+  if (chosen.some((preset) => preset.group === "INSTALL")) out.push(FOLLOW_UPS.verify);
+
+  const measured =
+    chosen.some((preset) => preset.methods?.includes("MEASURE")) ||
+    (out.includes(FOLLOW_UPS.verify) && answers.verify === "LIVE");
+  if (!measured && chosen.some((preset) => preset.offers?.includes("MEASURE"))) {
+    out.push(FOLLOW_UPS.live);
+  }
+
+  if (chosen.some((preset) => preset.id === "LOGGER")) out.push(FOLLOW_UPS.logger);
+  return out;
+}
+
+/* --- composing ------------------------------------------------------------- */
 
 /** One editable paragraph in the preview. */
 export type Block = {
@@ -571,6 +764,8 @@ export type Composition = {
   blocks: Block[];
   /** Template codes the selection calls for, deduplicated. */
   codes: string[];
+  /** Why each of those codes is there. */
+  why: Record<string, string>;
   /** JSA risk rows the selection adds. */
   hazards: string[];
   /** What still has to be confirmed before the wording is true. */
@@ -581,48 +776,101 @@ export type Composition = {
 
 const unique = <T,>(values: T[]): T[] => [...new Set(values)];
 
+/** Paragraphs once each, in order, ignoring blanks and spacing differences. */
+function paragraphs(values: (string | undefined)[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const text = value?.trim();
+    if (!text) continue;
+    const key = text.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out.join("\n\n");
+}
+
+/**
+ * Each activity's scope paragraph, with both RCD phase types said as one.
+ *
+ * Single- and three-phase testing on the same job is one RCD test of two kinds
+ * of device, so it reads as one sentence rather than two that each start
+ * "Perform operational RCD testing".
+ */
+function scopesOf(chosen: Preset[]): string[] {
+  const ids = chosen.map((preset) => preset.id);
+  if (!ids.includes("RCD_SINGLE") || !ids.includes("RCD_THREE")) {
+    return chosen.map((preset) => preset.scope);
+  }
+  return chosen
+    .filter((preset) => preset.id !== "RCD_THREE")
+    .map((preset) =>
+      preset.id === "RCD_SINGLE"
+        ? "Perform operational RCD testing on the identified single-phase and three-phase devices, using the selected phase test sequence for three-phase devices; record the results for each device and phase, and restoration."
+        : preset.scope,
+    );
+}
+
 /**
  * The draft, built from nothing every time.
  *
  * Every block is derived from the current selection alone. Nothing is carried
  * over, merged in or remembered, so an answer that has been changed cannot
  * leave a sentence behind — which is the one property this has to have. The
- * caller holds the assessor's edits separately and drops the ones whose source
- * block has changed; see `applyEdits`.
+ * caller holds the assessor's edits separately and checks them against the
+ * fresh wording; see `applyEdits`.
+ *
+ * Several activities make one result: one scope, one method block, one set of
+ * controls. A paragraph two activities share is written once, and the phrase
+ * that says a job is testing only is written only when it is.
  */
-export function compose(selection: Selection): Composition {
-  const main = PRESET_BY_ID.get(selection.presetId);
-  if (!main) {
-    return { blocks: [], codes: [], hazards: [], confirm: [], methods: [] };
-  }
-
-  const also = (selection.alsoIds ?? [])
-    .filter((id) => id !== selection.presetId)
+export function compose(input: Selection): Composition {
+  const selection = normalise(input);
+  const chosen = activityIds(selection)
     .map((id) => PRESET_BY_ID.get(id))
     .filter((preset): preset is Preset => Boolean(preset));
-  const chosen = [main, ...also];
+  if (chosen.length === 0) {
+    return { blocks: [], codes: [], why: {}, hazards: [], confirm: [], methods: [] };
+  }
 
   const modifiers = (selection.modifierIds ?? [])
     .map((id) => MODIFIER_BY_ID.get(id))
     .filter((modifier): modifier is Modifier => Boolean(modifier));
 
-  // Only the methods actually selected. A preset proposes its own and offers
-  // others, but what goes in is what came back — so a job with every method
-  // turned off carries no testing wording at all, which is what an
-  // installation with nothing to test should look like.
-  const methods = unique(selection.methods ?? []).filter(
-    (method): method is MethodKey => method in METHODS,
-  );
+  const follows = followUpsFor(selection);
+  const answers = selection.answers ?? {};
+  const picked = follows
+    .map((follow) => follow.options.find((option) => option.value === answers[follow.id]))
+    .filter((option): option is FollowUpOption => Boolean(option));
+
+  // Only what the activities and follow-ups bring, plus anything an older job
+  // ticked by hand. An installation with nothing to test carries no method.
+  const methodOrder = Object.keys(METHODS) as MethodKey[];
+  const wanted = new Set<MethodKey>([
+    ...chosen.flatMap((preset) => preset.methods ?? []),
+    ...picked.flatMap((option) => option.methods ?? []),
+    ...(selection.methods ?? []),
+  ]);
+  const methods = methodOrder.filter((method) => wanted.has(method));
 
   const blocks: Block[] = [];
 
   /* the scope */
-  const scopes = chosen.map((preset) => preset.scope);
-  const bounds = chosen.map((preset) => preset.bound).filter(Boolean) as string[];
+  const testOnly = chosen.every((preset) => TEST_ONLY.includes(preset.group));
+  const both = methods.includes("RCD") && methods.includes("THERMAL");
   blocks.push({
     id: "scope",
     heading: "Scope of work",
-    text: [...scopes, ...bounds].join("\n\n"),
+    text: paragraphs([
+      ...scopesOf(chosen),
+      ...picked.map((option) => option.sentence),
+      ...chosen.map((preset) => preset.bound),
+      both
+        ? "Interruption and restoration for RCD testing are coordinated with the thermal inspection so each result remains valid."
+        : undefined,
+      testOnly ? "No installation, alteration or repair work is included in this scope." : undefined,
+    ]),
   });
 
   /* the method, one paragraph per method selected */
@@ -630,12 +878,12 @@ export function compose(selection: Selection): Composition {
     blocks.push({
       id: "method",
       heading: methods.length === 1 ? "Test method" : "Test methods",
-      text: methods.map((method) => METHODS[method].method).join("\n\n"),
+      text: paragraphs(methods.map((method) => METHODS[method].method)),
     });
     blocks.push({
       id: "alternatives",
       heading: "Alternatives considered",
-      text: methods.map((method) => METHODS[method].alternatives).join("\n\n"),
+      text: paragraphs(methods.map((method) => METHODS[method].alternatives)),
     });
   }
 
@@ -643,9 +891,7 @@ export function compose(selection: Selection): Composition {
   blocks.push({
     id: "controls",
     heading: "Controls",
-    text: [WORDING.generalControls, ...modifiers.map((modifier) => modifier.paragraph)].join(
-      "\n\n",
-    ),
+    text: paragraphs([WORDING.generalControls, ...modifiers.map((modifier) => modifier.paragraph)]),
   });
 
   blocks.push({
@@ -654,16 +900,29 @@ export function compose(selection: Selection): Composition {
     text: WORDING.preparation,
   });
 
+  const why: Record<string, string> = {};
+  for (const preset of chosen) {
+    for (const code of preset.requires ?? []) why[code] ??= `The job — ${preset.label}`;
+  }
+  for (const method of methods) {
+    for (const code of METHODS[method].requires ?? []) why[code] ??= `The job — ${METHODS[method].label}`;
+  }
+  for (const modifier of modifiers) {
+    for (const code of modifier.requires ?? []) why[code] ??= `${modifier.label} — ${modifier.question}`;
+  }
+
   return {
     blocks,
-    codes: unique([
-      ...chosen.flatMap((preset) => preset.requires ?? []),
-      ...methods.flatMap((method) => METHODS[method].requires ?? []),
-      ...modifiers.flatMap((modifier) => modifier.requires ?? []),
+    codes: Object.keys(why),
+    why,
+    hazards: unique([
+      ...chosen.flatMap((preset) => preset.hazards ?? []),
+      ...modifiers.flatMap((modifier) => modifier.hazards ?? []),
     ]),
-    hazards: unique(modifiers.flatMap((modifier) => modifier.hazards ?? [])),
     confirm: unique([
       ...chosen.flatMap((preset) => preset.confirm ?? []),
+      ...(both ? ["The order the RCD testing and thermal inspection were actually carried out in."] : []),
+      ...follows.filter((follow) => !answers[follow.id]).map((follow) => follow.outstanding),
       ...modifiers.flatMap((modifier) => modifier.confirm ?? []),
     ]),
     methods,
@@ -675,36 +934,49 @@ export function compose(selection: Selection): Composition {
 /**
  * What the assessor typed over the top, and the wording they typed it over.
  *
- * Keeping the source alongside the edit is what makes the first rule work. An
- * edit is shown only while the block it was made against still composes to the
- * same words; change an answer and the block recomposes, the source no longer
- * matches, and the edit is dropped rather than left sitting on top of wording
- * it was never written for. The dropped text is handed back so the person can
- * be told what went and put it back if they still want it.
+ * Keeping the source alongside the edit is what lets a changed selection be
+ * noticed. An edit is applied silently only while the block it was made
+ * against still composes to the same words. Once the selection changes that
+ * wording, the edit is *stale*: the job step keeps showing it and asks whether
+ * to take the new wording or keep the edit, rather than overwriting it. The
+ * document builder, which cannot ask, uses the fresh wording.
  */
 export type Edit = { source: string; text: string };
 export type Edits = Record<string, Edit>;
 
+export type ShownBlock = Block & {
+  /** The wording as composed now, before any edit. */
+  proposed: string;
+  edited: boolean;
+  /** Edited against wording the selection has since changed. */
+  stale: boolean;
+};
+
 export type Applied = {
-  blocks: Block[];
-  /** Edits that no longer apply, because what they were edits of has changed. */
+  blocks: ShownBlock[];
+  /** Stale edits, whether or not their block is still composed. */
   dropped: { id: string; heading: string; text: string }[];
 };
 
-export function applyEdits(composition: Composition, edits: Edits | null | undefined): Applied {
+export function applyEdits(
+  composition: Composition,
+  edits: Edits | null | undefined,
+  { keepStale = false }: { keepStale?: boolean } = {},
+): Applied {
   const dropped: Applied["dropped"] = [];
-  const blocks = composition.blocks.map((block) => {
+  const blocks = composition.blocks.map((block): ShownBlock => {
+    const plain = { ...block, proposed: block.text, edited: false, stale: false };
     const edit = edits?.[block.id];
-    if (!edit) return block;
+    if (!edit) return plain;
     if (edit.source !== block.text) {
       dropped.push({ id: block.id, heading: block.heading, text: edit.text });
-      return block;
+      return keepStale ? { ...plain, text: edit.text, edited: true, stale: true } : plain;
     }
-    return { ...block, text: edit.text };
+    return { ...plain, text: edit.text, edited: edit.text !== block.text };
   });
 
   // An edit whose block is not composed at all any more — the method it
-  // belonged to was turned off — is dropped on the same grounds.
+  // belonged to was turned off — is stale on the same grounds.
   for (const [id, edit] of Object.entries(edits ?? {})) {
     if (composition.blocks.some((block) => block.id === id)) continue;
     dropped.push({ id, heading: headingFor(id), text: edit.text });
@@ -713,7 +985,7 @@ export function applyEdits(composition: Composition, edits: Edits | null | undef
   return { blocks, dropped };
 }
 
-function headingFor(id: string): string {
+export function headingFor(id: string): string {
   switch (id) {
     case "scope":
       return "Scope of work";

@@ -9,7 +9,9 @@ import {
   unanswered as stillOpen,
   withManual,
   withoutManual,
-  asked,
+  shown,
+  optionsFor,
+  questionText,
   selectionOf,
   withPreset,
   type Answers,
@@ -17,6 +19,7 @@ import {
 import { SafetyPresetStep } from "@/components/SafetyPresetStep";
 import type { Edits } from "@/lib/safety/presets";
 import { STANDING_RULES, rules } from "@/lib/safety/rules";
+import { QUESTIONS } from "@/lib/safety/questions";
 import { titleCase } from "@/lib/writing";
 import { RichTextBox } from "@/components/RichTextBox";
 import { isEmpty, summarise, type RichText } from "@/lib/richText";
@@ -97,6 +100,9 @@ export function SafetyDocDialog({
   const [title, setTitle] = usePersisted<string>(`${key}:title`, "");
   const [contactId, setContactId] = usePersisted<string>(`${key}:contact`, "");
   const [scope, setScope] = usePersisted<RichText>(`${key}:scope`, []);
+  /** The job step's wording as last sent on, and the wording the scope was last built from. */
+  const [jobWording, setJobWording] = usePersisted<string>(`${key}:wording`, "");
+  const [seed, setSeed] = usePersisted<string>(`${key}:seed`, "");
   const [overrides, setOverrides] = usePersisted<Record<string, RichText>>(`${key}:scopes`, {});
   const [editing, setEditing] = useState<string | null>(null);
   const [jobNumber, setJobNumber] = usePersisted<string>(`${key}:job`, "");
@@ -168,7 +174,7 @@ export function SafetyDocDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const asking = useMemo(() => asked(answers), [answers]);
+  const asking = useMemo(() => shown(answers), [answers]);
   const decision = useMemo(
     () => decide(answers, { title }),
     [answers, title],
@@ -256,7 +262,7 @@ export function SafetyDocDialog({
       setSigned({});
       if (then === "close") {
         for (const part of [
-          "step", "answers", "title", "contact", "scope", "scopes", "edits",
+          "step", "answers", "title", "contact", "scope", "scopes", "edits", "wording", "seed",
           "typing", "job", "assessed", "whs",
         ]) {
           clearSession(`${key}:${part}`);
@@ -344,12 +350,12 @@ export function SafetyDocDialog({
   }
 
   const titleOptions = useMemo(() => {
-    const main = asking[0]?.options.find((one) => one.value === answers.nature);
+    const main = QUESTIONS[0].options.find((one) => one.value === answers.nature);
     return unique([
       main ? `${main.label} — ${titleCase(siteName)}` : "",
       `${titleCase(siteName)} — ${titleCase(clientName)}`,
     ]);
-  }, [asking, answers.nature, siteName, clientName]);
+  }, [answers.nature, siteName, clientName]);
 
   /** Anything the library disagrees with itself about, for the chosen set. */
   const problems = DISCREPANCIES.filter(
@@ -398,13 +404,16 @@ export function SafetyDocDialog({
                   // scope step opens with the job already described. It is
                   // seeded only while the scope is still empty: once somebody
                   // has written there, that is theirs.
+                  // Once written, a later change of activities is offered
+                  // on the scope step rather than written over it.
+                  setJobWording(wording);
                   if (isEmpty(scope) && wording.trim()) {
-                    setScope(
-                      wording
-                        .split("\n")
-                        .filter((line) => line.trim())
-                        .map((line) => ({ kind: "p" as const, runs: [{ text: line }] })),
-                    );
+                    setScope(paragraphsOf(wording));
+                    setSeed(wording);
+                  } else if (!seed) {
+                    // A scope written before this was tracked: take it as
+                    // matching, and flag changes from here on.
+                    setSeed(wording);
                   }
                   setStep("questions");
                 }}
@@ -417,8 +426,9 @@ export function SafetyDocDialog({
                   <h3 className="board-section-title">About the job</h3>
                   <p className="board-section-note">
                     Which statements you need follows from these, so none of them ask about
-                    paperwork. Answer one and another may appear: where two answers cannot
-                    both be true, the app asks rather than picking one.
+                    paperwork. Anything the job step already answered is not asked again.
+                    Answer one and another may appear: where two answers cannot both be
+                    true, the app asks rather than picking one.
                   </p>
                 </div>
 
@@ -430,7 +440,7 @@ export function SafetyDocDialog({
                     >
                       <div className="board-section-head">
                         <h3 className="board-section-title">
-                          {question.question}
+                          {questionText(question, answers)}
                           {question.when ? (
                             <span className="safety-from-quote is-follow">follow-up</span>
                           ) : null}
@@ -440,7 +450,7 @@ export function SafetyDocDialog({
                         ) : null}
                       </div>
                       <div className="issue-picks">
-                        {question.options.map((option) => (
+                        {optionsFor(question, answers).map((option) => (
                           <button
                             key={option.value}
                             type="button"
@@ -495,6 +505,32 @@ export function SafetyDocDialog({
                     come through onto the page.
                   </p>
                 </div>
+
+                {jobWording.trim() && jobWording !== seed && !isEmpty(scope) ? (
+                  <div className="safety-confirm safety-resync">
+                    <p className="dialog-label">The job step&apos;s wording has changed</p>
+                    <p className="board-section-note">
+                      The activities were changed after this scope was written. Your scope
+                      has been left as it is.
+                    </p>
+                    <div className="tagging-actions">
+                      <button
+                        type="button"
+                        className="issue-add"
+                        onClick={() => {
+                          if (!window.confirm("Replace the scope of works with the updated job wording? Anything typed here will be replaced.")) return;
+                          setScope(paragraphsOf(jobWording));
+                          setSeed(jobWording);
+                        }}
+                      >
+                        Replace with the updated wording
+                      </button>
+                      <button type="button" className="issue-add is-quiet" onClick={() => setSeed(jobWording)}>
+                        Keep my scope
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <RichTextBox value={scope} onChange={setScope} />
 
@@ -1119,4 +1155,12 @@ export function SafetyDocDialog({
 
 function unique(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+/** Plain wording as rich-text paragraphs, one to a line. */
+function paragraphsOf(wording: string): RichText {
+  return wording
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => ({ kind: "p" as const, runs: [{ text: line }] }));
 }

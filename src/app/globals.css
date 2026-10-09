@@ -4864,6 +4864,330 @@ textarea.dialog-input.is-area {
   margin-top: 4px;
 }
 
+/* ---------------------------------------------------------------------------
+   The job step: categories that fold, a summary that does not
+   ---------------------------------------------------------------------------
+   The activities sit behind compact category bars so the step reads as six
+   lines until one is opened. What is ticked is always readable in the summary
+   above them, so nothing has to be opened to check the job.
+   ------------------------------------------------------------------------ */
+
+.safety-summary {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--accent-wash);
+}
+
+.safety-summary .dialog-label {
+  margin-bottom: 0;
+}
+
+.safety-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.safety-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid rgba(27, 155, 216, 0.45);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.safety-chip.is-site {
+  border-color: var(--hair-strong);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.safety-chip-remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.safety-chip-remove:hover {
+  background: var(--hair-soft);
+  color: var(--ink);
+}
+
+.safety-group,
+.safety-wording {
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.safety-group + .safety-group {
+  margin-top: 6px;
+}
+
+.safety-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  font-family: var(--font-app);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.safety-group-head:hover {
+  background: var(--hair-soft);
+}
+
+.safety-group-chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border: solid var(--ink-3);
+  border-width: 0 2px 2px 0;
+  transform: rotate(-45deg);
+  transition: transform 200ms var(--ease-soft);
+}
+
+.safety-group-head.is-open .safety-group-chevron {
+  transform: rotate(45deg);
+}
+
+.safety-group-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.safety-group-count {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(27, 155, 216, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+.safety-group-count.is-warn {
+  background: rgba(224, 160, 48, 0.16);
+  color: #8a5a0b;
+}
+
+.safety-group-body {
+  margin-top: 0;
+  padding: 2px 12px 12px;
+}
+
+.issue-pick.is-sub {
+  margin-left: 22px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.issue-pick:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.safety-sub-head {
+  margin: 6px 0 0 22px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.safety-follow {
+  margin-top: 18px;
+}
+
+.safety-wording {
+  margin-top: 22px;
+}
+
+.safety-wording .dialog-field {
+  margin-top: 14px;
+}
+
+.safety-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(27, 155, 216, 0.12);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--accent-deep);
+}
+
+.safety-tag.is-warn {
+  background: rgba(224, 160, 48, 0.18);
+  color: #8a5a0b;
+}
+
+.safety-stale {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warn, #e0a030);
+  border-radius: 0 12px 12px 0;
+  background: rgba(224, 160, 48, 0.07);
+}
+
+.safety-stale .tagging-actions {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.safety-proposed {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--hair-strong);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+}
+
+.safety-link {
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-app);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Saving a preset is its own act, set well apart from moving on. */
+.safety-save {
+  margin-top: 28px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--surface, #f6f8fb);
+}
+
+.safety-save .dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.safety-save .dialog-label {
+  margin-bottom: 0;
+}
+
+.safety-save-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.safety-save-row .dialog-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.safety-save-row .issue-add {
+  flex: none;
+}
+
+.safety-note {
+  margin-top: 12px;
+}
+
+.safety-resync {
+  margin: 0 0 14px;
+}
+
+.safety-resync .tagging-actions {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/*
+ * The step's footer: pinned to the bottom of the scroller, on its own band, so
+ * Next never sits against the preset field. It takes up its own space in the
+ * flow, so at the end of the step nothing is left underneath it.
+ */
+.safety-step-footer {
+  position: sticky;
+  bottom: -22px;
+  z-index: 2;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 28px -24px -22px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--hair);
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(6px);
+}
+
+.safety-footer-status {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 820px) {
+  .safety-step-footer {
+    margin-left: -14px;
+    margin-right: -14px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .safety-save-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .safety-step-footer .dialog-confirm {
+    width: 100%;
+  }
+
+  .issue-pick.is-sub,
+  .safety-sub-head {
+    margin-left: 12px;
+  }
+}
+
 /* --- the energised testing authorisation ---------------------------------- */
 
 .whs-gate {

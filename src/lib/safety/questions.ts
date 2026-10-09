@@ -246,7 +246,13 @@ const COVERED: Record<string, string[]> = {
 
 /** True when the main job has already answered this follow-up. */
 function settled(key: string, answers: Record<string, string>): boolean {
-  return (COVERED[key] ?? []).includes(answers.nature);
+  // Every nature the job step's activities stand for, not only the first: a
+  // GPO installation with RCD testing has settled the testing question too.
+  const natures = [
+    answers.nature,
+    ...(answers["preset:natures"] ?? "").split(","),
+  ].filter(Boolean);
+  return (COVERED[key] ?? []).some((nature) => natures.includes(nature));
 }
 
 export const QUESTIONS: Question[] = [
@@ -508,13 +514,18 @@ export const QUESTIONS: Question[] = [
     note:
       "Testing with the supply on is one thing; being near an exposed live part is another. OEC-WHS002 is about the second, and this is the answer that decides whether you need it.",
     when: (answers) =>
-      answers.nature === "RCD" ||
-      answers.nature === "THERMAL" ||
-      answers.nature === "BOARD_MAINT" ||
-      answers.energised === "YES" ||
-      answers.testing === "RCD" ||
-      answers.testing === "BOTH" ||
-      answers.thermal === "YES",
+      // With activities chosen on the job step, this is asked only when one of
+      // them needs the supply on. An isolated installation, a replacement or a
+      // concrete cut is never put through the energised-work question.
+      answers["preset:main"]
+        ? answers["preset:live"] === "1" || answers.energised === "YES"
+        : answers.nature === "RCD" ||
+          answers.nature === "THERMAL" ||
+          answers.nature === "BOARD_MAINT" ||
+          answers.energised === "YES" ||
+          answers.testing === "RCD" ||
+          answers.testing === "BOTH" ||
+          answers.thermal === "YES",
     options: [
       {
         value: "CLOSED",

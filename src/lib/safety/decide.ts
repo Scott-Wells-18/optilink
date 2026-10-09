@@ -1,10 +1,10 @@
 import { BY_CODE, type Template } from "@/lib/safety/catalogue";
 import { hazardsFor, type Hazard } from "@/lib/safety/hazards";
 import {
-  MODIFIER_BY_ID,
   PRESET_BY_ID,
+  activityIds,
   compose,
-  textOf,
+  normalise,
   type Composition,
   type MethodKey,
   type Selection,
@@ -45,6 +45,14 @@ const PRESET_MAIN = "preset:main";
 const PRESET_ALSO = "preset:also";
 const PRESET_METHODS = "preset:methods";
 const PRESET_MODS = "preset:mods";
+/** Follow-up answers, as `id=value;id=value`. */
+const PRESET_FOLLOW = "preset:follow";
+/** Every nature the selected activities stand for, so follow-ups see them all. */
+export const PRESET_NATURES = "preset:natures";
+/** "1" while a selected activity, or a follow-up, needs the supply on. */
+export const PRESET_LIVE = "preset:live";
+/** The question keys the selection is currently answering for the operator. */
+const PRESET_DERIVED = "preset:derived";
 
 const list = (answers: Answers, key: string): string[] =>
   (answers[key] ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -53,38 +61,131 @@ const list = (answers: Answers, key: string): string[] =>
 export function selectionOf(answers: Answers): Selection | null {
   const presetId = (answers[PRESET_MAIN] ?? "").trim();
   if (!presetId || !PRESET_BY_ID.has(presetId)) return null;
-  return {
+  const follow: Record<string, string> = {};
+  for (const pair of (answers[PRESET_FOLLOW] ?? "").split(";")) {
+    const [id, value] = pair.split("=").map((part) => part?.trim());
+    if (id && value) follow[id] = value;
+  }
+  return normalise({
     presetId,
     alsoIds: list(answers, PRESET_ALSO),
     methods: list(answers, PRESET_METHODS).filter(
       (method): method is MethodKey => method === "RCD" || method === "THERMAL" || method === "MEASURE",
     ),
     modifierIds: list(answers, PRESET_MODS),
-  };
+    answers: follow,
+  });
+}
+
+/**
+ * The Questions-step answers the selected activities already give.
+ *
+ * Each of these is a question the job step has just been asked in other
+ * words — is there thermal imaging, is anything tested live, is the site
+ * occupied, is any of it at height — so it is answered here and not shown
+ * again. A key left out is still asked.
+ */
+function derivedAnswers(selection: Selection): Answers {
+  const chosen = activityIds(selection).map((id) => PRESET_BY_ID.get(id)!);
+  const composition = compose(selection);
+  const methods = composition.methods;
+  const mods = selection.modifierIds ?? [];
+  const out: Answers = {};
+
+  out.thermal = methods.includes("THERMAL") ? "YES" : "NO";
+  if (methods.length > 0) out.energised = "YES";
+  // Nothing electrical selected at all: there is nothing to be live.
+  else if (chosen.every((preset) => preset.group === "OTHER")) {
+    out.energised = "NO";
+    out.testing = "NO";
+  }
+  if (chosen.some((preset) => preset.id === "THERMAL_OPEN")) out.exposed = "OPEN";
+  out.site = mods.includes("OCCUPIED") ? "YES" : "NO";
+  if (!mods.includes("HEIGHT")) out.heights = "NONE";
+  return out;
 }
 
 /** Choosing a preset, which also settles the questions the preset answers. */
-export function withPreset(answers: Answers, selection: Selection | null): Answers {
+export function withPreset(answers: Answers, input: Selection | null): Answers {
   const next = { ...answers };
-  if (!selection) {
-    delete next[PRESET_MAIN];
-    delete next[PRESET_ALSO];
-    delete next[PRESET_METHODS];
-    delete next[PRESET_MODS];
+  const before = list(answers, PRESET_DERIVED);
+  for (const key of before) delete next[key];
+  if (!input) {
+    for (const key of [
+      PRESET_MAIN, PRESET_ALSO, PRESET_METHODS, PRESET_MODS, PRESET_FOLLOW,
+      PRESET_NATURES, PRESET_LIVE, PRESET_DERIVED,
+    ]) {
+      delete next[key];
+    }
     return next;
   }
 
-  const preset = PRESET_BY_ID.get(selection.presetId);
+  const selection = normalise(input);
+  const chosen = activityIds(selection).map((id) => PRESET_BY_ID.get(id)!);
   next[PRESET_MAIN] = selection.presetId;
   next[PRESET_ALSO] = (selection.alsoIds ?? []).join(",");
   next[PRESET_METHODS] = (selection.methods ?? []).join(",");
   next[PRESET_MODS] = (selection.modifierIds ?? []).join(",");
+  next[PRESET_FOLLOW] = Object.entries(selection.answers ?? {})
+    .map(([id, value]) => `${id}=${value}`)
+    .join(";");
 
-  // The preset says what kind of job it is, so the "What is the job?" question
-  // is answered rather than asked again in different words. Everything else
-  // the operator has answered is left exactly as it is.
-  if (preset) next.nature = preset.nature;
+  // The activities say what kind of job it is, so "What is the job?" is
+  // answered rather than asked again in different words. The first activity's
+  // nature stands as the main one; all of them are kept for the follow-ups.
+  const natures = [...new Set(chosen.map((preset) => preset.nature).filter(Boolean))] as string[];
+  next[PRESET_NATURES] = natures.join(",");
+  if (natures[0]) next.nature = natures[0];
+  else delete next.nature;
+
+  const derived = derivedAnswers(selection);
+  Object.assign(next, derived);
+  next[PRESET_DERIVED] = Object.keys(derived).join(",");
+  next[PRESET_LIVE] = compose(selection).methods.length > 0 ? "1" : "";
+
+  // RCD testing is chosen on the job step, so the testing question only asks
+  // about test-and-tag or commissioning. An earlier answer is kept, moved to
+  // whichever of its options still means the same thing.
+  const rcd = compose(selection).methods.includes("RCD");
+  if (!derived.testing) {
+    const testing = next.testing;
+    if (rcd && testing === "NO") next.testing = "RCD";
+    else if (rcd && testing === "TAG") next.testing = "BOTH";
+    else if (!rcd && testing === "RCD") next.testing = "NO";
+    else if (!rcd && testing === "BOTH") next.testing = "TAG";
+  }
   return next;
+}
+
+/**
+ * The answer options still worth offering for a question.
+ *
+ * Only the testing question changes: with a job step selection, whether there
+ * is RCD testing is already said, so its options are cut to the ones that
+ * agree with it and asked as a question about test-and-tag alone.
+ */
+export function optionsFor(question: Question, answers: Answers): Option[] {
+  // With the job step's "at height" ticked, the only thing left to ask is how.
+  if (question.key === "heights" && selectionOf(answers)) {
+    return question.options.filter((option) => option.value !== "NONE");
+  }
+  const selection = selectionOf(answers);
+  if (question.key !== "testing" || !selection) return question.options;
+  const rcd = compose(selection).methods.includes("RCD");
+  const labels: Record<string, string> = rcd
+    ? { RCD: "No — only the RCD testing chosen on the job", BOTH: "Yes — test and tag or commissioning as well" }
+    : { NO: "No", TAG: "Yes — test and tag, or commissioning" };
+  return question.options
+    .filter((option) => option.value in labels)
+    .map((option) => ({ ...option, label: labels[option.value] }));
+}
+
+/** The wording of a question as shown, given the job step. */
+export function questionText(question: Question, answers: Answers): string {
+  if (!selectionOf(answers)) return question.question;
+  if (question.key === "testing") return "Any test and tag, or commissioning?";
+  if (question.key === "heights") return "How is the height reached?";
+  return question.question;
 }
 
 export function manualCodes(answers: Answers): { added: string[]; dropped: string[] } {
@@ -141,9 +242,24 @@ export function asked(answers: Answers): Question[] {
   return QUESTIONS.filter((question) => !question.when || question.when(answers));
 }
 
+/**
+ * The questions put on screen.
+ *
+ * Every question in play, less the ones the job step has answered: what the
+ * job is, and anything `withPreset` derived from the activities. Those answers
+ * still count in `decide` — they are simply not asked twice.
+ */
+export function shown(answers: Answers): Question[] {
+  if (!selectionOf(answers)) return asked(answers);
+  const derived = list(answers, PRESET_DERIVED);
+  return asked(answers).filter(
+    (question) => question.key !== "nature" && !derived.includes(question.key),
+  );
+}
+
 /** The ones still waiting for an answer. */
 export function unanswered(answers: Answers): Question[] {
-  return asked(answers).filter((question) => answers[question.key] === undefined);
+  return shown(answers).filter((question) => answers[question.key] === undefined);
 }
 
 /**
@@ -217,8 +333,6 @@ export function decide(
   const selection = selectionOf(answers);
   const composition = selection ? compose(selection) : null;
   if (selection && composition) {
-    const main = PRESET_BY_ID.get(selection.presetId);
-
     /*
      * The preset's own nature, applied here rather than trusted to be in the
      * answers.
@@ -231,8 +345,8 @@ export function decide(
      * Applying it twice is harmless — `add` is idempotent on the codes and
      * the sentences are deduplicated below.
      */
-    for (const preset of [main, ...(selection.alsoIds ?? []).map((id) => PRESET_BY_ID.get(id))]) {
-      if (!preset) continue;
+    for (const preset of activityIds(selection).map((id) => PRESET_BY_ID.get(id))) {
+      if (!preset?.nature) continue;
       const option = optionFor("nature", preset.nature);
       if (option) add(option, { key: "nature", question: "What is the job?", options: [] });
     }
@@ -240,12 +354,7 @@ export function decide(
     for (const code of composition.codes) {
       if (!BY_CODE.has(code) || codes.includes(code)) continue;
       codes.push(code);
-      const modifier = MODIFIER_BY_ID.get(
-        (selection.modifierIds ?? []).find((id) => MODIFIER_BY_ID.get(id)?.requires?.includes(code)) ?? "",
-      );
-      reasons[code] = modifier
-        ? `${modifier.label} — ${modifier.question}`
-        : `The job — ${main?.label ?? "the selected preset"}`;
+      reasons[code] = composition.why[code] ?? "The job";
     }
     hazardKeys.push(...composition.hazards);
   }
