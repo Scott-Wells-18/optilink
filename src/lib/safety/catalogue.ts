@@ -191,6 +191,30 @@ export const TEMPLATES: Template[] = [
     pairs: "JSA014",
     tags: ["rcd", "safety switch", "rcd testing", "trip test", "residual current"],
   },
+  {
+    code: "SWMS015",
+    kind: "SWMS",
+    title: "Boom Gate Installation, Servicing & Maintenance",
+    file: "OEC-SWMS015_Gates.docx",
+    format: "docx",
+    pairs: "JSA015",
+    tags: [
+      "boom gate", "boom", "gate", "sliding gate", "barrier", "bft", "operator",
+      "gate service", "gate servicing", "automatic gate",
+    ],
+  },
+  {
+    code: "SWMS016",
+    kind: "SWMS",
+    title: "Concrete Cutting with a Demolition Saw",
+    file: "OEC-SWMS016_Concrete_Cutting.pdf",
+    format: "pdf",
+    pairs: "JSA016",
+    tags: [
+      "concrete cutting", "concrete cut", "saw cut", "sawcut", "demolition saw",
+      "quickcut", "quick cut", "core hole", "slab cut", "silica", "slurry",
+    ],
+  },
 
   {
     code: "JSA001",
@@ -336,6 +360,28 @@ export const TEMPLATES: Template[] = [
     file: "OEC-JSA014.RCD.Testing.JSA.Risk.Assessment.pdf",
     format: "pdf",
     tags: ["rcd", "safety switch", "rcd testing", "trip test", "residual current"],
+  },
+  {
+    code: "JSA015",
+    kind: "JSA",
+    title: "Boom & Sliding Gate Installation, Servicing & Maintenance — Risk Assessment",
+    file: "OEC-JSA015_Gates.pdf",
+    format: "pdf",
+    tags: [
+      "boom gate", "boom", "gate", "sliding gate", "barrier", "bft", "operator",
+      "gate service", "gate servicing", "automatic gate",
+    ],
+  },
+  {
+    code: "JSA016",
+    kind: "JSA",
+    title: "Concrete Cutting with a Demolition Saw — Risk Assessment",
+    file: "OEC-JSA016_Concrete_Cutting.pdf",
+    format: "pdf",
+    tags: [
+      "concrete cutting", "concrete cut", "saw cut", "sawcut", "demolition saw",
+      "quickcut", "quick cut", "core hole", "slab cut", "silica", "slurry",
+    ],
   },
   {
     code: "WHS002",
@@ -515,6 +561,27 @@ export const DISCREPANCIES: Discrepancy[] = [
     says: "OEC-SWMS001 RCD TESTING SAFE WORK METHOD STATEMENT (SWMS)",
     shouldRead:
       "OEC-SWMS014 — the title is right, the number is SWMS001's.",
+  },
+  {
+    code: "SWMS015",
+    where: "printed title",
+    says: "OEC-SWMS___ , and SWMS# ___ in the details table. The number is blank.",
+    shouldRead:
+      "OEC-SWMS015. Nothing between 001 and 014 is free and the gate JSA issued with it is numbered 015, so that is the number this app files it under. The document itself still has to be filled in at the source: the app never writes a controlled document number onto a page.",
+  },
+  {
+    code: "SWMS015",
+    where: "page footer",
+    says: "OEC-SWMS001 BOOM GATE INSTALLATION SERVICING AND MAINTENANCE SAFE WORK METHOD STATEMENT (SWMS)",
+    shouldRead:
+      "OEC-SWMS015 — the title is right, the number is SWMS001's, as it is on six of the other statements.",
+  },
+  {
+    code: "SWMS015",
+    where: "printed title",
+    says: "BOOM GATE INSTALLATION SERVICING AND MAINTENANCE",
+    shouldRead:
+      "Boom and sliding gate, if it is to cover what JSA015 covers. The risk assessment issued against this statement is titled \"Boom and Sliding Gate\"; the statement itself names only boom gates, so a sliding gate service is being worked under a statement whose title does not mention it.",
   },
   ...[
     "JSA004", "JSA004A", "JSA004B", "JSA005", "JSA006", "JSA006A", "JSA007",

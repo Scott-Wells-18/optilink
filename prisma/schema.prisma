@@ -75,27 +75,27 @@ model UploadedFile {
   height       Int?
   createdAt    DateTime @default(now())
 
-  thermalFor        ThermalFinding[] @relation("ThermalImage")
-  visualFor         ThermalFinding[] @relation("VisualImage")
+  thermalFor        ThermalFinding[]  @relation("ThermalImage")
+  visualFor         ThermalFinding[]  @relation("VisualImage")
   photos            Photo[]
   observationPhotos Observation[]
-  settingsLogo      Settings[]       @relation("SettingsLogo")
-  settingsLogoMark  Settings[]       @relation("SettingsLogoMark")
+  settingsLogo      Settings[]        @relation("SettingsLogo")
+  settingsLogoMark  Settings[]        @relation("SettingsLogoMark")
   issuePhotos       IssuePhoto[]
   jobPhotos         JobPhoto[]
-  rcdSources        RcdTestRun[]     @relation("RcdSource")
-  safetyTemplates   SafetyTemplate[] @relation("SafetyTemplateFile")
-  signatures        Signature[]      @relation("SignatureFile")
-  safetyDocSources  SafetyDoc[]      @relation("SafetyDocSource")
-  powerSources      PowerAnalysis[]  @relation("PowerAnalysisSource")
-  ampSources        AmpRecording[]   @relation("AmpRecordingSource")
-  profileSignatures Profile[]        @relation("ProfileSignature")
-  equipmentCerts    TestEquipment[]  @relation("TestEquipmentCert")
-  equipmentPhotos   TestEquipment[]  @relation("TestEquipmentPhoto")
+  rcdSources        RcdTestRun[]      @relation("RcdSource")
+  safetyTemplates   SafetyTemplate[]  @relation("SafetyTemplateFile")
+  signatures        Signature[]       @relation("SignatureFile")
+  safetyDocSources  SafetyDoc[]       @relation("SafetyDocSource")
+  powerSources      PowerAnalysis[]   @relation("PowerAnalysisSource")
+  ampSources        AmpRecording[]    @relation("AmpRecordingSource")
+  profileSignatures Profile[]         @relation("ProfileSignature")
+  equipmentCerts    TestEquipment[]   @relation("TestEquipmentCert")
+  equipmentPhotos   TestEquipment[]   @relation("TestEquipmentPhoto")
   taggingReference  TaggingSettings[] @relation("TaggingReference")
-  taggingSnapshots  TagReport[]      @relation("TagReportSource")
-  gatePhotos        GatePhoto[]      @relation("GatePhoto")
-  installSources    InstallReport[]  @relation("InstallSource")
+  taggingSnapshots  TagReport[]       @relation("TagReportSource")
+  gatePhotos        GatePhoto[]       @relation("GatePhoto")
+  installSources    InstallReport[]   @relation("InstallSource")
 }
 
 /**
@@ -137,9 +137,9 @@ model TestEquipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  powerRuns  PowerAnalysis[]
-  ampReports AmpReport[]
-  rcdReports RcdReport[]
+  powerRuns      PowerAnalysis[]
+  ampReports     AmpReport[]
+  rcdReports     RcdReport[]
   installReports InstallReport[] @relation("InstallInstrument")
 }
 
@@ -213,17 +213,18 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  equipment   Equipment[]
-  inspections Inspection[]
-  contacts    Contact[]
-  jobs        Job[]
-  rcdRuns     RcdTestRun[]
-  rcdReports  RcdReport[]
-  safetyDocs  SafetyDoc[]
-  powerRuns   PowerAnalysis[]
-  ampReports  AmpReport[]
-  tagReports  TagReport[]
-  gateReports GateReport[]
+  equipment      Equipment[]
+  inspections    Inspection[]
+  contacts       Contact[]
+  jobs           Job[]
+  rcdRuns        RcdTestRun[]
+  rcdReports     RcdReport[]
+  safetyDocs     SafetyDoc[]
+  powerRuns      PowerAnalysis[]
+  ampReports     AmpReport[]
+  tagReports     TagReport[]
+  gateReports    GateReport[]
+  gateAssets     GateAsset[]
   installReports InstallReport[]
 
   @@index([clientId])
@@ -246,14 +247,14 @@ model Contact {
   /**
    * The reports addressed to them.
    */
-  inspections Inspection[]
-  jobs        Job[]
-  rcdReports  RcdReport[]
-  powerRuns   PowerAnalysis[]
-  ampReports  AmpReport[]
-  safetyDocs  SafetyDoc[]
-  gatesNotified GateReport[] @relation("GateNotified")
-  gatesSignedFor GateReport[] @relation("GateClientRep")
+  inspections    Inspection[]
+  jobs           Job[]
+  rcdReports     RcdReport[]
+  powerRuns      PowerAnalysis[]
+  ampReports     AmpReport[]
+  safetyDocs     SafetyDoc[]
+  gatesNotified  GateReport[]    @relation("GateNotified")
+  gatesSignedFor GateReport[]    @relation("GateClientRep")
   installReports InstallReport[] @relation("InstallContact")
 
   @@index([siteId])
@@ -301,9 +302,9 @@ model Equipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  issues    Issue[]
-  rcdRuns   RcdTestRun[]
-  powerRuns PowerAnalysis[]
+  issues     Issue[]
+  rcdRuns    RcdTestRun[]
+  powerRuns  PowerAnalysis[]
   ampReports AmpReport[]
 
   @@index([siteId])
@@ -342,13 +343,12 @@ model Inspection {
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
    */
   preparedBy String[]
-
 
   issues Issue[]
 
@@ -461,7 +461,6 @@ model IssuePhoto {
 
 /**
  * What a works record is for.
- *
  * A completed report says what was done. A rectification report says what is
  * proposed, and is sent with a quotation: it is the same layout and the same
  * photographs, read forwards instead of backwards.
@@ -502,13 +501,12 @@ model Job {
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
    */
   preparedBy String[]
-
 
   items JobItem[]
 
@@ -524,20 +522,21 @@ model JobItem {
   title    String
   location String
 
-  /** The job number on a rectification, where one was given. */
+  /**
+   * The job number on a rectification, where one was given.
+   */
   number String?
   /**
    * How it was found.
    */
-  found    String
+  found  String
   /**
    * What was done about it.
    */
-  done     String
+  done   String
 
   /**
    * The same two, as they were written.
-   *
    * Dot points, bold, italic, underline and the line breaks somebody typed.
    * The plain columns above stay as the mirror of them — they are what decides
    * whether a piece of work is finished, what the contents table ellipsises
@@ -619,7 +618,7 @@ model RcdReport {
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
@@ -994,7 +993,6 @@ enum ProfileTitle {
 
 /**
  * Somebody who prepares or signs the company's documents.
- *
  * What a person may put their name to depends on what is on file for them. A
  * name and a signature are enough to read and sign a SWMS or a JSA, because
  * that is a record of having read it. Putting your name to a report as the
@@ -1006,22 +1004,32 @@ model Profile {
   firstName String
   lastName  String
 
-  /** NSW electrical contractor licence. Without one: SWMS and JSAs only. */
-  licence String?
-  /** Qualified supervisor certificate. Always a bonus, never required. */
+  /**
+   * NSW electrical contractor licence. Without one: SWMS and JSAs only.
+   */
+  licence    String?
+  /**
+   * Qualified supervisor certificate. Always a bonus, never required.
+   */
   supervisor String?
 
   titles   ProfileTitle[]
-  /** At most one profile carries this. */
-  director Boolean @default(false)
+  /**
+   * At most one profile carries this.
+   */
+  director Boolean        @default(false)
 
   signatureFileId String?
   signatureFile   UploadedFile? @relation("ProfileSignature", fields: [signatureFileId], references: [id], onDelete: SetNull)
 
-  /** The order they are listed and signed in. */
+  /**
+   * The order they are listed and signed in.
+   */
   position Int @default(0)
 
-  /** The gate services they carried out and signed. */
+  /**
+   * The gate services they carried out and signed.
+   */
   gateServices GateReport[] @relation("GateTechnician")
 
   createdAt DateTime @default(now())
@@ -1130,19 +1138,54 @@ model SafetyDoc {
    * number are read from the contact record every time a document is built,
    * so correcting the contact corrects the paperwork.
    */
-  contactId      String?
-  contact        Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
    */
   preparedBy String[]
 
+  /**
+   * The preset this job was started from, and what was typed over the top:
+   * `{ selection, edits }`. See `lib/safety/presets.ts`. The wording is
+   * composed from the selection every time it is read rather than stored
+   * composed, so changing an answer cannot leave an old paragraph behind;
+   * only the edits are kept, each against the wording it was an edit of.
+   */
+  preset Json?
+
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
+}
+
+/**
+ * A preset somebody wrote themselves, to start the next job from.
+ * The twenty-four built into `lib/safety/presets.ts` cover the work that
+ * comes up; this is for the job that comes up at one client and nowhere else.
+ * It holds the same shape as a built-in selection plus the edited wording, so
+ * choosing it is indistinguishable from choosing a built-in one.
+ */
+model SafetyPreset {
+  id   String @id @default(cuid())
+  name String
+
+  /**
+   * `{ presetId, alsoIds, methods, modifierIds }`, as `Selection`.
+   */
+  selection Json
+  /**
+   * The edited blocks, keyed by block id: `{ id: { source, text } }`.
+   */
+  edits     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
 }
 
 /**
@@ -1230,7 +1273,7 @@ model PowerAnalysis {
    */
   summary Json?
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
@@ -1251,7 +1294,6 @@ model PowerAnalysis {
 
 /**
  * What a protective device's rating belongs to.
- *
  * Kept apart because the two are read differently: a breaker's rating is the
  * current it is there to interrupt, while an RCBO or RCD carries *two* ratings
  * and only one of them is in amps. The other — the residual current it trips
@@ -1264,7 +1306,6 @@ enum AmpDevice {
 
 /**
  * Which conductor a recording was taken on.
- *
  * Named as they are called on site. A single-phase circuit is still on one of
  * them, and a clamp round the neutral is a recording of the neutral.
  */
@@ -1277,7 +1318,6 @@ enum AmpPhase {
 
 /**
  * A set of short current recordings, issued as one report.
- *
  * Separate from PowerAnalysis on purpose. That is one logger on one board for a
  * fortnight at five-minute intervals, read for maximum demand; this is a clamp
  * on individual circuits for a minute at a time at one-second intervals, read
@@ -1289,30 +1329,42 @@ model AmpReport {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** The day the readings were taken. */
+  /**
+   * The day the readings were taken.
+   */
   date DateTime @default(now()) @db.Date
   name String?
 
-  /** Where the readings were taken — "Pit jacks distribution board". */
+  /**
+   * Where the readings were taken — "Pit jacks distribution board".
+   */
   location String?
 
-  /** The board they were taken at, where that board has been drawn. */
+  /**
+   * The board they were taken at, where that board has been drawn.
+   */
   equipmentId String?
   equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
 
-  /** Why they were taken, printed at the front of the report. */
+  /**
+   * Why they were taken, printed at the front of the report.
+   */
   purpose String?
 
-  /** The instrument they were taken with, named on the report. */
+  /**
+   * The instrument they were taken with, named on the report.
+   */
   instrumentId String?
   instrument   TestEquipment? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
 
-  /** Who asked for them. */
+  /**
+   * Who asked for them.
+   */
   contactId   String?
   contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   contactName String?
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
   /**
    * The profiles named as having prepared this, in the order they are listed.
    * Empty means the director, which is who it was before this could be chosen.
@@ -1331,7 +1383,6 @@ model AmpReport {
 
 /**
  * One named recording inside a report — one clamp, on one circuit.
- *
  * The file is kept as it came off the meter and read again whenever the report
  * is drawn; what is stored here is the name it was given, the device it was
  * taken behind, and enough of a summary to describe the row without opening
@@ -1342,12 +1393,13 @@ model AmpRecording {
   reportId String
   report   AmpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
-  /** "A-Phase PIT JACKS" — what it is called wherever it appears. */
+  /**
+   * "A-Phase PIT JACKS" — what it is called wherever it appears.
+   */
   name String
 
   /**
    * The protective device's stated current rating, in amps.
-   *
    * Not its trip setting, and never an RCD's residual-current rating in
    * milliamps. Null where none was entered, which is a report of the
    * measurements and no verdict at all.
@@ -1355,12 +1407,13 @@ model AmpRecording {
   rating Float?
   device AmpDevice?
 
-  /** The conductor the clamp went on, where it was said. */
+  /**
+   * The conductor the clamp went on, where it was said.
+   */
   phase AmpPhase?
 
   /**
    * The section of the report this recording belongs to, where it is in one.
-   *
    * Three phases of the one board are three recordings and belong together
    * under the board's name; a recording off somewhere else stands on its own.
    * Recordings sharing a name share a section, which is numbered where a
@@ -1368,14 +1421,20 @@ model AmpRecording {
    */
   groupName String?
 
-  /** The meter's own export, kept byte for byte. */
+  /**
+   * The meter's own export, kept byte for byte.
+   */
   fileId String
   file   UploadedFile @relation("AmpRecordingSource", fields: [fileId], references: [id], onDelete: Cascade)
 
-  /** Hand-ordered within the report. */
+  /**
+   * Hand-ordered within the report.
+   */
   position Int @default(0)
 
-  /** Count, period, highest, average — for the dialog and the tree. */
+  /**
+   * Count, period, highest, average — for the dialog and the tree.
+   */
   summary Json?
 
   createdAt DateTime @default(now())
@@ -1384,14 +1443,14 @@ model AmpRecording {
   @@index([fileId])
 }
 
-
-/* ===========================================================================
-   Test and tag
-   =========================================================================== */
+/**
+ * ===========================================================================
+ * Test and tag
+ * ===========================================================================
+ */
 
 /**
  * The reference spreadsheet behind our own equipment register.
- *
  * One row, like Settings, because there is one truck's worth of gear and one
  * export of it. Replacing the file changes what the next report is made from
  * and nothing else: a report already generated holds its own copy of the rows
@@ -1403,21 +1462,26 @@ model TaggingSettings {
   fileId String?
   file   UploadedFile? @relation("TaggingReference", fields: [fileId], references: [id], onDelete: SetNull)
 
-  /** When the file on it was last replaced, for saying how old it is. */
+  /**
+   * When the file on it was last replaced, for saying how old it is.
+   */
   uploadedAt DateTime?
   updatedAt  DateTime  @updatedAt
 }
 
 enum TagReportKind {
-  /** Our own gear, out of the reference file. */
+  /**
+   * Our own gear, out of the reference file.
+   */
   INTERNAL
-  /** A client's gear, out of the file uploaded for this report. */
+  /**
+   * A client's gear, out of the file uploaded for this report.
+   */
   CLIENT
 }
 
 /**
  * One generated register, kept so it can be reopened and downloaded again.
- *
  * The rows are stored on the report rather than read back off a file, because
  * the file they came from is replaced and a report that changed when the
  * reference was replaced would not be a record of anything. The spreadsheet is
@@ -1427,24 +1491,31 @@ model TagReport {
   id   String        @id @default(cuid())
   kind TagReportKind
 
-  /** A client report belongs to a site; our own register belongs to nobody. */
+  /**
+   * A client report belongs to a site; our own register belongs to nobody.
+   */
   siteId String?
   site   Site?   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** The day it is issued. Editable, and never an item's test date. */
+  /**
+   * The day it is issued. Editable, and never an item's test date.
+   */
   date DateTime @default(now()) @db.Date
   name String?
 
-  /** The spreadsheet it was made from, kept byte for byte. */
+  /**
+   * The spreadsheet it was made from, kept byte for byte.
+   */
   sourceId String?
   source   UploadedFile? @relation("TagReportSource", fields: [sourceId], references: [id], onDelete: SetNull)
 
-  /** The rows as they were read, so the report never changes under anyone. */
+  /**
+   * The rows as they were read, so the report never changes under anyone.
+   */
   items Json
 
   /**
    * What is in them, counted once.
-   *
    * Kept beside the rows rather than counted out of them, so the navigation
    * can say "22 items · 2 failed" without loading every row of every report
    * on the site. They describe the stored rows and so never change either.
@@ -1454,11 +1525,15 @@ model TagReport {
   failCount   Int @default(0)
   reviewCount Int @default(0)
 
-  /** Which customer and site out of the file this report is about. */
-  customer String?
+  /**
+   * Which customer and site out of the file this report is about.
+   */
+  customer  String?
   siteLabel String?
 
-  /** Anything the reader wanted said about the file. */
+  /**
+   * Anything the reader wanted said about the file.
+   */
   notes String[]
 
   preparedBy String[]
@@ -1469,10 +1544,11 @@ model TagReport {
   @@index([kind, date])
 }
 
-
-/* ===========================================================================
-   Gate servicing
-   =========================================================================== */
+/**
+ * ===========================================================================
+ * Gate servicing
+ * ===========================================================================
+ */
 
 enum GateKind {
   BOOM
@@ -1492,12 +1568,62 @@ enum GateOutcome {
 }
 
 /**
+ * A gate that will be serviced again, saved so it is described once.
+ * The stable half of a service report — what the unit is, where it is, what is
+ * fitted to it — belongs to the gate, not to the visit. Saving it here means
+ * the next visit starts with the asset already described and the technician
+ * answering only what happened on the day.
+ * What is deliberately NOT here is anything that was true once: a result, a
+ * measurement, a signature, a fault. Carrying those forward would present last
+ * year's pass as this year's, which is the one thing a service record must
+ * never do. A follow-up report may quote a previous defect, but it quotes it
+ * as an open question about today rather than as a finding of today.
+ */
+model GateAsset {
+  id     String @id @default(cuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /**
+   * How it is known on site. Unique within the site where it is given.
+   */
+  assetNumber  String?
+  gateLocation String?
+  kind         GateKind @default(BOOM)
+
+  model              String?
+  serialNumber       String?
+  controllerModel    String?
+  controllerFirmware String?
+  armLengthMetres    Float?
+
+  accessories    String[]
+  accessoryNotes String?
+  manualRef      String?
+
+  /**
+   * The last report issued against it, so a follow-up can cite it.
+   */
+  previousService String?
+
+  /**
+   * Kept out of the pickers without losing the reports that cite it.
+   */
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reports GateReport[] @relation("GateAssetReports")
+
+  @@index([siteId])
+}
+
+/**
  * One gate, serviced once.
- *
  * One report per unit, which is why the asset details are on the report rather
  * than on a separate record: two barriers on the one site are two reports, and
  * the second one's serial number is not a variation of the first's.
- *
  * Almost everything is nullable. A service report is filled in on site, on a
  * phone, in the order the work happens, and a form that refuses to save until
  * it is finished is a form that loses an afternoon's work when the battery
@@ -1509,96 +1635,145 @@ model GateReport {
   siteId String
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  /** The day it was serviced. Drives the technician date and the next due. */
-  date DateTime @default(now()) @db.Date
-  /** Recorded when the technician signs it off. */
+  /**
+   * The day it was serviced. Drives the technician date and the next due.
+   */
+  date        DateTime  @default(now()) @db.Date
+  /**
+   * Recorded when the technician signs it off.
+   */
   completedAt DateTime?
 
-  /* --- the asset ---------------------------------------------------------- */
+  /**
+   * --- the asset ----------------------------------------------------------
+   */
 
-  kind        GateKind @default(BOOM)
+  /**
+   * The saved gate this is a visit to, where one was chosen.
+   * The details below are still written onto the report rather than read
+   * through this relation: an asset edited next year must not change what a
+   * report said this year. The relation records which gate it was.
+   */
+  assetId String?
+  asset   GateAsset? @relation("GateAssetReports", fields: [assetId], references: [id], onDelete: SetNull)
+
+  kind         GateKind @default(BOOM)
   gateLocation String?
   assetNumber  String?
   jobNumber    String?
   reportNumber String?
 
-  /** The operator, not the controller. "GIOTTO BT A ULTRA 36 XL". */
-  model        String?
-  serialNumber String?
-  /** The board inside it, which is a different thing from the operator. */
+  /**
+   * The operator, not the controller. "GIOTTO BT A ULTRA 36 XL".
+   */
+  model              String?
+  serialNumber       String?
+  /**
+   * The board inside it, which is a different thing from the operator.
+   */
   controllerModel    String?
   controllerFirmware String?
 
-  /** Boom gates only. Metres, fractional allowed. */
+  /**
+   * Boom gates only. Metres, fractional allowed.
+   */
   armLengthMetres Float?
 
-  /** Which of the fitted accessories are on it, and anything else. */
-  accessories     String[]
-  accessoryNotes  String?
+  /**
+   * Which of the fitted accessories are on it, and anything else.
+   */
+  accessories    String[]
+  accessoryNotes String?
 
   previousService String?
   reportedFaults  String?
 
-  /* --- preparation --------------------------------------------------------- */
+  /**
+   * --- preparation ---------------------------------------------------------
+   */
 
   serviceKind GateServiceKind @default(SCHEDULED)
   weather     String?
-  /** Which preparation items the technician confirmed. Never ticked for them. */
+  /**
+   * Which preparation items the technician confirmed. Never ticked for them.
+   */
   preparation String[]
   manualRef   String?
 
-  /* --- the inspection ------------------------------------------------------ */
+  /**
+   * --- the inspection ------------------------------------------------------
+   */
 
-  /** { itemId: { result, note } } for every item that has been answered. */
+  /**
+   * { itemId: { result, note } } for every item that has been answered.
+   */
   answers Json?
 
-  /* --- measurements and service work --------------------------------------- */
+  /**
+   * --- measurements and service work ---------------------------------------
+   */
 
-  supplyVoltage   String?
-  earthTest       String?
-  balanceNotes    String?
-  lubrication     String?
-  partsReplaced   String?
-  testInstrument  String?
+  supplyVoltage  String?
+  earthTest      String?
+  balanceNotes   String?
+  lubrication    String?
+  partsReplaced  String?
+  testInstrument String?
 
-  openingTime   String?
-  closingTime   String?
-  autoCloseDelay String?
-  finalCycles   String?
+  openingTime      String?
+  closingTime      String?
+  autoCloseDelay   String?
+  finalCycles      String?
   controllerErrors String?
-  safetyMethod  String?
-  forceEquipment String?
+  safetyMethod     String?
+  forceEquipment   String?
 
   workCompleted   String?
   recommendations String?
   photoReferences String?
 
-  /** [{ ref, finding, priority, action, fromItem }] */
+  /**
+   * [{ ref, finding, priority, action, fromItem }]
+   */
   defects Json?
 
-  /* --- the outcome --------------------------------------------------------- */
+  /**
+   * --- the outcome ---------------------------------------------------------
+   */
 
-  outcome        GateOutcome?
-  outcomeNotes   String?
+  outcome           GateOutcome?
+  outcomeNotes      String?
   notifiedContactId String?
-  notifiedContact   Contact? @relation("GateNotified", fields: [notifiedContactId], references: [id], onDelete: SetNull)
-  notifiedTime   String?
+  notifiedContact   Contact?     @relation("GateNotified", fields: [notifiedContactId], references: [id], onDelete: SetNull)
+  notifiedTime      String?
 
   nextServiceDue DateTime? @db.Date
   intervalBasis  String?
 
-  /* --- who ----------------------------------------------------------------- */
+  /**
+   * --- who -----------------------------------------------------------------
+   */
 
-  /** The technician, from Profiles: their name, credentials and signature. */
+  /**
+   * The technician, from Profiles: their name, credentials and signature.
+   */
   technicianId String?
   technician   Profile? @relation("GateTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
 
-  /** The client representative the findings were handed to. Name only. */
+  /**
+   * The client representative the findings were handed to. Name only.
+   */
   clientContactId String?
   clientContact   Contact? @relation("GateClientRep", fields: [clientContactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /**
+   * The scenario this report was started from, and the edits made to its
+   * wording: `{ scenarioId, edits }`. See `lib/gates/presets.ts`.
+   */
+  preset Json?
 
   photos GatePhoto[]
 
@@ -1606,7 +1781,9 @@ model GateReport {
   @@index([date])
 }
 
-/** A photograph taken on the visit, referenced from the report. */
+/**
+ * A photograph taken on the visit, referenced from the report.
+ */
 model GatePhoto {
   id       String     @id @default(cuid())
   reportId String
@@ -1616,15 +1793,16 @@ model GatePhoto {
   file   UploadedFile @relation("GatePhoto", fields: [fileId], references: [id], onDelete: Cascade)
 
   caption  String?
-  position Int    @default(0)
+  position Int     @default(0)
 
   @@index([reportId])
 }
 
-
-/* ===========================================================================
-   Installation testing
-   =========================================================================== */
+/**
+ * ===========================================================================
+ * Installation testing
+ * ===========================================================================
+ */
 
 enum InstallPhases {
   SINGLE
@@ -1633,12 +1811,10 @@ enum InstallPhases {
 
 /**
  * One installation, tested once.
- *
  * The tester's export is read when it is uploaded and the rows are kept on the
  * report, so a report says the same thing next year as it says today. The file
  * itself is kept too and is bound into the back of the report, exactly as the
  * RCD report binds its own.
- *
  * Nothing in here edits a reading. `exclusions` sets a record aside — out of
  * the points and the figures, into its own section, still in the appended
  * original, and put back by taking the exclusion off.
@@ -1651,39 +1827,54 @@ model InstallReport {
   date DateTime @default(now()) @db.Date
   name String?
 
-  /** Which decides how many insulation and RCD records the scope expects. */
+  /**
+   * Which decides how many insulation and RCD records the scope expects.
+   */
   phases InstallPhases @default(SINGLE)
 
-  /** The tester's own export, kept byte for byte and appended to the report. */
+  /**
+   * The tester's own export, kept byte for byte and appended to the report.
+   */
   sourceId String?
   source   UploadedFile? @relation("InstallSource", fields: [sourceId], references: [id], onDelete: SetNull)
 
-  /** The rows as they were read, so the report never changes under anyone. */
+  /**
+   * The rows as they were read, so the report never changes under anyone.
+   */
   rows Json
 
   /**
    * How many records the file held, counted once.
-   *
    * Kept beside the rows so the navigation can say what is in a report without
    * loading every reading of every report on the site. It describes the stored
    * rows, so like them it never changes.
    */
   recordCount Int @default(0)
 
-  /** What the export said about itself: title, site, board, created. */
+  /**
+   * What the export said about itself: title, site, board, created.
+   */
   header Json?
 
-  /** { "S_2": "Powerpoint 1" } — what the operator called each point. */
+  /**
+   * { "S_2": "Powerpoint 1" } — what the operator called each point.
+   */
   pointNames Json?
 
-  /** [{ name, reason }] — records set aside, never deleted. */
+  /**
+   * [{ name, reason }] — records set aside, never deleted.
+   */
   exclusions Json?
 
-  /** { "S_1": "Kitchen sub-circuit" } — which circuit a record belongs to. */
+  /**
+   * { "S_1": "Kitchen sub-circuit" } — which circuit a record belongs to.
+   */
   circuits Json?
 
-  /** What was being tested, printed on the cover. */
-  installation String?
+  /**
+   * What was being tested, printed on the cover.
+   */
+  installation   String?
   circuitDetails String?
 
   contactId String?

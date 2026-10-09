@@ -75,6 +75,15 @@ export type GateReport = PageMeta & {
   answers: Answers;
   defects: Defect[];
 
+  /**
+   * The scenario's wording, as it was read and edited on the form.
+   *
+   * Only the descriptive blocks are printed from here; see `scenarioWording`.
+   * The completed work and the outcome reach the report through the
+   * technician's own fields, so nothing that was not confirmed can appear.
+   */
+  presetBlocks: { id: string; heading: string; text: string }[];
+
   fields: Record<string, string | null>;
 
   outcome: Outcome | null;
@@ -357,6 +366,40 @@ function preparation(doc: Doc, data: GateReport) {
     [["Manual / revision and scope limitations", data.manualRef ?? ""]],
     "Preparation and scope",
   );
+
+  scenarioWording(doc, data);
+}
+
+/**
+ * The scenario's scope, method, planned work and limitations.
+ *
+ * Printed as they were read on the form, which is also where they were
+ * edited. The completed-work and outcome blocks are deliberately not printed
+ * here: those reach the report through the technician's own fields further
+ * on, so a block that was never confirmed cannot appear at the front of the
+ * document looking like a statement of what happened.
+ */
+const SCENARIO_BLOCKS = ["scope", "method", "planned", "limitation"] as const;
+
+function scenarioWording(doc: Doc, data: GateReport) {
+  const blocks = (data.presetBlocks ?? []).filter((block) =>
+    (SCENARIO_BLOCKS as readonly string[]).includes(block.id),
+  );
+  if (blocks.length === 0) return;
+
+  doc.y += 8;
+  for (const block of blocks) {
+    if (!block.text.trim()) continue;
+    doc.font("Helvetica").fontSize(9);
+    const tall = doc.heightOfString(safe(block.text), { width: CONTENT, lineGap: 1.5 });
+    const y = room(doc, data, tall + 22, "Preparation and scope");
+
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
+    doc.text(safe(block.heading), MARGIN, y);
+    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
+    doc.text(safe(block.text), MARGIN, y + 14, { width: CONTENT, lineGap: 1.5 });
+    doc.y = y + 14 + tall + 10;
+  }
 }
 
 /* --- the inspection --------------------------------------------------------- */

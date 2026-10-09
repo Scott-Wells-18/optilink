@@ -10,8 +10,12 @@ import {
   withManual,
   withoutManual,
   asked,
+  selectionOf,
+  withPreset,
   type Answers,
 } from "@/lib/safety/decide";
+import { SafetyPresetStep } from "@/components/SafetyPresetStep";
+import type { Edits } from "@/lib/safety/presets";
 import { STANDING_RULES, rules } from "@/lib/safety/rules";
 import { titleCase } from "@/lib/writing";
 import { RichTextBox } from "@/components/RichTextBox";
@@ -62,11 +66,12 @@ type Doc = {
   signOff: Record<string, { at: string }> | null;
   preparedBy?: string[];
   energised: Whs002 | null;
+  preset: { edits?: Edits } | null;
 };
 
 export type SafetyContact = { id: string; name: string; phone: string | null };
 
-type Step = "questions" | "scope" | "documents" | "details" | "energised" | "sign";
+type Step = "preset" | "questions" | "scope" | "documents" | "details" | "energised" | "sign";
 
 export function SafetyDocDialog({
   docId,
@@ -86,7 +91,8 @@ export function SafetyDocDialog({
   onClose: () => void;
 }) {
   const key = `safety:${docId}`;
-  const [step, setStep] = usePersisted<Step>(`${key}:step`, "questions");
+  const [step, setStep] = usePersisted<Step>(`${key}:step`, "preset");
+  const [edits, setEdits] = usePersisted<Edits>(`${key}:edits`, {});
   const [answers, setAnswers] = usePersisted<Answers>(`${key}:answers`, {});
   const [title, setTitle] = usePersisted<string>(`${key}:title`, "");
   const [contactId, setContactId] = usePersisted<string>(`${key}:contact`, "");
@@ -130,6 +136,9 @@ export function SafetyDocDialog({
     if (doc.energised) {
       setEnergised((current) => (Object.keys(current).length ? current : doc.energised!));
     }
+    if (doc.preset?.edits) {
+      setEdits((current) => (Object.keys(current).length ? current : doc.preset!.edits!));
+    }
     if (doc.scope) setScope((current) => (current.length ? current : doc.scope!));
     if (doc.scopeOverrides) {
       setOverrides((current) => (Object.keys(current).length ? current : doc.scopeOverrides!));
@@ -144,6 +153,7 @@ export function SafetyDocDialog({
     setEnergised,
     setScope,
     setOverrides,
+    setEdits,
   ]);
 
   useEffect(() => {
@@ -172,7 +182,8 @@ export function SafetyDocDialog({
   const ready = open.length === 0 && title.trim().length > 0 && !isEmpty(scope);
 
   const STEPS: [Step, string][] = [
-    ["questions", "The job"],
+    ["preset", "The job"],
+    ["questions", "Questions"],
     ["scope", "Scope"],
     ["documents", "Documents"],
     ["details", "Details"],
@@ -193,8 +204,9 @@ export function SafetyDocDialog({
       jobNumber: jobNumber.trim(),
       assessmentDate: assessed || null,
       energised: needsWhs ? energised : null,
+      preset: { edits },
     }),
-    [answers, title, decision, contactId, scope, overrides, jobNumber, assessed, energised, needsWhs],
+    [answers, title, decision, contactId, scope, overrides, jobNumber, assessed, energised, needsWhs, edits],
   );
 
   /**
@@ -244,7 +256,7 @@ export function SafetyDocDialog({
       setSigned({});
       if (then === "close") {
         for (const part of [
-          "step", "answers", "title", "contact", "scope", "scopes",
+          "step", "answers", "title", "contact", "scope", "scopes", "edits",
           "typing", "job", "assessed", "whs",
         ]) {
           clearSession(`${key}:${part}`);
@@ -375,6 +387,30 @@ export function SafetyDocDialog({
 
         <div className="board-scroll" ref={scroller}>
           <div className="board-body">
+            {step === "preset" ? (
+              <SafetyPresetStep
+                selection={selectionOf(answers)}
+                edits={edits}
+                onSelection={(next) => setAnswers((current) => withPreset(current, next))}
+                onEdits={setEdits}
+                onNext={(wording) => {
+                  // The composed wording seeds the scope of works, so the
+                  // scope step opens with the job already described. It is
+                  // seeded only while the scope is still empty: once somebody
+                  // has written there, that is theirs.
+                  if (isEmpty(scope) && wording.trim()) {
+                    setScope(
+                      wording
+                        .split("\n")
+                        .filter((line) => line.trim())
+                        .map((line) => ({ kind: "p" as const, runs: [{ text: line }] })),
+                    );
+                  }
+                  setStep("questions");
+                }}
+              />
+            ) : null}
+
             {step === "questions" ? (
               <section>
                 <div className="board-section-head">
@@ -433,6 +469,9 @@ export function SafetyDocDialog({
                 })}
 
                 <div className="dialog-actions">
+                  <button type="button" className="dialog-cancel" onClick={() => setStep("preset")}>
+                    Back
+                  </button>
                   <button
                     type="button"
                     className="dialog-confirm"

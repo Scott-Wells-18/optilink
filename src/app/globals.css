@@ -4829,6 +4829,41 @@ body {
   color: #a33526;
 }
 
+/* ---------------------------------------------------------------------------
+   The proposed wording, and what it still needs
+   ---------------------------------------------------------------------------
+   A paragraph that is going onto a controlled document is read before it is
+   sent, so the boxes are tall enough to read a whole block in and set in the
+   body face rather than the interface one.
+   ------------------------------------------------------------------------ */
+
+textarea.dialog-input.is-area {
+  min-height: 92px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* What the wording does not settle, set apart so it is not read as part of it. */
+.safety-confirm {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--warn, #e0a030);
+  border-radius: 0 12px 12px 0;
+  background: rgba(224, 160, 48, 0.07);
+}
+
+.safety-confirm-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.safety-confirm-list li + li {
+  margin-top: 4px;
+}
+
 /* --- the energised testing authorisation ---------------------------------- */
 
 .whs-gate {
@@ -5617,6 +5652,30 @@ a.dialog-cancel {
 
 .tagging-reference .amp-figures {
   margin: 0 0 4px;
+}
+
+/* Replace sits first; delete is the quieter one beside it. */
+.tagging-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tagging-remove {
+  padding: 7px 13px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 9px;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 220ms var(--ease-soft), color 220ms var(--ease-soft);
+}
+
+.tagging-remove:hover {
+  border-color: rgba(192, 57, 43, 0.5);
+  color: #c0392b;
 }
 
 /* ===========================================================================

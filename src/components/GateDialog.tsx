@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uploadImage } from "@/components/ImageUpload";
+import { scenariosUnder } from "@/lib/gates/presets";
 import {
   ACCESSORIES,
   ACCESSORY_LABELS,
@@ -205,6 +206,9 @@ export function GateDialog({
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [scenarioNote, setScenarioNote] = useState<string | null>(null);
+  const [scenarioRecord, setScenarioRecord] = useState<string[]>([]);
   const picker = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -233,6 +237,40 @@ export function GateDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  /**
+   * Applying a scenario, and saying what it would not overwrite.
+   *
+   * The server decides what is safe to replace — a field still holding the
+   * last proposal word for word, or nothing at all — and hands back the names
+   * of the fields it left alone. Those are said out loud rather than quietly
+   * skipped, because a technician who changed scenario and did not notice
+   * their old wording survived is the exact failure this is here to avoid.
+   */
+  async function applyScenario(scenarioId: string) {
+    setApplying(true);
+    setScenarioNote(null);
+    try {
+      const response = await fetch(`/api/gates/${reportId}/preset`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scenarioId }),
+      });
+      if (!response.ok) throw new Error("It could not be applied.");
+      const result = (await response.json()) as { kept: string[]; record: string[] };
+      setScenarioRecord(result.record ?? []);
+      if (result.kept?.length) {
+        setScenarioNote(
+          `Left alone because you had typed in them: ${result.kept.join(", ")}. Everything else was written again from this scenario.`,
+        );
+      }
+      await load();
+    } catch {
+      setError("That scenario could not be applied.");
+    } finally {
+      setApplying(false);
+    }
+  }
 
   /** Saves one change and keeps what came back, so nothing drifts. */
   const save = useCallback(
@@ -547,6 +585,56 @@ export function GateDialog({
                 </button>
               ))}
             </div>
+
+            {/*
+              The scenario, under the service type chosen above.
+
+              Applying one proposes the scope, the method, the planned work
+              and the limitations. Nothing it writes is a result: the
+              completed-work paragraph comes only from tasks confirmed
+              further down, and the outcome only from an outcome chosen at
+              the end. Choosing a different scenario rewrites whatever is
+              still untouched and leaves anything typed in alone.
+            */}
+            <div className="board-section-head">
+              <h3 className="board-section-title">Scenario</h3>
+              <p className="board-section-note">
+                What this visit is. It writes the scope, the method and the limitations,
+                and everything it writes stays editable below.
+              </p>
+            </div>
+            <div className="issue-picks">
+              {scenariosUnder(report.serviceKind).map((scenario) => (
+                <button
+                  key={scenario.id}
+                  type="button"
+                  className={`issue-pick ${
+                    (report.preset as { scenarioId?: string } | null)?.scenarioId === scenario.id
+                      ? "is-on"
+                      : ""
+                  }`}
+                  disabled={applying}
+                  onClick={() => void applyScenario(scenario.id)}
+                >
+                  <span className="issue-pick-mark is-one" aria-hidden />
+                  <span className="issue-pick-body">
+                    <span className="issue-pick-label">{scenario.label}</span>
+                    <span className="issue-pick-note">{scenario.scope}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            {scenarioNote ? <p className="amp-warning">{scenarioNote}</p> : null}
+            {scenarioRecord.length > 0 ? (
+              <div className="safety-confirm">
+                <p className="dialog-label">Still to be recorded for this visit</p>
+                <ul className="safety-confirm-list">
+                  {scenarioRecord.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="issue-picks">
               {PREPARATIONS.map((step) => (

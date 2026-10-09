@@ -221,7 +221,18 @@ type SiteRecord = {
   ampReports: AmpReportRecord[];
   tagReports: TagReportRecord[];
   gateReports: GateReportRecord[];
+  gateAssets: GateAssetRecord[];
   installReports: InstallReportRecord[];
+};
+
+/** A gate saved at a site, as the picker needs it. */
+type GateAssetRecord = {
+  id: string;
+  assetNumber: string | null;
+  gateLocation: string | null;
+  kind: "BOOM" | "SLIDING";
+  model: string | null;
+  serialNumber: string | null;
 };
 
 type ClientRecord = { id: string; name: string; sites: SiteRecord[] };
@@ -422,6 +433,8 @@ export function useClientsTree(enabled: boolean) {
   const [tagUpload, setTagUpload] = usePersisted<TagUploadSpec | null>("tagupload", null);
   const [tagGroup, setTagGroup] = usePersisted<string | null>("taggroup", null);
   const [gate, setGate] = usePersisted<string | null>("gate", null);
+  /** The site whose saved gates are open for editing. */
+  const [gateAssets, setGateAssets] = usePersisted<string | null>("gateassets", null);
   const [install, setInstall] = usePersisted<string | null>("install", null);
   const [installUpload, setInstallUpload] = usePersisted<TagUploadSpec | null>(
     "installupload",
@@ -1910,11 +1923,11 @@ export function useClientsTree(enabled: boolean) {
   );
 
   const startGate = useCallback(
-    async (siteId: string, kind: "BOOM" | "SLIDING") => {
+    async (siteId: string, kind: "BOOM" | "SLIDING", assetId?: string) => {
       const response = await fetch("/api/gates", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ siteId, kind }),
+        body: JSON.stringify({ siteId, kind, assetId }),
       });
       if (!response.ok) {
         setError("That report could not be started.");
@@ -1972,13 +1985,39 @@ export function useClientsTree(enabled: boolean) {
                   onRemove: () => void remove(`/api/gates/${report.id}`, title),
                 };
               }),
+              /*
+               * A visit to a gate already on file.
+               *
+               * Starting from the saved gate copies what the unit is onto the
+               * new report and nothing else — no result, no measurement, no
+               * signature, no fault. Last year's pass is last year's.
+               */
+              ...site.gateAssets.map<TreeNode>((asset) => ({
+                id: `add:gate:asset:${asset.id}`,
+                label: "Add new",
+                detail: [
+                  asset.assetNumber?.trim() || asset.gateLocation?.trim() || GATE_KIND_LABELS[asset.kind],
+                  asset.model?.trim() || null,
+                ]
+                  .filter(Boolean)
+                  .join("  ·  "),
+                variant: "add" as const,
+                onActivate: () => void startGate(site.id, asset.kind, asset.id),
+              })),
               ...(["BOOM", "SLIDING"] as const).map<TreeNode>((kind) => ({
                 id: `add:gate:${kind.toLowerCase()}:${site.id}`,
                 label: "Add new",
-                detail: GATE_KIND_LABELS[kind],
+                detail: `${GATE_KIND_LABELS[kind]} — not saved yet`,
                 variant: "add" as const,
                 onActivate: () => void startGate(site.id, kind),
               })),
+              {
+                id: `gates:assets:${site.id}`,
+                label: "Saved gates",
+                detail: countLabel(site.gateAssets.length, "gate", "gates"),
+                variant: "info" as const,
+                onActivate: () => setGateAssets(site.id),
+              },
             ],
           }));
 
@@ -1990,7 +2029,7 @@ export function useClientsTree(enabled: boolean) {
           };
         })
         .filter((client) => (client.children?.length ?? 0) > 0),
-    [clients, remove, startGate, setGate, setGateDate],
+    [clients, remove, startGate, setGate, setGateAssets, setGateDate],
   );
 
   /* --- test and tag ----------------------------------------------------- */
@@ -2277,6 +2316,11 @@ export function useClientsTree(enabled: boolean) {
     gate,
     closeGate: () => {
       setGate(null);
+      void refresh();
+    },
+    gateAssets,
+    closeGateAssets: () => {
+      setGateAssets(null);
       void refresh();
     },
     profileNodes,

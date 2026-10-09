@@ -29,6 +29,7 @@ import { TaggingSettingsDialog } from "@/components/TaggingSettingsDialog";
 import { TagUploadDialog } from "@/components/TagUploadDialog";
 import { TagGroupDialog } from "@/components/TagGroupDialog";
 import { GateDialog } from "@/components/GateDialog";
+import { GateAssetsDialog } from "@/components/GateAssetsDialog";
 import { InstallDialog } from "@/components/InstallDialog";
 import { InstallUploadDialog } from "@/components/InstallUploadDialog";
 import { isFreeBoard } from "@/lib/board";
@@ -223,6 +224,10 @@ export function Gateway({
 
       {open && clients.gate ? (
         <GateDialog reportId={clients.gate} onClose={clients.closeGate} />
+      ) : null}
+
+      {open && clients.gateAssets ? (
+        <GateAssetsDialog siteId={clients.gateAssets} onClose={clients.closeGateAssets} />
       ) : null}
 
       {open && clients.installUpload ? (

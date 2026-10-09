@@ -126,6 +126,24 @@ export async function GET() {
               exclusions: true,
             },
           },
+          /*
+           * The gates saved at this site, so a visit starts from the unit
+           * rather than from a blank form. Archived ones are left out: they
+           * are kept so the reports that cite them still resolve, not so they
+           * keep turning up in a picker.
+           */
+          gateAssets: {
+            where: { archivedAt: null },
+            orderBy: [{ assetNumber: "asc" }, { createdAt: "asc" }],
+            select: {
+              id: true,
+              assetNumber: true,
+              gateLocation: true,
+              kind: true,
+              model: true,
+              serialNumber: true,
+            },
+          },
           gateReports: {
             // Newest first: the report wanted is nearly always the last made.
             orderBy: [{ date: "desc" }, { createdAt: "desc" }],

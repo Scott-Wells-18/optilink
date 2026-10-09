@@ -127,6 +127,18 @@ export async function deleteUpload(id: string) {
  * Used to decide whether a file that has just lost one reference is now
  * unreferenced and can go. It has to name every relation: a file this misses
  * would be deleted out from under whatever still points at it.
+ *
+ * Six were missing, and the Test & Tag reference spreadsheet is what showed
+ * it. The saved reference and a report made from it are the same file: delete
+ * that report, this counted nothing holding the file, the file went, and
+ * `onDelete: SetNull` quietly emptied the reference out of settings. It read
+ * as a file that would not stay saved. The same hole would have taken an amp
+ * recording's CSV, a profile's signature, a gate photograph and an
+ * installation tester's export.
+ *
+ * Every relation on `UploadedFile` in `prisma/schema.prisma` belongs here.
+ * `audit/30-references.mjs` compares the two and fails if one is added to the
+ * schema without being added here.
  */
 const REFERENCES = {
   thermalFor: true,
@@ -144,6 +156,12 @@ const REFERENCES = {
   powerSources: true,
   equipmentCerts: true,
   equipmentPhotos: true,
+  ampSources: true,
+  profileSignatures: true,
+  taggingReference: true,
+  taggingSnapshots: true,
+  gatePhotos: true,
+  installSources: true,
 } as const;
 
 /**

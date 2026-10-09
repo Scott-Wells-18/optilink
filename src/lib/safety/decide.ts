@@ -1,5 +1,14 @@
 import { BY_CODE, type Template } from "@/lib/safety/catalogue";
 import { hazardsFor, type Hazard } from "@/lib/safety/hazards";
+import {
+  MODIFIER_BY_ID,
+  PRESET_BY_ID,
+  compose,
+  textOf,
+  type Composition,
+  type MethodKey,
+  type Selection,
+} from "@/lib/safety/presets";
 import { QUESTIONS, optionFor, type Option, type Question } from "@/lib/safety/questions";
 
 /**
@@ -22,6 +31,61 @@ export type Answers = Record<string, string>;
  */
 const ADDED = "manual:add";
 const DROPPED = "manual:drop";
+
+/**
+ * The preset selection, riding along the same way.
+ *
+ * It lives in the answers rather than in a parameter so that everything which
+ * already reloads, re-decides and re-renders from the answers keeps working
+ * untouched — the dialog's live `decide`, the API's, and the builder's are one
+ * code path, and a selection made on site survives a reload exactly as the
+ * answers do.
+ */
+const PRESET_MAIN = "preset:main";
+const PRESET_ALSO = "preset:also";
+const PRESET_METHODS = "preset:methods";
+const PRESET_MODS = "preset:mods";
+
+const list = (answers: Answers, key: string): string[] =>
+  (answers[key] ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+
+/** The current selection, as `compose` wants it. Empty when none was made. */
+export function selectionOf(answers: Answers): Selection | null {
+  const presetId = (answers[PRESET_MAIN] ?? "").trim();
+  if (!presetId || !PRESET_BY_ID.has(presetId)) return null;
+  return {
+    presetId,
+    alsoIds: list(answers, PRESET_ALSO),
+    methods: list(answers, PRESET_METHODS).filter(
+      (method): method is MethodKey => method === "RCD" || method === "THERMAL" || method === "MEASURE",
+    ),
+    modifierIds: list(answers, PRESET_MODS),
+  };
+}
+
+/** Choosing a preset, which also settles the questions the preset answers. */
+export function withPreset(answers: Answers, selection: Selection | null): Answers {
+  const next = { ...answers };
+  if (!selection) {
+    delete next[PRESET_MAIN];
+    delete next[PRESET_ALSO];
+    delete next[PRESET_METHODS];
+    delete next[PRESET_MODS];
+    return next;
+  }
+
+  const preset = PRESET_BY_ID.get(selection.presetId);
+  next[PRESET_MAIN] = selection.presetId;
+  next[PRESET_ALSO] = (selection.alsoIds ?? []).join(",");
+  next[PRESET_METHODS] = (selection.methods ?? []).join(",");
+  next[PRESET_MODS] = (selection.modifierIds ?? []).join(",");
+
+  // The preset says what kind of job it is, so the "What is the job?" question
+  // is answered rather than asked again in different words. Everything else
+  // the operator has answered is left exactly as it is.
+  if (preset) next.nature = preset.nature;
+  return next;
+}
 
 export function manualCodes(answers: Answers): { added: string[]; dropped: string[] } {
   const read = (key: string) =>
@@ -104,6 +168,8 @@ export type Decision = {
   hazards: Hazard[];
   /** The job written out from the quote and the answers together. */
   description: string;
+  /** The preset wording, where a preset was chosen. */
+  composition: Composition | null;
 };
 
 /**
@@ -140,6 +206,50 @@ export function decide(
     if (option) add(option, question);
   }
 
+  /*
+   * What the preset brings.
+   *
+   * It is folded in here rather than at the end so a statement the preset
+   * calls for is paired with its risk assessment by the pairing loop below,
+   * and so the operator can still take it out by hand afterwards — a preset
+   * is a starting point, not a thing that overrules a person.
+   */
+  const selection = selectionOf(answers);
+  const composition = selection ? compose(selection) : null;
+  if (selection && composition) {
+    const main = PRESET_BY_ID.get(selection.presetId);
+
+    /*
+     * The preset's own nature, applied here rather than trusted to be in the
+     * answers.
+     *
+     * `withPreset` writes `nature` when somebody picks a preset in the app,
+     * and the loop above would then pick it up. But a decision must be total
+     * over what it is handed: a selection arriving from the API, from a saved
+     * custom preset or from a test has a main job on it and must produce that
+     * job's statement whether or not anything mirrored it into `nature`.
+     * Applying it twice is harmless — `add` is idempotent on the codes and
+     * the sentences are deduplicated below.
+     */
+    for (const preset of [main, ...(selection.alsoIds ?? []).map((id) => PRESET_BY_ID.get(id))]) {
+      if (!preset) continue;
+      const option = optionFor("nature", preset.nature);
+      if (option) add(option, { key: "nature", question: "What is the job?", options: [] });
+    }
+
+    for (const code of composition.codes) {
+      if (!BY_CODE.has(code) || codes.includes(code)) continue;
+      codes.push(code);
+      const modifier = MODIFIER_BY_ID.get(
+        (selection.modifierIds ?? []).find((id) => MODIFIER_BY_ID.get(id)?.requires?.includes(code)) ?? "",
+      );
+      reasons[code] = modifier
+        ? `${modifier.label} — ${modifier.question}`
+        : `The job — ${main?.label ?? "the selected preset"}`;
+    }
+    hazardKeys.push(...composition.hazards);
+  }
+
   // Nothing said what kind of job it is, so it is treated as general
   // electrical work rather than issued with nothing.
   if (!codes.some((code) => BY_CODE.get(code)?.kind === "SWMS")) {
@@ -174,7 +284,20 @@ export function decide(
     codes: sortCodes(kept),
     reasons,
     hazards: hazardsFor(hazardKeys),
-    description: describe(quote, sentences),
+    /*
+     * The preset's wording leads, in the order it was read.
+     *
+     * All of it, not just the scope: this is what fills the scope panel the
+     * statements leave blank, and that panel is where a reader looks for how
+     * the job is done as well as what it is. What the answers added follows
+     * it. It is composed, so a method that is no longer selected is simply
+     * not here.
+     */
+    description: describe(quote, [
+      ...(composition ? composition.blocks.map((block) => block.text) : []),
+      ...sentences,
+    ]),
+    composition,
   };
 }
 
@@ -199,9 +322,12 @@ function describe(
   if (body && (!title || !body.toLowerCase().startsWith(title.toLowerCase()))) {
     parts.push(sentence(body));
   }
-  parts.push(...sentences);
+  // Deduplicated, because a preset's nature can be added from two directions
+  // — the answered question and the preset itself — and the description
+  // should not say the same thing twice for it.
+  parts.push(...sentences.filter((text) => text.trim()));
 
-  return parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 3000);
+  return [...new Set(parts)].join(" ").replace(/\s+/g, " ").trim().slice(0, 3000);
 }
 
 function sentence(text: string): string {

@@ -50,26 +50,49 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function replace(file: File) {
+  /**
+   * Point the settings at a file, or at nothing.
+   *
+   * On a failure the saved reference is reloaded rather than cleared: what was
+   * saved a moment ago is still what the next report should be made from, and
+   * showing an empty panel after a failed upload is how somebody ends up
+   * uploading the file twice.
+   */
+  async function save(fileId: string | null, failure: string) {
     setBusy(true);
     setError(null);
     try {
-      const stored = await uploadFile(file);
       const response = await fetch("/api/tagging/settings", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileId: stored.id }),
+        body: JSON.stringify({ fileId }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error ?? "That spreadsheet could not be saved.");
+        throw new Error(payload.error ?? failure);
       }
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "That upload failed.");
+      setError(saveError instanceof Error ? saveError.message : failure);
+      await load();
     } finally {
       setBusy(false);
     }
+  }
+
+  async function replace(file: File) {
+    setBusy(true);
+    setError(null);
+    let stored: { id: string };
+    try {
+      stored = await uploadFile(file);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "That upload failed.");
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    await save(stored.id, "That spreadsheet could not be saved.");
   }
 
   const held = settings?.file;
@@ -95,7 +118,7 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
                   {[
                     settings?.summary ? `${settings.summary.items} items` : null,
                     settings?.uploadedAt
-                      ? `added ${new Date(settings.uploadedAt).toLocaleDateString("en-AU", {
+                      ? `last updated ${new Date(settings.uploadedAt).toLocaleDateString("en-AU", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",
@@ -117,8 +140,9 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
               </>
             ) : (
               <p className="issue-empty">
-                No reference spreadsheet yet. Add the export from the tagging software — the
-                one with the &ldquo;Test &amp; Tag Register&rdquo; sheet in it.
+                No reference file yet. Add the export from the tagging software — the one
+                with the &ldquo;Test &amp; Tag Register&rdquo; sheet in it, as a spreadsheet
+                or as CSV.
               </p>
             )}
           </div>
@@ -126,7 +150,7 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
           <input
             ref={input}
             type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -135,19 +159,35 @@ export function TaggingSettingsDialog({ onClose }: { onClose: () => void }) {
             }}
           />
 
-          <button
-            type="button"
-            className="issue-add"
-            disabled={busy}
-            onClick={() => input.current?.click()}
-          >
-            {busy ? "Reading…" : held ? "Replace the spreadsheet" : "Add the spreadsheet"}
-          </button>
+          <div className="tagging-actions">
+            <button
+              type="button"
+              className="issue-add"
+              disabled={busy}
+              onClick={() => input.current?.click()}
+            >
+              {busy ? "Reading…" : held ? "Replace the file" : "Add the file"}
+            </button>
+            {held ? (
+              <button
+                type="button"
+                className="tagging-remove"
+                disabled={busy}
+                onClick={() => {
+                  if (!window.confirm(`Remove ${held.originalName}? Reports already generated keep their own rows.`)) return;
+                  void save(null, "That reference could not be removed.");
+                }}
+              >
+                Delete
+              </button>
+            ) : null}
+          </div>
 
           <p className="amp-hint is-standalone">
-            Replacing this changes what the next report is made from and nothing else. Every
-            report already generated keeps its own copy of the rows it was made from, so an
-            earlier register still says exactly what it said.
+            This stays saved until it is replaced or deleted here. Replacing it changes what
+            the next report is made from and nothing else. Every report already generated
+            keeps its own copy of the rows it was made from, so an earlier register still
+            says exactly what it said.
           </p>
         </div>
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { shortDate } from "@/lib/report/theme";
 import { titleCase } from "@/lib/writing";
 import { SIGNATORIES, type Template } from "@/lib/safety/catalogue";
+import { applyEdits, type Edits } from "@/lib/safety/presets";
 import { decide, type Answers } from "@/lib/safety/decide";
 import { canFillJsaPdf, fillJsaPdf, type JsaPdfValues } from "@/lib/safety/fillJsaPdf";
 import { fillWhs002 } from "@/lib/safety/fillWhs002";
@@ -63,9 +64,51 @@ export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
   const decision = decide(answers, { title: doc.jobTitle, description: doc.jobDescription });
   const scope = clean(doc.scope);
   const overrides = (doc.scopeOverrides ?? {}) as Record<string, unknown>;
+
+  /*
+   * The preset wording, with whatever was typed over it.
+   *
+   * Composed here from the selection rather than read back as text, so the
+   * document is built from what the answers currently say. An edit that was
+   * made against wording an answer has since changed is dropped by
+   * `applyEdits` and the fresh wording used, which is what stops a paragraph
+   * about RCD testing reaching a thermal-only statement.
+   */
+  const edits = ((doc.preset ?? {}) as { edits?: Edits }).edits ?? {};
+  const presetWording = decision.composition
+    ? applyEdits(decision.composition, edits)
+    : null;
+  const presetText = presetWording
+    ? presetWording.blocks.map((block) => block.text).join("\n\n")
+    : "";
+
   // The scope is the job in the operator's own words, so it is what the
-  // documents say the work is. The answers only fill in behind it.
-  const description = toPlain(scope) || doc.workDescription?.trim() || decision.description;
+  // documents say the work is. The preset wording stands behind it, and the
+  // answers behind that.
+  const description =
+    toPlain(scope) || doc.workDescription?.trim() || presetText || decision.description;
+
+  /*
+   * The scope-of-works page, where nobody wrote one.
+   *
+   * In the app the preset step seeds the scope with the composed wording and
+   * the operator edits it there, so this rarely fires. It matters for a job
+   * filed through the API: the preset has described the work perfectly well,
+   * and printing "No scope of works was entered" in front of a document that
+   * knows what the job is would be a worse answer than printing it.
+   */
+  const scopeForPage: RichText =
+    scope.length > 0
+      ? scope
+      : presetWording
+        ? presetWording.blocks.flatMap((block) => [
+            { kind: "p" as const, runs: [{ text: block.heading, bold: true }] },
+            ...block.text
+              .split("\n")
+              .filter((line) => line.trim())
+              .map((line) => ({ kind: "p" as const, runs: [{ text: line.trim() }] })),
+          ])
+        : scope;
   const signOff = (doc.signOff ?? {}) as SignOff;
 
   // The date the assessment was actually carried out. Where nobody has said,
@@ -113,7 +156,7 @@ export async function buildSafetyDocs(id: string): Promise<Built[] | null> {
 
     const paper = template.kind === "WHS" ? "docx" : "pdf";
     if (paper === "pdf") {
-      filled = await withScope(filled, code, template.title, own.length > 0 ? own : scope, values);
+      filled = await withScope(filled, code, template.title, own.length > 0 ? own : scopeForPage, values);
     }
 
     out.push({

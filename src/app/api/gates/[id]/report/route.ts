@@ -95,6 +95,11 @@ export async function GET(
       answers: (report.answers ?? {}) as Answers,
       defects: Array.isArray(report.defects) ? (report.defects as Defect[]) : [],
 
+      presetBlocks: (
+        ((report.preset ?? {}) as { blocks?: { id: string; heading: string; text: string }[] })
+          .blocks ?? []
+      ).map((block) => ({ ...block, heading: safe(block.heading), text: safe(block.text) })),
+
       fields: Object.fromEntries(
         FIELDS.map((key) => [key, report[key] ? safe(report[key] as string) : null]),
       ),

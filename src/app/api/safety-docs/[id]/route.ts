@@ -47,6 +47,8 @@ export async function PATCH(
       /** One person confirming they have read the documents, or taking it back. */
       sign?: { key: string; confirmed: boolean };
       preparedBy?: unknown;
+      /** `{ edits }` — what was typed over the composed wording. */
+      preset?: unknown;
     };
 
     const data: Record<string, unknown> = {};
@@ -68,6 +70,12 @@ export async function PATCH(
         description: body.jobDescription ?? null,
       });
       data.codes = decision.codes;
+      // Where the caller sent no description of its own, the one the answers
+      // work out to is stored. Otherwise a record saved through the API alone
+      // would hold the right documents and say nothing about the job.
+      if (body.workDescription === undefined && decision.description) {
+        data.workDescription = decision.description.slice(0, 3000);
+      }
     }
     if (body.codes && !body.answers) {
       data.codes = body.codes.filter((code) => BY_CODE.has(code));
@@ -107,6 +115,26 @@ export async function PATCH(
       if (!Number.isNaN(when.getTime())) data[key] = when;
     }
     if (body.energised !== undefined) data.energised = body.energised ?? null;
+    /*
+     * Only the edits are stored, never the composed wording.
+     *
+     * Each edit is kept against the text it was an edit of, so when an answer
+     * changes and the block recomposes, `applyEdits` can see that the edit no
+     * longer belongs to it and drop it. Storing the composed paragraphs here
+     * instead would be the one way a sentence from a changed answer could
+     * survive, which is exactly what must not happen.
+     */
+    if (body.preset !== undefined) {
+      const sent = (body.preset ?? {}) as { edits?: Record<string, unknown> };
+      const edits: Record<string, { source: string; text: string }> = {};
+      for (const [blockId, edit] of Object.entries(sent.edits ?? {})) {
+        if (!edit || typeof edit !== "object") continue;
+        const { source, text } = edit as Record<string, unknown>;
+        if (typeof source !== "string" || typeof text !== "string") continue;
+        edits[blockId.slice(0, 40)] = { source, text: text.slice(0, 20000) };
+      }
+      data.preset = { edits };
+    }
 
     /*
      * Signing.

@@ -92,10 +92,24 @@ export async function fillWhs002(template: Buffer, values: Whs002Values): Promis
     put({ label: "Switchboard ID and location" }, 3, answers.nominalVoltage);
     put({ label: "RCD / circuit identification" }, 1, answers.circuits);
     put({ label: "RCD / circuit identification" }, 3, answers.supplyInfo);
-    // The printed "OEC-SWMS014 / OEC-JSA014" is the form's own; where this job
-    // is issued against different statements they are added beside it.
+    /*
+     * The printed "OEC-SWMS014 / OEC-JSA014" is the form's own words and is
+     * not rewritten — a controlled document's printed text is not ours to
+     * erase. But on a job with no RCD testing in it, leaving that reference
+     * standing alone says this authorisation is issued against an RCD
+     * statement that nobody is working to. So where the job's own statements
+     * do not include SWMS014, the line beside it says outright that the
+     * printed pair does not apply and names the ones that do.
+     */
     if (values.linked && values.linked !== "OEC-SWMS014 / OEC-JSA014") {
-      put({ label: "Linked SWMS / JSA" }, 1, `· this job: ${values.linked}`);
+      const carriesRcd = /\bOEC-SWMS014\b/.test(values.linked);
+      put(
+        { label: "Linked SWMS / JSA" },
+        1,
+        carriesRcd
+          ? `· this job: ${values.linked}`
+          : `· The printed OEC-SWMS014 / OEC-JSA014 does not apply to this job. Issued against: ${values.linked}`,
+      );
     }
     put({ label: "Linked SWMS / JSA" }, 3, values.jobNumber);
     put({ label: "Assessment date / time" }, 1, when(answers.assessedOn, answers.assessedAt));

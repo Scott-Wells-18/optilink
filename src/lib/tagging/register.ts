@@ -1,4 +1,17 @@
+import { parseCsv } from "@/lib/csv";
 import { readNamedSheet, readSheet, sheetsOf } from "@/lib/sheet";
+
+/**
+ * Whether these bytes are a workbook rather than a CSV.
+ *
+ * An .xlsx is a zip, and every zip starts "PK\x03\x04". Deciding on the
+ * content rather than on the name matters because a browser reports a .csv's
+ * type by asking the operating system, and on a Windows machine with Excel
+ * installed the answer is a spreadsheet type.
+ */
+function isWorkbook(bytes: Buffer): boolean {
+  return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+}
 
 /**
  * Reading a test-and-tag register out of the tagging software's export.
@@ -192,24 +205,36 @@ export class RegisterError extends Error {}
 export function readRegister(bytes: Buffer): Register {
   const notes: string[] = [];
 
-  // The named tab first. A file saved from the same software always has it;
-  // one that has been through a round of Save As may have a single sheet
-  // called something else, and refusing that outright helps nobody — so it is
-  // read and the report says which tab it came from.
-  const sheets = sheetsOf(bytes);
-  let rows = readNamedSheet(bytes, REGISTER_SHEET);
-  let sheetName = REGISTER_SHEET;
-  if (!rows) {
-    rows = readSheet(bytes);
-    sheetName = sheets[0]?.name ?? "the first sheet";
-    if (rows.length > 0) {
-      notes.push(
-        `This workbook has no "${REGISTER_SHEET}" tab, so "${sheetName}" was read instead.`,
-      );
+  let rows: string[][] | null;
+  let sheetName: string;
+
+  if (isWorkbook(bytes)) {
+    // The named tab first. A file saved from the same software always has it;
+    // one that has been through a round of Save As may have a single sheet
+    // called something else, and refusing that outright helps nobody — so it
+    // is read and the report says which tab it came from.
+    const sheets = sheetsOf(bytes);
+    rows = readNamedSheet(bytes, REGISTER_SHEET);
+    sheetName = REGISTER_SHEET;
+    if (!rows) {
+      rows = readSheet(bytes);
+      sheetName = sheets[0]?.name ?? "the first sheet";
+      if (rows.length > 0) {
+        notes.push(
+          `This workbook has no "${REGISTER_SHEET}" tab, so "${sheetName}" was read instead.`,
+        );
+      }
     }
+  } else {
+    // The same export, saved as CSV. One sheet, no tabs, so the heading row
+    // below is the only thing that identifies the columns — which it already
+    // is for a workbook whose tab has been renamed.
+    rows = parseCsv(bytes.toString("utf8"));
+    sheetName = "the file";
   }
+
   if (!rows || rows.length === 0) {
-    throw new RegisterError("Nothing could be read out of that spreadsheet.");
+    throw new RegisterError("Nothing could be read out of that file.");
   }
 
   const headerAt = rows.findIndex((row) =>
