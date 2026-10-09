@@ -5,53 +5,48 @@ import { guarded, mastheadLines, ohmText, sectionBar, stampWideFeet, tableHead, 
 import { equipmentPagesPortrait } from "@/lib/report/equipment";
 import { fitted, stampCertificate, type Box, type Certificate, type Slot } from "@/lib/report/certificate";
 import type { Instrument } from "@/lib/report/instrument";
+import { MEASUREMENT_LABELS, resistanceReads, voltsLine, type Terminals } from "@/lib/install/parse";
+import { PHASE_LABELS, type Phases } from "@/lib/install/points";
 import {
-  MEASUREMENT_LABELS,
-  TERMINALS,
-  resistanceReads,
-  voltsReads,
-  type InstallRow,
-  type Terminals,
-} from "@/lib/install/parse";
-import {
-  PHASE_LABELS,
-  reasonFor,
-  type Anomaly,
-  type Exclusion,
-  type Repeat,
-  type Phases,
-  type Point,
-} from "@/lib/install/points";
+  CATEGORIES,
+  SECTION_LABELS,
+  STATUS_LABELS,
+  ref,
+  slotLabel,
+  pairOfLabel,
+  type Analysis,
+  type Group,
+  type Rec,
+  type Section,
+  type TestFile,
+} from "@/lib/install/session";
 
 /**
  * The installation test report.
  *
- * What it says is bounded by what the instrument actually measured. The tables
- * are the results; the charts are there to make a column of numbers legible
- * and nothing more, which is why there are several of them rather than one.
+ * What it says is bounded by what was verified. It opens with the Section 8
+ * checklist — visual inspection and the six tests — and what each one's status
+ * is, and it says the installation's verification is complete only when every
+ * one of them is recorded or justified as not applicable. Three uploaded test
+ * types are never presented as the whole of it.
  *
- * Three measurements with nothing in common: a resistance in megohms, trip
- * times in milliseconds, and voltages — and among the voltages, a line reading
- * near 240 V beside a neutral-to-earth reading near half a volt. Drawn on one
- * axis the half-volt reading is a flat line on the floor and the insulation
- * reading is off the top of the page. So each gets its own chart with its own
- * unit, and the two voltage scales are drawn apart.
+ * The results are tables, one per named group, each reading with its phase,
+ * its terminals, its value and unit as the instrument wrote it, and the file
+ * and S number it came from. There are no charts: these are a few readings a
+ * group in three different units, and a table says it exactly. No pass or
+ * fail threshold is drawn or implied that the instrument did not record.
  *
- * And it does not conclude more than it measured. Voltage between pairs of
- * terminals shows what was present at each point on the day; it is not by
- * itself a polarity verification and the report says so rather than implying
- * otherwise.
+ * Every record set aside — a deliberate dummy, an accidental test, a repeat —
+ * is listed in the appendix with its source and the reason, and every tester
+ * file is reproduced at the back in the order the operator confirmed.
  */
 
 /*
  * Read landscape, with its appendices portrait.
  *
- * The results are tables — a point and its three readings, a record and the
- * line the instrument wrote for it — and a table reads better across than
- * down. The three things this report reproduces rather than retypes are all
- * A4 portrait documents: the instrument's calibration certificate and the
- * tester's own export. Those keep their own shape, so they come out nearly
- * full size instead of small with white down either side.
+ * The results are tables, and a table reads better across than down. The
+ * certificate and the tester's own exports are A4 portrait documents, and keep
+ * their own shape.
  */
 const SHEET = { width: 841.89, height: 595.28 };
 const MARGIN = 34;
@@ -74,36 +69,12 @@ export type InstallReport = PageMeta & {
   contactName: string | null;
   instrumentName: string | null;
 
-  /** Everything the instrument wrote, excluded records included. */
-  allRows: InstallRow[];
-  /** What the results are drawn from: everything not set aside. */
-  rows: InstallRow[];
-  points: Point[];
-  stray: InstallRow[];
-  /** Readings the instrument took twice, left out of the points. */
-  repeats: Repeat[];
-  exclusions: Exclusion[];
-  anomalies: Anomaly[];
-  circuits: Record<string, string>;
-
-  /** What the instrument said about itself. */
-  header: {
-    title: string | null;
-    siteName: string | null;
-    boardNumber: string | null;
-    circuitRange: string | null;
-    notes: string[];
-  };
+  analysis: Analysis;
+  /** The tester files, in the confirmed order, with their pages where they open. */
+  files: (TestFile & { pages: Certificate | null; bytes: Buffer | null })[];
 
   /** What took the readings, with its calibration certificate. */
   instrument: Instrument | null;
-
-  /**
-   * The tester's own export: its page sizes, so the gaps can be drawn, and the
-   * bytes, so the untouched file goes along as an attachment.
-   */
-  original: { pages: Certificate; bytes: Buffer } | null;
-  originalName: string | null;
 };
 
 export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
@@ -121,23 +92,23 @@ export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
   });
 
   cover(doc, data);
-  basis(doc, data);
-  insulation(doc, data);
-  rcd(doc, data);
-  points(doc, data);
-  setAside(doc, data);
+  verification(doc, data);
+  results(doc, data, "INSULATION");
+  results(doc, data, "RCD");
+  results(doc, data, "VOLTAGE");
+  unresolved(doc, data);
+  appendix(doc, data);
 
   /*
    * The pages that carry somebody else's document, all of them upright.
    *
-   * The gaps are drawn here — borders, captions and all — and the documents
-   * themselves are stamped into them afterwards, because pdfkit cannot place a
-   * page of another PDF and pdf-lib cannot draw the report. Both sets of gaps
-   * are collected before anything is stamped.
+   * The gaps are drawn here and the documents stamped into them afterwards,
+   * because pdfkit cannot place a page of another PDF and pdf-lib cannot draw
+   * the report.
    */
   const certificate = equipmentPagesPortrait(doc, data.instrument, (note) =>
     uprightHead(doc, data, "Equipment Used", note), UPRIGHT);
-  const original = originalPages(doc, data);
+  const originals = data.files.map((file, at) => ({ file, slots: originalPages(doc, data, file, at) }));
 
   stampWideFeet(doc, data, {
     width: SHEET.width,
@@ -147,8 +118,8 @@ export async function buildInstallReport(data: InstallReport): Promise<Buffer> {
   doc.end();
 
   let out = await done;
-  if (data.original?.pages && original.length > 0) {
-    out = await stampCertificate(out, data.original.pages, original);
+  for (const { file, slots } of originals) {
+    if (file.pages && slots.length > 0) out = await stampCertificate(out, file.pages, slots);
   }
   if (data.instrument?.certificate && certificate.length > 0) {
     out = await stampCertificate(out, data.instrument.certificate, certificate);
@@ -214,110 +185,491 @@ function note(doc: Doc, text: string, size = 8.5) {
   doc.fillColor(COLOURS.ink);
 }
 
-/* --- charts ------------------------------------------------------------------ */
 
-type Bar = { label: string; value: number; reads: string; alarm?: boolean };
+/* --- a table that wraps --------------------------------------------------------- */
+
+type Tone = "normal" | "missing" | "flag" | "muted";
+type Row = { cells: string[]; tone?: Tone; bold?: number[] };
 
 /**
- * A short row of bars with one axis and its own unit.
- *
- * Every chart on this report is one measurement in one unit, because the
- * measurements on it have nothing in common and a shared axis would be a lie.
- * The grid is recessive, there is one series so there is no legend, and every
- * bar is labelled with the reading it stands for — there are never more than a
- * handful, so a value on each is a help rather than clutter.
- *
- * A bar past its limit is drawn in the alarm colour AND carries the word, so
- * the colour is never the only thing saying so.
+ * A table whose rows grow to fit their longest cell, and whose head repeats
+ * when it runs onto a new page. A cell that carries an ohm sign is drawn with
+ * the font that can print one.
  */
-function barChart(
+function table(
   doc: Doc,
   data: InstallReport,
   title: string,
-  unit: string,
-  bars: Bar[],
-  limit: { value: number; label: string } | null,
-  section: string,
+  heads: string[],
+  widths: number[],
+  body: Row[],
 ) {
-  if (bars.length === 0) return;
-
-  const height = 112;
-  const top = room(doc, data, height + 46, section);
-
-  doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.inkSoft);
-  ohmText(doc, `${title.toUpperCase()}  (${unit})`, MARGIN, top, {
-    width: CONTENT,
-    size: 8.5,
-    font: "Helvetica-Bold",
-  });
-
-  const plot = { x: MARGIN + 34, y: top + 16, width: CONTENT - 40, height };
-  const ceiling = Math.max(
-    ...bars.map((bar) => bar.value),
-    limit ? limit.value : 0,
-  ) * 1.18 || 1;
-
-  // Four recessive gridlines and their values, and nothing else behind the data.
-  doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
-  for (let step = 0; step <= 4; step += 1) {
-    const value = (ceiling / 4) * step;
-    const y = plot.y + plot.height - (value / ceiling) * plot.height;
-    doc.rect(plot.x, y, plot.width, 0.4).fill(step === 0 ? COLOURS.hair : COLOURS.soft);
-    doc.fillColor(COLOURS.inkSoft);
-    doc.text(tidy(value), MARGIN - 4, y - 3, { width: 34, align: "right", lineBreak: false });
+  const scale = CONTENT / widths.reduce((total, width) => total + width, 0);
+  const columns = widths.map((width) => width * scale);
+  const drawHead = () => {
+    const y = doc.y;
+    tableHead(doc, y, heads, columns);
+    doc.y = y + 20;
+  };
+  if (doc.y + 44 > FLOOR) {
+    doc.addPage();
+    head(doc, data, title);
   }
+  drawHead();
 
-  const slot = plot.width / bars.length;
-  const width = Math.min(46, slot * 0.54);
-
-  bars.forEach((bar, at) => {
-    const tall = Math.max(1.5, (bar.value / ceiling) * plot.height);
-    const x = plot.x + slot * at + (slot - width) / 2;
-    const y = plot.y + plot.height - tall;
-
-    doc.roundedRect(x, y, width, tall, Math.min(4, width / 3)).fill(
-      bar.alarm ? SEVERITY.fail.fill : COLOURS.accent,
+  body.forEach((row, index) => {
+    const height = Math.max(
+      20,
+      ...row.cells.map((cell, at) => {
+        doc.font(row.bold?.includes(at) ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+        return doc.heightOfString(safe(cell) || "—", { width: columns[at] - 8, lineGap: 1.2 }) + 10;
+      }),
     );
+    if (doc.y + height > FLOOR) {
+      doc.addPage();
+      head(doc, data, title);
+      drawHead();
+    }
+    const y = doc.y;
+    if (index % 2 === 1) doc.rect(MARGIN, y, CONTENT, height).fill(COLOURS.soft);
+    if (row.tone === "missing" || row.tone === "flag") {
+      doc.rect(MARGIN, y, 3, height).fill(row.tone === "missing" ? SEVERITY.concern.fill : SEVERITY.fail.fill);
+    }
+    doc.rect(MARGIN, y + height, CONTENT, 0.5).fill(COLOURS.hair);
 
-    doc.font("Helvetica-Bold").fontSize(7).fillColor(bar.alarm ? SEVERITY.fail.fill : COLOURS.ink);
-    ohmText(doc, bar.reads, x - slot * 0.2, y - 10, {
-      width: width + slot * 0.4,
-      align: "center",
-      size: 7,
-      font: "Helvetica-Bold",
+    let x = MARGIN;
+    row.cells.forEach((cell, at) => {
+      const bold = row.bold?.includes(at);
+      const colour =
+        row.tone === "missing" && at > 0
+          ? SEVERITY.concern.fill
+          : row.tone === "muted"
+            ? COLOURS.inkSoft
+            : COLOURS.ink;
+      if (cell.includes("Ω")) {
+        doc.fillColor(colour);
+        ohmText(doc, cell, x + 4, y + 5, {
+          width: columns[at] - 8,
+          size: 8.5,
+          font: bold ? "Helvetica-Bold" : "Helvetica",
+        });
+      } else {
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5).fillColor(colour);
+        doc.text(safe(cell) || "—", x + 4, y + 5, { width: columns[at] - 8, lineGap: 1.2 });
+      }
+      x += columns[at];
     });
-
-    doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
-    doc.text(safe(bar.label), x - slot * 0.2, plot.y + plot.height + 4, {
-      width: width + slot * 0.4,
-      align: "center",
-      lineBreak: false,
-    });
+    doc.y = y + height;
+    doc.fillColor(COLOURS.ink);
   });
+  doc.y += 12;
+}
 
-  if (limit && limit.value <= ceiling) {
-    const y = plot.y + plot.height - (limit.value / ceiling) * plot.height;
-    doc.save();
-    doc.dash(3, { space: 2 }).moveTo(plot.x, y).lineTo(plot.x + plot.width, y);
-    doc.lineWidth(0.9).strokeColor(SEVERITY.fail.fill).stroke();
-    doc.restore();
-    doc.font("Helvetica-Bold").fontSize(6.5).fillColor(SEVERITY.fail.fill);
-    ohmText(doc, limit.label, plot.x + plot.width - 120, y - 9, {
-      width: 120,
-      align: "right",
-      size: 6.5,
-      font: "Helvetica-Bold",
-    });
+function subhead(doc: Doc, data: InstallReport, text: string, title: string, sub?: string, rows = 2) {
+  // Kept with its table where the table is short enough to keep together.
+  const y = room(doc, data, Math.min(330, 60 + rows * 21), title);
+  doc.font("Helvetica-Bold").fontSize(10.5).fillColor(COLOURS.ink);
+  doc.text(safe(text), MARGIN, y, { width: CONTENT });
+  doc.y = y + 15;
+  if (sub) {
+    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
+    doc.text(safe(sub), MARGIN, doc.y, { width: CONTENT, lineGap: 1.2 });
+    doc.y += 6;
   }
-
-  doc.y = plot.y + plot.height + 20;
   doc.fillColor(COLOURS.ink);
 }
 
-function tidy(value: number): string {
-  if (value >= 100) return String(Math.round(value));
-  if (value >= 10) return value.toFixed(0);
-  return value.toFixed(1);
+/** "File 2 (reconnect.pdf) · S_4 · #3" — where a reading came from. */
+function source(record: Rec): string {
+  return `File ${record.fileNo} · ${record.name}${record.seq ? `  (W${record.seq})` : ""}`;
+}
+
+/* --- the verification checklist ------------------------------------------------- */
+
+function verification(doc: Doc, data: InstallReport) {
+  const title = "Verification summary";
+  doc.addPage();
+  head(doc, data, title);
+  {
+    const top = doc.y;
+    sectionBar(doc, "Verification — AS/NZS 3000 Section 8", top, SPAN);
+    doc.y = top + 32;
+  }
+
+  const { analysis } = data;
+  const sections = analysis.sections;
+  const body: Row[] = CATEGORIES.map((category) => {
+    const entry = analysis.verification[category.key];
+    const tester = category.section ? sections[category.section].accepted.length : 0;
+    const groups = category.section ? sections[category.section].groups.length : 0;
+    const parts: string[] = [];
+    if (category.section && tester > 0) {
+      parts.push(
+        `${tester} tester ${tester === 1 ? "record" : "records"} in ${groups} ${groups === 1 ? "group" : "groups"} — see ${SECTION_LABELS[category.section]}.`,
+      );
+    }
+    if (category.key === "POLARITY" && tester > 0) {
+      parts.push("Voltage readings support but do not by themselves verify polarity.");
+    }
+    if (entry.evidence) parts.push(entry.evidence);
+    if (entry.reason) parts.push(`Reason: ${entry.reason}`);
+    const status = entry.selected ? STATUS_LABELS[entry.status] : "Not covered by this report";
+    const settled = entry.selected && (entry.status === "RECORDED" || (entry.status === "NOT_APPLICABLE" && entry.reason));
+    return {
+      cells: [category.label, category.clause, status, parts.join("  ") || "—"],
+      tone: settled ? "normal" : "missing",
+      bold: [0, 2],
+    };
+  });
+  table(doc, data, title, ["Category", "Clause", "Status", "Record, evidence or reason"], [190, 50, 110, 420], body);
+
+  const open = CATEGORIES.filter((category) => {
+    const entry = analysis.verification[category.key];
+    return !(entry.selected && (entry.status === "RECORDED" || (entry.status === "NOT_APPLICABLE" && entry.reason)));
+  });
+  const blocking = analysis.issues.filter((issue) => issue.blocking).length;
+
+  const y = doc.y;
+  const statement = analysis.complete
+    ? "Every verification category above is recorded or justified as not applicable, and no result is left unresolved."
+    : `Installation verification is not complete. ${
+        open.length > 0
+          ? `${open.length} of ${CATEGORIES.length} categories ${open.length === 1 ? "is" : "are"} pending, not performed or not covered by this report (${open.map((category) => category.label.toLowerCase()).join(", ")}).`
+          : ""
+      }${blocking > 0 ? ` ${blocking} ${blocking === 1 ? "result is" : "results are"} unresolved — see Unresolved results.` : ""}`;
+  doc.font("Helvetica-Bold").fontSize(9.5);
+  const tall = doc.heightOfString(safe(statement), { width: CONTENT - 16, lineGap: 1.4 }) + 12;
+  doc.rect(MARGIN, y, 3, tall).fill(analysis.complete ? SEVERITY.pass.fill : SEVERITY.concern.fill);
+  doc.fillColor(COLOURS.ink).text(safe(statement), MARGIN + 12, y + 5, { width: CONTENT - 16, lineGap: 1.4 });
+  doc.y = y + tall + 10;
+
+  note(
+    doc,
+    "Clause references are to AS/NZS 3000:2018 Section 8 and are given for identification; confirm " +
+      "them against the edition and amendments in force. This report records what was measured and " +
+      "states each category's status. It does not set or imply pass or fail limits beyond those the " +
+      "instrument recorded, and it is not a certificate of compliance.",
+    8,
+  );
+
+  note(
+    doc,
+    "Voltage readings — readings between L–PE, L–N and N–PE show the voltage present between those " +
+      "terminals at the time of testing. Close-to-nominal L–PE and L–N readings with a low N–PE reading " +
+      "are consistent with the expected relationships; on their own they do not confirm polarity or " +
+      "correct circuit connections, and they apply only to the points tested.",
+    8,
+  );
+  note(
+    doc,
+    "Insulation resistance — a result shown with “>” exceeded the instrument’s displayed range and is " +
+      "kept as recorded rather than as an exact value. Each reading is shown against the terminals in " +
+      "the selected test arrangement.",
+    8,
+  );
+  note(
+    doc,
+    "RCD — each AUTO record is one sequence on one phase: half, one and five times rated residual " +
+      "current at 0° and 180°. A three-phase device has a sequence per phase; the number of tests does " +
+      "not describe the device’s width on the board. Trip times are assessed against the applicable " +
+      "limits in the separate RCD report.",
+    8,
+  );
+}
+
+/* --- the results, a section at a time -------------------------------------------- */
+
+const NOT_RECORDED = "NOT RECORDED";
+
+function results(doc: Doc, data: InstallReport, section: Section) {
+  const result = data.analysis.sections[section];
+  if (result.files.length === 0 && result.accepted.length === 0) return;
+
+  const title = SECTION_LABELS[section];
+  if (doc.y > FLOOR - 160 || section === "INSULATION" || result.groups.length > 1) {
+    doc.addPage();
+    head(doc, data, title);
+  } else {
+    doc.y += 8;
+  }
+  {
+    const top = doc.y;
+    sectionBar(doc, title, top, SPAN);
+    doc.y = top + 30;
+  }
+
+  const files = result.files
+    .map(({ file, count, accepted }) => `${file.originalName} (${accepted} of ${count} accepted)`)
+    .join("  ·  ");
+  note(doc, `From ${result.files.length} ${result.files.length === 1 ? "file" : "files"}: ${files || "none"}.`, 8);
+
+  if (result.groups.length === 0) {
+    note(doc, "No accepted records in this section.", 9.5);
+    return;
+  }
+
+  for (const group of result.groups) {
+    const name = group.name || `Group ${group.index + 1}`;
+    subhead(
+      doc,
+      data,
+      `${group.index + 1}.  ${name}`,
+      title,
+      group.complete ? undefined : `Incomplete — missing ${group.missing.join(", ") || "none"}${group.extras.length ? `; ${group.extras.length} record(s) fit no slot` : ""}.`,
+      group.slots.length,
+    );
+    if (section === "INSULATION") insulationTable(doc, data, group, title);
+    if (section === "VOLTAGE") voltageTable(doc, data, group, title);
+    if (section === "RCD") rcdTable(doc, data, group, title);
+    if (group.extras.length > 0) {
+      table(
+        doc,
+        data,
+        title,
+        ["Record", "Recorded", "Why it was not placed"],
+        [150, 300, 320],
+        group.extras.map((extra) => ({
+          cells: [source(extra.record), recorded(extra.record), extra.why],
+          tone: "flag",
+        })),
+      );
+    }
+  }
+
+  if (result.unplaced.length > 0) {
+    subhead(doc, data, "Accepted but not placed", title, "No terminal pair was recorded on these.");
+    table(
+      doc,
+      data,
+      title,
+      ["Record", "Recorded"],
+      [150, 620],
+      result.unplaced.map((record) => ({ cells: [source(record), recorded(record)], tone: "flag" })),
+    );
+  }
+}
+
+function flagText(record: Rec | null): string {
+  if (!record) return "";
+  const flags = record.flags.map((flag) => flag.text);
+  if (record.mark?.mark === "GENUINE" && flags.length > 0) flags.push("Confirmed genuine.");
+  return flags.join(" ");
+}
+
+function insulationTable(doc: Doc, data: InstallReport, group: Group, title: string) {
+  table(
+    doc,
+    data,
+    title,
+    ["Phase", "Terminals", "Resistance", "Test voltage", "Source", "Notes"],
+    [120, 90, 100, 80, 150, 230],
+    group.slots.map((slot) => {
+      const record = slot.record;
+      if (!record) {
+        return { cells: [slot.phase, slot.label, NOT_RECORDED, "", "", ""], tone: "missing" };
+      }
+      return {
+        cells: [
+          slot.phase,
+          `${slot.label}${record.pairText && record.pairText !== slot.label ? ` (recorded ${record.pairText})` : ""}`,
+          resistanceReads(record),
+          record.terminalVolts === null ? "—" : `${record.terminalVolts} V`,
+          source(record),
+          [flagText(record), slot.mismatch ?? ""].filter(Boolean).join(" "),
+        ],
+        tone: record.flags.some((flag) => flag.failureLike) || slot.mismatch ? "flag" : "normal",
+        bold: [2],
+      };
+    }),
+  );
+}
+
+function voltageTable(doc: Doc, data: InstallReport, group: Group, title: string) {
+  table(
+    doc,
+    data,
+    title,
+    ["Phase", "Terminals", "Voltage", "Frequency", "Source", "Instrument line / notes"],
+    [60, 80, 80, 70, 150, 330],
+    group.slots.map((slot) => {
+      const record = slot.record;
+      const pair = pairOfLabel(slot.label) as Terminals | null;
+      const terminals = slotLabel(slot.phase, slot.label);
+      if (!record) return { cells: [slot.phase, terminals, NOT_RECORDED, "", "", ""], tone: "missing" };
+      const value = pair ? record.readings[pair] : undefined;
+      return {
+        cells: [
+          slot.phase,
+          terminals,
+          value === undefined ? "—" : `${value} V`,
+          record.hertz === null ? "—" : `${record.hertz} Hz`,
+          source(record),
+          [voltsLine(record), flagText(record)].filter(Boolean).join("  —  "),
+        ],
+        tone: record.flags.some((flag) => flag.failureLike) ? "flag" : "normal",
+        bold: [2],
+      };
+    }),
+  );
+}
+
+function trip(reading: number | "NO_TRIP" | null | undefined): string {
+  if (reading === "NO_TRIP") return "No trip";
+  if (reading === null || reading === undefined) return "---";
+  return `${reading} ms`;
+}
+
+function rcdTable(doc: Doc, data: InstallReport, group: Group, title: string) {
+  table(
+    doc,
+    data,
+    title,
+    ["Phase", "Setting", "×½ 0° / 180°", "×1 0° / 180°", "×5 0° / 180°", "Touch V", "Source", "Notes"],
+    [60, 80, 110, 90, 90, 60, 120, 160],
+    group.slots.map((slot) => {
+      const record = slot.record;
+      const test = record?.rcd;
+      if (!record || !test) {
+        return { cells: [slot.phase, NOT_RECORDED, "", "", "", "", record ? source(record) : "", ""], tone: "missing" };
+      }
+      return {
+        cells: [
+          slot.phase,
+          [test.ratingMa ? `${test.ratingMa} mA` : null, test.waveform ? `Type ${test.waveform}${test.selective ? " S" : ""}` : null]
+            .filter(Boolean)
+            .join(", ") || "—",
+          `${trip(test.halfAt0)} / ${trip(test.halfAt180)}`,
+          `${trip(test.ratedAt0)} / ${trip(test.ratedAt180)}`,
+          `${trip(test.fiveAt0)} / ${trip(test.fiveAt180)}`,
+          test.touchVolts === null ? "—" : `${test.touchVolts} V`,
+          source(record),
+          flagText(record),
+        ],
+        tone: record.flags.some((flag) => flag.failureLike) ? "flag" : "normal",
+      };
+    }),
+  );
+}
+
+/** The record as the instrument wrote it. */
+function recorded(record: Rec): string {
+  return [record.rawFunction, record.rawParameters, record.rawResult].filter(Boolean).join("  ·  ");
+}
+
+/* --- what is not settled ---------------------------------------------------------- */
+
+function unresolved(doc: Doc, data: InstallReport) {
+  const issues = data.analysis.issues;
+  if (issues.length === 0) return;
+  const title = "Unresolved results";
+  doc.addPage();
+  head(doc, data, title);
+  {
+    const top = doc.y;
+    sectionBar(doc, "Unresolved and flagged results", top, SPAN);
+    doc.y = top + 30;
+  }
+  note(
+    doc,
+    "Unresolved items are missing readings, readings that fit no slot, and decisions still to be made. " +
+      "Flagged items are readings worth a second look; they stay in the results unless confirmed " +
+      "otherwise. Nothing listed here has been removed.",
+    8.5,
+  );
+  const byId = new Map(data.analysis.records.map((record) => [record.id, record]));
+  table(
+    doc,
+    data,
+    title,
+    ["", "Item", "Detail", "Records"],
+    [70, 230, 360, 110],
+    issues.map((issue) => ({
+      cells: [
+        issue.blocking ? "Unresolved" : "Flagged",
+        issue.title,
+        issue.detail,
+        issue.records.map((id) => (byId.get(id) ? ref(byId.get(id) as Rec) : id)).join(", "),
+      ],
+      tone: issue.blocking ? "missing" : "normal",
+      bold: [0, 1],
+    })),
+  );
+}
+
+/* --- the appendix: records set aside, and the files ------------------------------ */
+
+function appendix(doc: Doc, data: InstallReport) {
+  const title = "Records set aside and source files";
+  doc.addPage();
+  head(doc, data, title);
+  {
+    const top = doc.y;
+    sectionBar(doc, "Accidental, duplicate and dummy tests", top, SPAN);
+    doc.y = top + 30;
+  }
+
+  const out = [...data.analysis.excluded, ...data.analysis.held];
+  if (out.length === 0) {
+    note(doc, "No records were set aside.", 9.5);
+  } else {
+    note(
+      doc,
+      "These records were recorded by the instrument and are not in the results. They have not been " +
+        "deleted: each is listed with the file it came from, its original S number and position, and " +
+        "the reason, and each appears in its tester file reproduced at the back of this report.",
+      8.5,
+    );
+    table(
+      doc,
+      data,
+      title,
+      ["Source", "Measurement", "As recorded", "Taken", "Reason"],
+      [150, 90, 290, 80, 160],
+      out.map((record) => ({
+        cells: [
+          `${ref(record)} (#${record.position})\n${record.fileName}`,
+          MEASUREMENT_LABELS[record.kind],
+          recorded(record),
+          taken(record),
+          `${record.why ?? ""}${record.mark?.confirmedFailure ? " (confirmed by the operator despite a failure-like reading)" : ""}`,
+        ],
+        tone: record.state === "HELD" ? "missing" : "muted",
+      })),
+    );
+  }
+
+  const y = room(doc, data, 90, title);
+  sectionBar(doc, "Tester files, in the order used", y, SPAN);
+  doc.y = y + 30;
+  table(
+    doc,
+    data,
+    title,
+    ["#", "File", "Section", "Records", "First record"],
+    [40, 300, 170, 80, 180],
+    data.files.map((file, at) => ({
+      cells: [
+        String(at + 1),
+        file.originalName,
+        file.section === "MIXED" ? "Mixed (single export)" : SECTION_LABELS[file.section],
+        String(file.rows.length),
+        file.excludeFirst ? `${file.rows[0]?.name ?? "—"} set aside as a dummy` : "Counted",
+      ],
+    })),
+  );
+  note(
+    doc,
+    "S numbers restart in each file, so a record is identified by its file and S number together. " +
+      "W numbers are the continuous working sequence of accepted records within each section.",
+    8,
+  );
+}
+
+function taken(record: Rec): string {
+  if (!record.takenAt) return "—";
+  const at = record.takenAt instanceof Date ? record.takenAt : new Date(record.takenAt);
+  if (Number.isNaN(at.getTime())) return "—";
+  return at.toISOString().slice(0, 19).replace("T", " ");
 }
 
 /* --- the cover --------------------------------------------------------------- */
@@ -346,50 +698,44 @@ function cover(doc: Doc, data: InstallReport) {
   }
 
   doc.y = y + 70;
-  const insulationRows = data.rows.filter((row) => row.kind === "INSULATION");
-  const rcdRows = data.rows.filter((row) => row.kind === "RCD");
-  const complete = data.points.filter((point) => point.missing.length === 0).length;
+  const { analysis } = data;
+  const accepted = analysis.records.filter((record) => record.state === "ACCEPTED").length;
+  const counted = (section: "INSULATION" | "RCD" | "VOLTAGE") => {
+    const result = analysis.sections[section];
+    return `${result.accepted.length} in ${result.groups.length} ${result.groups.length === 1 ? "group" : "groups"}`;
+  };
+  const open = CATEGORIES.filter((category) => {
+    const entry = analysis.verification[category.key];
+    return !(entry.selected && (entry.status === "RECORDED" || (entry.status === "NOT_APPLICABLE" && entry.reason)));
+  }).length;
 
   rows(
     doc,
     data,
     [
-      ["Installation", data.installation ?? ""],
-      ["Circuit / device", data.circuitDetails ?? ""],
+      ["Installation / circuit", data.installation ?? ""],
+      ["Switchboard and circuit", data.circuitDetails ?? ""],
       ["Supply", PHASE_LABELS[data.phases]],
       ["Tested on", shortDate(data.testedOn)],
       ["Report date", longDate(data.reportDate)],
       ["Prepared for", data.contactName ?? ""],
       ["Instrument", data.instrumentName ?? ""],
       [
-        "Points tested",
-        `${data.points.length} ${data.points.length === 1 ? "point" : "points"}` +
-          (complete === data.points.length
-            ? ""
-            : `, of which ${complete} ${complete === 1 ? "is" : "are"} a complete set`),
+        "Tester records",
+        `${analysis.records.length} read from ${data.files.length} ${data.files.length === 1 ? "file" : "files"}, ` +
+          `${accepted} accepted, ${analysis.excluded.length + analysis.held.length} set aside or held  ·  ` +
+          `insulation ${counted("INSULATION")}, RCD ${counted("RCD")}, voltage ${counted("VOLTAGE")}`,
       ],
       [
-        "Records read",
-        `${data.allRows.length} from the instrument` +
-          (data.exclusions.length > 0 ? `, ${data.exclusions.length} set aside` : "") +
-          `  ·  ${insulationRows.length} insulation, ${rcdRows.length} RCD`,
+        "Verification",
+        analysis.complete
+          ? "All seven categories recorded or justified not applicable"
+          : `Not complete — ${open} of ${CATEGORIES.length} categories open` +
+            (analysis.issues.some((issue) => issue.blocking) ? ", with unresolved results" : ""),
       ],
     ],
     "Installation Test Report",
   );
-
-  if (data.anomalies.length > 0) {
-    doc.y += 4;
-    doc.rect(MARGIN, doc.y, 3, 16).fill(SEVERITY.concern.fill);
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(
-      `${data.anomalies.length} ${data.anomalies.length === 1 ? "record" : "records"} in this file needed a second look — see Records set aside.`,
-      MARGIN + 12,
-      doc.y + 2,
-      { width: CONTENT - 14 },
-    );
-    doc.y += 18;
-  }
 
   /*
    * The closing line, kept on the cover.
@@ -432,483 +778,6 @@ function cover(doc: Doc, data: InstallReport) {
   note(doc, closing, size);
 }
 
-/* --- what the readings show -------------------------------------------------- */
-
-function basis(doc: Doc, data: InstallReport) {
-  doc.addPage();
-  head(doc, data, "What these readings show");
-  sectionBar(doc, "What these readings show", doc.y, SPAN);
-  doc.y += 34;
-
-  const insulationRows = data.rows.filter((row) => row.kind === "INSULATION");
-  const rcdRows = data.rows.filter((row) => row.kind === "RCD");
-
-  note(
-    doc,
-    `This report records ${insulationRows.length} insulation resistance ` +
-      `${insulationRows.length === 1 ? "test" : "tests"} and ${rcdRows.length} RCD automatic test ` +
-      `${rcdRows.length === 1 ? "sequence" : "sequences"} for the ` +
-      `${PHASE_LABELS[data.phases].toLowerCase()} installation.`,
-    9,
-  );
-  doc.y += 6;
-
-  /*
-   * What a voltage between two terminals does and does not establish.
-   *
-   * The second paragraph is the reason the report does not say "polarity
-   * verified". A reading between L and PE of about 240 V, between L and N of
-   * about 240 V and between N and PE of near zero is consistent with correct
-   * connection — and it is also what a reading at one point on one day is. It
-   * is not a polarity test, it does not cover the points that were not tested,
-   * and saying so is the difference between a record and a claim.
-   */
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("Voltage readings", MARGIN, doc.y, { width: CONTENT });
-  doc.y += 14;
-  note(
-    doc,
-    "Each tested point includes voltage measurements between line and earth (L–PE), line and " +
-      "neutral (L–N), and neutral and earth (N–PE). These readings show the voltage present " +
-      "between those terminals at the time of testing.",
-  );
-  note(
-    doc,
-    "Readings close to nominal supply voltage between L–PE and L–N, together with a low N–PE " +
-      "voltage, are consistent with the expected voltage relationships. These measurements alone " +
-      "do not confirm polarity or establish that all installation verification tests have been " +
-      "completed. The results apply only to the points tested.",
-  );
-  doc.y += 6;
-
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("Insulation resistance", MARGIN, doc.y, { width: CONTENT });
-  doc.y += 14;
-  note(
-    doc,
-    "A result displayed with a “greater than” symbol means the insulation resistance exceeded the " +
-      "instrument’s displayed measurement limit. The report preserves this result as recorded " +
-      "rather than presenting it as an exact resistance value.",
-  );
-  doc.y += 6;
-
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(COLOURS.ink);
-  doc.text("RCD readings", MARGIN, doc.y, { width: CONTENT });
-  doc.y += 14;
-  note(
-    doc,
-    "The automatic test sequence records results at half, one and five times the RCD’s rated " +
-      "residual current, at both 0° and 180°. The half-rated-current test checks for " +
-      "non-operation; the remaining tests record the device’s disconnection times.",
-  );
-  note(
-    doc,
-    "Results are reproduced as recorded by the instrument. Assessment against the applicable " +
-      "requirements is provided in the separate RCD report.",
-  );
-
-  if (data.header.notes.length > 0) {
-    doc.y += 8;
-    for (const line of data.header.notes) note(doc, line, 8);
-  }
-}
-
-/* --- insulation --------------------------------------------------------------- */
-
-/**
- * Insulation and the RCD results share a page.
- *
- * An installation has one insulation reading on it, and one reading does not
- * need a page of its own with three quarters of it empty. It opens the page
- * and the RCD results follow underneath.
- */
-function insulation(doc: Doc, data: InstallReport) {
-  const found = data.rows.filter((row) => row.kind === "INSULATION");
-  doc.addPage();
-  head(doc, data, "Insulation resistance and RCD results");
-  sectionBar(doc, "Insulation resistance", doc.y, SPAN);
-  doc.y += 34;
-
-  if (found.length === 0) {
-    note(doc, "No insulation resistance record was read from this file.", 10);
-    return;
-  }
-
-  const columns = [62, 104, 120, CONTENT - 62 - 104 - 120];
-  tableHead(doc, doc.y, ["Record", "Test voltage", "Resistance", "Circuit"], columns);
-  doc.y += 20;
-
-  for (const row of found) {
-    const y = doc.y;
-    doc.rect(MARGIN, y + 22, CONTENT, 0.5).fill(COLOURS.hair);
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(row.name, MARGIN + 4, y + 6, { width: columns[0] - 8 });
-    doc.font("Helvetica").fontSize(9);
-    doc.text(
-      row.terminalVolts === null ? "—" : `${row.terminalVolts} V`,
-      MARGIN + columns[0] + 4,
-      y + 6,
-      { width: columns[1] - 8 },
-    );
-    doc.font("Helvetica-Bold").fontSize(9.5);
-    ohmText(doc, resistanceReads(row), MARGIN + columns[0] + columns[1] + 4, y + 6, {
-      width: columns[2] - 8,
-      size: 9.5,
-      font: "Helvetica-Bold",
-    });
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(
-      safe(data.circuits[row.name] ?? ""),
-      MARGIN + columns[0] + columns[1] + columns[2] + 4,
-      y + 7,
-      { width: columns[3] - 8, height: 11, ellipsis: true },
-    );
-    doc.y = y + 22;
-    doc.fillColor(COLOURS.ink);
-  }
-  doc.y += 14;
-
-  // Only where there is more than one to compare; one bar is not a chart.
-  const measured = found.filter((row) => row.megohms !== null);
-  if (measured.length > 1) {
-    barChart(
-      doc,
-      data,
-      "Insulation resistance by record",
-      "MΩ",
-      measured.map((row) => ({
-        label: row.name,
-        value: row.megohms as number,
-        reads: resistanceReads(row),
-      })),
-      { value: 1, label: "1 MΩ" },
-      "Insulation resistance",
-    );
-  }
-
-  const floors = found.filter((row) => row.megohmsAtLeast !== null);
-  if (floors.length > 0) {
-    note(
-      doc,
-      `${floors.length === 1 ? "This reading is" : "These readings are"} a floor rather than a ` +
-        "measured value: the resistance was above the instrument's range, so there is no number to " +
-        "plot and none has been invented.",
-      8,
-    );
-  }
-}
-
-/* --- rcd ---------------------------------------------------------------------- */
-
-const TRIPS: { key: "ratedAt0" | "ratedAt180" | "fiveAt0" | "fiveAt180"; label: string }[] = [
-  { key: "ratedAt0", label: "×1 0°" },
-  { key: "ratedAt180", label: "×1 180°" },
-  { key: "fiveAt0", label: "×5 0°" },
-  { key: "fiveAt180", label: "×5 180°" },
-];
-
-function rcd(doc: Doc, data: InstallReport) {
-  const found = data.rows.filter((row) => row.kind === "RCD" && row.rcd);
-  // Under the insulation reading where there is room for it, on its own page
-  // where there is not.
-  const y = room(doc, data, 150, "Insulation resistance and RCD results");
-  doc.y = y + 10;
-  sectionBar(doc, "RCD results", doc.y, SPAN);
-  doc.y += 34;
-
-  if (found.length === 0) {
-    note(doc, "No RCD record was read from this file.", 10);
-    return;
-  }
-
-  for (const [at, row] of found.entries()) {
-    const test = row.rcd!;
-    const y = room(doc, data, 200, "RCD results");
-    doc.font("Helvetica-Bold").fontSize(10.5).fillColor(COLOURS.ink);
-    doc.text(
-      `${row.name}${data.circuits[row.name] ? `  —  ${safe(data.circuits[row.name])}` : ""}`,
-      MARGIN,
-      y,
-      { width: CONTENT },
-    );
-    doc.y = y + 16;
-
-    doc.font("Helvetica").fontSize(8.5).fillColor(COLOURS.inkSoft);
-    doc.text(
-      safe(
-        [
-          test.ratingMa ? `${test.ratingMa} mA` : null,
-          test.waveform ? `Type ${test.waveform}${test.selective ? " S" : ""}` : null,
-          test.touchVolts !== null ? `Touch voltage ${test.touchVolts} V` : null,
-          test.limitVolts !== null ? `limit ${test.limitVolts} V` : null,
-        ]
-          .filter(Boolean)
-          .join("  ·  "),
-      ),
-      MARGIN,
-      doc.y,
-      { width: CONTENT },
-    );
-    doc.y += 16;
-
-    /*
-     * Half rated current, said once where both say the same thing.
-     *
-     * The instrument takes it at 0° and at 180°, and on a device that passes
-     * both read the same — "did not trip  /  did not trip" is the same fact
-     * twice. Where they differ both are printed, because then it matters.
-     */
-    const half = [test.halfAt0, test.halfAt180].map((reading) =>
-      reading === "NO_TRIP" ? "did not trip" : reading === null ? "no reading" : `${reading} ms`,
-    );
-    doc.font("Helvetica").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(
-      `At half rated current: ${half[0] === half[1] ? half[0] : half.join("  /  ")}`,
-      MARGIN,
-      doc.y,
-      { width: CONTENT },
-    );
-    doc.y += 18;
-
-    const bars: Bar[] = TRIPS.flatMap((trip) => {
-      const reading = test[trip.key];
-      if (typeof reading !== "number") return [];
-      return [{ label: trip.label, value: reading, reads: `${reading} ms` }];
-    });
-
-    if (bars.length > 0) {
-      barChart(doc, data, `${row.name} disconnection time`, "ms", bars, null, "RCD results");
-    } else {
-      note(doc, "No disconnection time was recorded on this sequence.", 8.5);
-    }
-
-    if (at < found.length - 1) doc.y += 8;
-  }
-
-  doc.y += 4;
-  note(
-    doc,
-    "Times are as measured. Whether each one meets the maximum disconnection time for its device " +
-      "is assessed in the RCD report, which cites AS/NZS 3017 and is produced separately.",
-    8,
-  );
-}
-
-/* --- the points ---------------------------------------------------------------- */
-
-
-function points(doc: Doc, data: InstallReport) {
-  doc.addPage();
-  head(doc, data, "Tested points");
-  sectionBar(doc, "Tested points", doc.y, SPAN);
-  doc.y += 34;
-
-  if (data.points.length === 0) {
-    note(doc, "No voltage readings were read from this file.", 10);
-    return;
-  }
-
-  /* --- the table, which is the result ---------------------------------- */
-  const columns = [40, CONTENT - 40 - 74 * 3, 74, 74, 74];
-  tableHead(doc, doc.y, ["Ref", "Point", "L-PE", "L-N", "N-PE"], columns);
-  doc.y += 20;
-
-  for (const point of data.points) {
-    const y = room(doc, data, 26, "Tested points");
-    if (y !== doc.y) {
-      tableHead(doc, doc.y, ["Ref", "Point", "L-PE", "L-N", "N-PE"], columns);
-      doc.y += 20;
-    }
-    const at = doc.y;
-    doc.rect(MARGIN, at + 24, CONTENT, 0.5).fill(COLOURS.hair);
-
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-    doc.text(point.ref, MARGIN + 4, at + 7, { width: columns[0] - 8 });
-    doc.text(safe(point.name || "(not named)"), MARGIN + columns[0], at + 7, {
-      width: columns[1] - 10,
-      height: 11,
-      ellipsis: true,
-    });
-
-    TERMINALS.forEach((terminal, index) => {
-      const reading = point.readings[terminal];
-      const x = MARGIN + columns[0] + columns[1] + 74 * index;
-      if (reading) {
-        doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-        doc.text(safe(voltsReads(reading, terminal)), x, at + 7, { width: 70, align: "center" });
-        doc.font("Helvetica").fontSize(6.5).fillColor(COLOURS.inkSoft);
-        doc.text(reading.name, x, at + 17, { width: 70, align: "center", lineBreak: false });
-      } else {
-        doc.font("Helvetica-Bold").fontSize(7).fillColor(SEVERITY.concern.fill);
-        doc.text("NOT TAKEN", x, at + 9, { width: 70, align: "center", lineBreak: false });
-      }
-    });
-
-    doc.y = at + 24;
-    doc.fillColor(COLOURS.ink);
-  }
-  doc.y += 14;
-
-  const incomplete = data.points.filter((point) => point.missing.length > 0);
-  if (incomplete.length > 0) {
-    note(
-      doc,
-      `${incomplete.length} ${incomplete.length === 1 ? "point is" : "points are"} short of a ` +
-        "complete set. A reading marked NOT TAKEN was not recorded at that point; nothing has been " +
-        "carried over from another point to fill it.",
-      8.5,
-    );
-    doc.y += 4;
-  }
-
-  /*
-   * No charts here.
-   *
-   * The readings are a table of three voltages a point, and a chart of them is
-   * eight bars all the same height: it takes a page to say what the table has
-   * already said in a line. The table is the result.
-   */
-}
-
-/* --- what was set aside --------------------------------------------------------- */
-
-function setAside(doc: Doc, data: InstallReport) {
-  /*
-   * Two ways a record is not in the results, listed together.
-   *
-   * One the operator set aside by hand, with a reason they typed. One the
-   * reading of the file set aside on its own: a pair taken twice before the
-   * point was finished is the same reading twice, and it cannot be a point of
-   * its own. Both are here with what they read and why, because a record left
-   * out of the results without the report saying so is a record deleted.
-   */
-  const byHand = data.allRows.filter((row) =>
-    data.exclusions.some((exclusion) => exclusion.name === row.name),
-  );
-  const repeated = data.repeats.map((repeat) => repeat.row.name);
-  const out = [
-    ...byHand,
-    ...data.allRows.filter(
-      (row) => repeated.includes(row.name) && !byHand.some((held) => held.name === row.name),
-    ),
-  ];
-  const unplaced = data.rows.filter((row) => row.kind === "UNKNOWN");
-
-  if (out.length === 0 && unplaced.length === 0 && data.anomalies.length === 0) return;
-
-  doc.addPage();
-  head(doc, data, "Records set aside");
-  sectionBar(doc, "Duplicates and accidental tests", doc.y, SPAN);
-  doc.y += 34;
-
-  if (out.length === 0) {
-    note(doc, "No records were set aside from this file.", 9.5);
-  } else {
-    note(
-      doc,
-      "These records were recorded by the instrument and are not included in the results above. " +
-        "They have not been deleted: each is listed here with its original reference and the reason, " +
-        "and every one of them appears in the instrument's own export reproduced at the back of this " +
-        "report.",
-    );
-    doc.y += 4;
-
-    const columns = [58, 92, CONTENT - 58 - 92 - 130, 130];
-    tableHead(doc, doc.y, ["Record", "Measurement", "As recorded", "Set aside because"], columns);
-    doc.y += 20;
-
-    for (const row of out) {
-      doc.font("Helvetica").fontSize(8);
-      const recorded = safe(
-        [row.rawFunction, row.rawParameters, row.rawResult].filter(Boolean).join("  ·  "),
-      );
-      const height = Math.max(
-        22,
-        doc.heightOfString(recorded || " ", { width: columns[2] - 8, lineGap: 1.2 }) + 11,
-      );
-      const y = room(doc, data, height, "Records set aside");
-      doc.rect(MARGIN, y + height, CONTENT, 0.5).fill(COLOURS.hair);
-
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.ink);
-      doc.text(row.name, MARGIN + 4, y + 5, { width: columns[0] - 8 });
-      doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-      doc.text(MEASUREMENT_LABELS[row.kind], MARGIN + columns[0], y + 5, {
-        width: columns[1] - 8,
-      });
-      doc.fillColor(COLOURS.ink).fontSize(8);
-      doc.text(recorded, MARGIN + columns[0] + columns[1], y + 5, {
-        width: columns[2] - 8,
-        lineGap: 1.2,
-      });
-      doc.fillColor(COLOURS.inkSoft);
-      const repeat = data.repeats.find((held) => held.row.name === row.name);
-      const why = data.exclusions.some((exclusion) => exclusion.name === row.name)
-        ? reasonFor(data.exclusions, row.name)
-        : repeat
-          ? `${repeat.differs ? "Re-take of" : "Repeat of"} ${repeat.of.name}, same pair at the same point`
-          : "—";
-      doc.text(
-        safe(why),
-        MARGIN + columns[0] + columns[1] + columns[2],
-        y + 5,
-        { width: columns[3] - 6, lineGap: 1.2 },
-      );
-      doc.y = y + height;
-      doc.fillColor(COLOURS.ink);
-    }
-    doc.y += 14;
-  }
-
-  if (unplaced.length > 0) {
-    const y = room(doc, data, 60, "Records set aside");
-    sectionBar(doc, "Records not recognised", y, SPAN);
-    doc.y = y + 34;
-    note(
-      doc,
-      "The instrument wrote these and this report could not tell what kind of test they are, so " +
-        "they are not counted in any result. They are reproduced word for word.",
-    );
-    for (const row of unplaced) {
-      const at = room(doc, data, 24, "Records set aside");
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLOURS.ink);
-      doc.text(row.name, MARGIN, at, { width: 54, lineBreak: false });
-      doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-      doc.text(
-        safe([row.rawFunction, row.rawParameters, row.rawResult].filter(Boolean).join("  ·  ")),
-        MARGIN + 54,
-        at,
-        { width: CONTENT - 54, lineGap: 1.2 },
-      );
-      doc.y += 4;
-    }
-    doc.y += 10;
-  }
-
-  if (data.anomalies.length > 0) {
-    const y = room(doc, data, 70, "Records set aside");
-    sectionBar(doc, "Raised for review", y, SPAN);
-    doc.y = y + 34;
-    for (const anomaly of data.anomalies) {
-      const at = room(doc, data, 46, "Records set aside");
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOURS.ink);
-      doc.text(safe(anomaly.title), MARGIN, at, { width: CONTENT });
-      doc.y += 2;
-      doc.font("Helvetica").fontSize(8).fillColor(COLOURS.inkSoft);
-      doc.text(
-        safe(
-          `${anomaly.detail}${anomaly.rows.length > 0 ? `  (${anomaly.rows.join(", ")})` : ""}`,
-        ),
-        MARGIN,
-        doc.y,
-        { width: CONTENT, lineGap: 1.3 },
-      );
-      doc.y += 10;
-    }
-  }
-}
-
-/* --- the instrument's own export ------------------------------------------------ */
-
 /* --- the instrument's own export, reproduced ------------------------------- */
 
 /** The heading on an upright page, which is a narrower page than the rest. */
@@ -945,8 +814,13 @@ const BORDER_WIDTH = 1.4;
  * is — the same way the RCD report carries a board's export. The untouched
  * file still goes along as an attachment, so nothing is lost by it.
  */
-function originalPages(doc: Doc, data: InstallReport): Slot[] {
-  const sizes = data.original?.pages.sizes ?? [];
+function originalPages(
+  doc: Doc,
+  data: InstallReport,
+  file: InstallReport["files"][number],
+  number: number,
+): Slot[] {
+  const sizes = file.pages?.sizes ?? [];
   if (sizes.length === 0) return [];
 
   const slots: Slot[] = [];
@@ -958,8 +832,8 @@ function originalPages(doc: Doc, data: InstallReport): Slot[] {
     uprightHead(
       doc,
       data,
-      "Original Instrument Report",
-      `${data.instrument?.name ?? data.instrumentName ?? "The test instrument"}'s own export, reproduced unaltered.`,
+      `Original Tester File ${number + 1} of ${data.files.length}`,
+      `${file.originalName} — ${file.section === "MIXED" ? "single export" : SECTION_LABELS[file.section]}, reproduced unaltered.`,
     );
 
     const page = doc.bufferedPageRange().count - 1;
@@ -1023,19 +897,16 @@ function originalPages(doc: Doc, data: InstallReport): Slot[] {
  * Both go in, so the report can be read and the original pulled out of it.
  */
 async function attachOriginals(ours: Buffer, data: InstallReport): Promise<Buffer> {
-  if (!data.original && !data.instrument?.certificate) return ours;
+  const files = data.files.filter((file) => file.bytes);
+  if (files.length === 0 && !data.instrument?.certificate) return ours;
 
   try {
     const target = await Lib.load(ours);
-    if (data.original) {
-      await target.attach(
-        new Uint8Array(data.original.bytes),
-        data.originalName ?? "instrument-export.pdf",
-        {
-          mimeType: "application/pdf",
-          description: "The test instrument's own export, unaltered.",
-        },
-      );
+    for (const [at, file] of files.entries()) {
+      await target.attach(new Uint8Array(file.bytes as Buffer), `${at + 1}-${file.originalName}`, {
+        mimeType: "application/pdf",
+        description: "A test instrument export, unaltered.",
+      });
     }
     if (data.instrument?.certificate) {
       await target.attach(

@@ -5946,3 +5946,155 @@ a.dialog-cancel {
 .install-row.is-out .install-row-raw {
   opacity: 0.62;
 }
+
+/* The Section 8 checklist: one row a category, ticked when this report covers it. */
+.install-checklist,
+.install-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.install-check,
+.install-file {
+  padding: 10px 12px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 12px;
+  background: #fff;
+  display: grid;
+  gap: 8px;
+}
+
+.install-check:not(.is-on) {
+  background: var(--soft, #f2f7fb);
+}
+
+.install-check-head,
+.install-file-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.install-check-pick {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.install-check-label {
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.install-check-clause {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.install-check-status {
+  flex: none;
+  width: 150px;
+  font-size: 12px;
+}
+
+.install-section {
+  display: grid;
+  gap: 10px;
+}
+
+.install-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.install-file-count {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.install-file-tool {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.install-file-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.install-file-dummy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.install-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-deep, #14528f);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.install-arrangement {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--soft, #f2f7fb);
+  display: grid;
+  gap: 8px;
+}
+
+.install-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.install-reading.is-flag {
+  box-shadow: inset 3px 0 0 #d7262d;
+}
+
+.install-point.is-open {
+  border-color: rgba(240, 160, 32, 0.6);
+}
+
+.install-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.install-move {
+  margin-top: 4px;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 10px;
+  color: var(--ink-3);
+}

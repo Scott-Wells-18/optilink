@@ -1,20 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { uploadFile } from "@/components/ImageUpload";
+import { useEffect, useState } from "react";
 import { PHASE_LABELS, type Phases } from "@/lib/install/points";
 import { DialogScrim } from "@/components/DialogScrim";
 
 /**
- * Starting an installation test from the tester's export.
+ * Starting an installation test.
  *
- * Two things are asked before the file: whether the installation is
- * single-phase or three-phase, because that decides how many insulation and
- * RCD records the scope expects and therefore what counts as a surplus worth
- * looking at.
- *
- * The file is read on the way in, so one that cannot be read is refused here
- * rather than at the bottom of a report that will not build.
+ * Only the supply is asked here, because it sets the starting test
+ * arrangement for every section: one phase block, or three. The tester files
+ * are then added in the report itself, each into its own labelled section —
+ * insulation, RCD, polarity / voltage — as many to a section as the tester
+ * produced.
  */
 export function InstallUploadDialog({
   siteId,
@@ -30,7 +27,6 @@ export function InstallUploadDialog({
   const [phases, setPhases] = useState<Phases>("SINGLE");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const picker = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -40,24 +36,23 @@ export function InstallUploadDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  async function start(file: File) {
+  async function start() {
     setBusy(true);
     setError(null);
     try {
-      const stored = await uploadFile(file);
       const response = await fetch("/api/install", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ siteId, fileId: stored.id, phases }),
+        body: JSON.stringify({ siteId, phases }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error ?? "That export could not be read.");
+        throw new Error(payload.error ?? "That report could not be started.");
       }
       const made = await response.json();
       onStarted(made.id);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "That upload failed.");
+      setError(startError instanceof Error ? startError.message : "That report could not be started.");
       setBusy(false);
     }
   }
@@ -88,8 +83,8 @@ export function InstallUploadDialog({
                     <span className="issue-pick-label">{PHASE_LABELS[option]}</span>
                     <span className="issue-pick-note">
                       {option === "SINGLE"
-                        ? "One insulation test and one RCD sequence"
-                        : "One insulation test and three RCD sequences"}
+                        ? "One phase block: A–N and A–PE insulation, L–PE / L–N / N–PE per outlet, one RCD sequence"
+                        : "Three phase blocks: six insulation readings, nine voltage readings per group, three RCD sequences"}
                     </span>
                   </span>
                 </button>
@@ -98,29 +93,13 @@ export function InstallUploadDialog({
           </div>
 
           <p className="issue-empty">
-            Upload the tester&rsquo;s own PDF export. It is read now, the records are kept with the
-            report, and the file itself is bound into the back of it.
+            The tester files are added next, each into its own section: Insulation Resistance, RCD
+            Testing, and Polarity / Voltage Measurements. A section can take several files where the
+            tester&rsquo;s connection dropped and the numbering restarted.
           </p>
 
-          <input
-            ref={picker}
-            type="file"
-            accept="application/pdf,.pdf"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) void start(file);
-            }}
-          />
-
-          <button
-            type="button"
-            className="issue-add"
-            disabled={busy}
-            onClick={() => picker.current?.click()}
-          >
-            {busy ? "Reading…" : "Choose the export"}
+          <button type="button" className="issue-add" disabled={busy} onClick={() => void start()}>
+            {busy ? "Starting…" : "Start the report"}
           </button>
         </div>
 

@@ -172,8 +172,8 @@ export async function templateBytes(code: string): Promise<Buffer | null> {
 /**
  * The PDF rendition of a document released as a Word file.
  *
- * Four of the eighteen JSAs were released as .docx, and everything goes out as
- * a PDF. Converting Word to PDF needs Word or LibreOffice, and neither is on
+ * Four of the JSAs, and OEC-SWMS015 (gates), were released as .docx, and
+ * everything goes out as a PDF. Converting Word to PDF needs Word or LibreOffice, and neither is on
  * the server, so the conversion was done once from the released files and the
  * result is kept in the repository beside the brand assets. It is a rendition,
  * not a rewrite: nothing was retyped or redrawn, and the .docx in the release
@@ -184,6 +184,7 @@ const RENDITIONS: Record<string, string> = {
   JSA001A: "OEC-JSA001A.Electrical.Communication.Rough.In.and.Fit.Out.JSA.pdf",
   JSA002: "OEC-JSA002.Emergency.Electrical.Works.JSA.Risk.Assessment.pdf",
   JSA003: "OEC-JSA003.Communications.Data.Cabling.JSA.Risk.Assessment.pdf",
+  SWMS015: "OEC-SWMS015_Gates.pdf",
 };
 
 export function hasRendition(code: string): boolean {
