@@ -1877,6 +1877,29 @@ model InstallReport {
   installation   String?
   circuitDetails String?
 
+  /**
+   * The tester files, by section — insulation, RCD, polarity / voltage — in
+   * the order the operator confirmed, each with the rows read from it and its
+   * dummy-first-record setting. Supersedes `sourceId` and `rows`, which an
+   * older single-export report still uses.
+   */
+  files Json?
+
+  /** { "<fileId>:S_3": { mark, reason } } — genuine, accidental, repeat, review. */
+  marks Json?
+
+  /** Per section: the phase blocks and the readings in each block. */
+  arrangements Json?
+
+  /** Per section: what each group is called — "GPO 1", "Dishwasher". */
+  groupNames Json?
+
+  /** { "<fileId>:S_3": { section, group } } — records moved between groups by hand. */
+  assignments Json?
+
+  /** The Section 8 verification checklist: status, reason and evidence per category. */
+  verification Json?
+
   contactId String?
   contact   Contact? @relation("InstallContact", fields: [contactId], references: [id], onDelete: SetNull)
 

@@ -1,39 +1,58 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PreparedByPicks } from "@/components/PreparedByPicks";
+import { uploadFile } from "@/components/ImageUpload";
+import { MEASUREMENT_LABELS, resistanceReads, voltsLine } from "@/lib/install/parse";
+import { PHASE_LABELS } from "@/lib/install/points";
 import {
-  MEASUREMENT_LABELS,
-  TERMINALS,
-  resistanceReads,
-  voltsLine,
-  voltsReads,
-  type InstallRow,
-  type Terminals,
-} from "@/lib/install/parse";
-import {
-  EXCLUSION_REASONS,
-  PHASE_LABELS,
-  type Anomaly,
-  type Exclusion,
+  CATEGORIES,
+  KNOWN_FUNCTIONS,
+  MARK_LABELS,
+  PRESETS,
+  SECTIONS,
+  SECTION_LABELS,
+  STATUS_LABELS,
+  presetArrangement,
+  ref,
+  slotLabel,
+  type Analysis,
+  type Arrangement,
+  type Assignment,
+  type CategoryEntry,
+  type CategoryKey,
+  type FileSection,
+  type Mark,
+  type MarkEntry,
   type Phases,
-  type Point,
-} from "@/lib/install/points";
+  type Rec,
+  type Section,
+  type Status,
+} from "@/lib/install/session";
 import { DialogScrim } from "@/components/DialogScrim";
 
 /**
- * Reading an installation test over, before it is issued.
+ * Putting an installation test together, before it is issued.
  *
- * The instrument wrote a list; this is where it becomes a report. Each
- * complete set of three voltage readings is a point and gets a name — a
- * powerpoint, a GPO, an appliance. Anything the reader could not place, or
- * placed with a question, is shown with the original values beside it so the
- * decision is made by somebody looking at the numbers.
+ * Top to bottom it follows the order the rules are applied in: what was
+ * tested, the Section 8 checklist, the tester files in each section, which
+ * records are accepted, how the accepted ones are grouped, and what still
+ * needs a decision. The grouping is worked out on the server from what is
+ * saved here, so the screen and the report never disagree.
  *
- * The one thing no button here does is delete. A record set aside is left out
- * of the results and listed with its reason; the instrument's own export still
- * has it, and taking the exclusion off puts it straight back.
+ * Nothing here deletes a reading. A record set aside stays listed with its
+ * reason, is printed in the report's appendix, and comes back when the mark
+ * is taken off.
  */
+
+type FileMeta = {
+  fileId: string;
+  originalName: string;
+  section: FileSection;
+  excludeFirst: boolean;
+  dummyConfirmed: boolean;
+  count: number;
+};
 
 type Report = {
   id: string;
@@ -44,22 +63,41 @@ type Report = {
   contactId: string | null;
   instrumentId: string | null;
   preparedBy: string[];
-  rows: InstallRow[];
-  points: (Point & { key: string })[];
-  stray: InstallRow[];
-  exclusions: Exclusion[];
-  anomalies: Anomaly[];
-  circuits: Record<string, string>;
-  pointNames: Record<string, string>;
-  source: { originalName: string } | null;
   site: {
     name: string;
     client: { name: string };
     contacts: { id: string; name: string }[];
   };
+  files: FileMeta[];
+  marks: Record<string, MarkEntry>;
+  arrangements: Record<Section, Arrangement>;
+  groupNames: Partial<Record<Section, string[]>>;
+  assignments: Record<string, Assignment>;
+  verification: Record<CategoryKey, CategoryEntry>;
+  analysis: Analysis;
 };
 
 type Instrument = { id: string; name: string; serialNo: string | null };
+
+/** What a record read, in a few characters. */
+function reads(record: Rec): string {
+  if (record.kind === "INSULATION") return resistanceReads(record);
+  if (record.kind === "VOLTAGE_PHASE") {
+    const own = record.terminals ? record.readings[record.terminals] : undefined;
+    return record.terminals ? `${record.terminals} ${own ?? "—"} V` : voltsLine(record);
+  }
+  if (record.kind === "RCD" && record.rcd) {
+    const rated = record.rcd.ratedAt0;
+    return `${record.rcd.ratingMa ?? "?"} mA · ×1 ${rated === "NO_TRIP" ? "no trip" : rated === null ? "---" : `${rated} ms`}`;
+  }
+  return "—";
+}
+
+const list = (text: string) =>
+  text
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 
 export function InstallDialog({
   reportId,
@@ -71,7 +109,9 @@ export function InstallDialog({
   const [report, setReport] = useState<Report | null>(null);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState<Section | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pickers = useRef<Partial<Record<Section, HTMLInputElement | null>>>({});
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/install/${reportId}`, { cache: "no-store" });
@@ -107,10 +147,38 @@ export function InstallDialog({
       });
       if (!response.ok) setError("That could not be saved.");
       else setError(null);
-      // Reloaded rather than merged: the points, the anomalies and what is set
-      // aside all follow from each other, and recomputing them here would be
-      // the same rules written twice.
+      // Reloaded rather than merged: the accepted records, the groups and the
+      // issues all follow from each other, and are worked out in one place.
       await load();
+    },
+    [reportId, load],
+  );
+
+  const addFiles = useCallback(
+    async (section: Section, chosen: File[]) => {
+      setBusy(section);
+      setError(null);
+      try {
+        // One at a time, in the order chosen, so the confirmed order is the
+        // order they were picked in.
+        for (const file of chosen) {
+          const stored = await uploadFile(file);
+          const response = await fetch(`/api/install/${reportId}/files`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ fileId: stored.id, section }),
+          });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(`${file.name}: ${payload.error ?? "that file could not be read."}`);
+          }
+        }
+      } catch (addError) {
+        setError(addError instanceof Error ? addError.message : "That upload failed.");
+      } finally {
+        setBusy(null);
+        await load();
+      }
     },
     [reportId, load],
   );
@@ -120,9 +188,7 @@ export function InstallDialog({
       <div className="dialog-layer" role="dialog" aria-modal aria-label="Installation test">
         <DialogScrim />
         <div className="dialog is-board is-gate">
-          <p className="issue-empty">{error ?? "Reading the export…"}</p>
-          {/* A file that could not be read leaves this as the whole dialog,
-              and the backdrop no longer closes it, so it says how to leave. */}
+          <p className="issue-empty">{error ?? "Loading the report…"}</p>
           {error ? (
             <div className="dialog-actions">
               <button type="button" className="dialog-cancel" onClick={onClose}>
@@ -135,25 +201,80 @@ export function InstallDialog({
     );
   }
 
-  const isOut = (name: string) => report.exclusions.some((row) => row.name === name);
+  const { analysis } = report;
+  const byId = new Map(analysis.records.map((record) => [record.id, record]));
 
-  const setAside = (name: string, reason: string) =>
+  /* --- saving pieces of it ----------------------------------------------------- */
+  const saveFiles = (files: FileMeta[]) =>
     void save({
-      exclusions: [...report.exclusions.filter((row) => row.name !== name), { name, reason }],
+      files: files.map(({ fileId, excludeFirst, dummyConfirmed }) => ({ fileId, excludeFirst, dummyConfirmed })),
     });
 
-  const putBack = (name: string) =>
-    void save({ exclusions: report.exclusions.filter((row) => row.name !== name) });
+  const moveFile = (fileId: string, step: -1 | 1) => {
+    const files = [...report.files];
+    const at = files.findIndex((file) => file.fileId === fileId);
+    const section = files[at].section;
+    // The next file in the same section, wherever it sits in the full list.
+    let other = at + step;
+    while (other >= 0 && other < files.length && files[other].section !== section) other += step;
+    if (other < 0 || other >= files.length) return;
+    [files[at], files[other]] = [files[other], files[at]];
+    saveFiles(files);
+  };
 
-  const namePoint = (key: string, name: string) =>
-    void save({ pointNames: { ...report.pointNames, [key]: name } });
+  const setFile = (fileId: string, patch: Partial<FileMeta>) =>
+    saveFiles(report.files.map((file) => (file.fileId === fileId ? { ...file, ...patch } : file)));
 
-  const setCircuit = (name: string, circuit: string) =>
-    void save({ circuits: { ...report.circuits, [name]: circuit } });
+  const removeFile = (file: FileMeta) => {
+    if (!window.confirm(`Remove ${file.originalName} and its ${file.count} records from this report?`)) return;
+    saveFiles(report.files.filter((held) => held.fileId !== file.fileId));
+  };
 
-  const unnamed = report.points.filter((point) => !point.name.trim()).length;
-  const kept = report.rows.filter((row) => !isOut(row.name));
-  const listed = showAll ? report.rows : kept.filter((row) => row.kind !== "VOLTAGE_PHASE");
+  const setMark = (record: Rec, mark: Mark | "", reason?: string) => {
+    const marks = { ...report.marks };
+    if (!mark) {
+      delete marks[record.id];
+      void save({ marks });
+      return;
+    }
+    let confirmedFailure = marks[record.id]?.confirmedFailure;
+    if (mark === "ACCIDENTAL" && record.flags.some((flag) => flag.failureLike)) {
+      confirmedFailure = window.confirm(
+        `${ref(record)} reads like a possible failure (${record.flags[0].text}). ` +
+          "Confirm it was an accidental test and should be left out of the results?",
+      );
+      if (!confirmedFailure) return;
+    }
+    marks[record.id] = { mark, reason: reason ?? marks[record.id]?.reason, confirmedFailure };
+    void save({ marks });
+  };
+
+  const setArrangement = (section: Section, next: Arrangement) =>
+    void save({ arrangements: { ...report.arrangements, [section]: next } });
+
+  const nameGroup = (section: Section, index: number, name: string) => {
+    const names = [...(report.groupNames[section] ?? [])];
+    while (names.length <= index) names.push("");
+    names[index] = name;
+    void save({ groupNames: { ...report.groupNames, [section]: names } });
+  };
+
+  const assign = (record: Rec, section: Section, group: number | null) => {
+    const assignments = { ...report.assignments };
+    if (group === null) delete assignments[record.id];
+    else assignments[record.id] = { section, group };
+    void save({ assignments });
+  };
+
+  const setCategory = (key: CategoryKey, patch: Partial<CategoryEntry>) =>
+    void save({
+      verification: { ...report.verification, [key]: { ...report.verification[key], ...patch } },
+    });
+
+  const blocking = analysis.issues.filter((issue) => issue.blocking);
+  const listed = showAll
+    ? analysis.records
+    : analysis.records.filter((record) => record.state !== "ACCEPTED" || record.flags.length > 0 || record.mark);
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal aria-label="Installation test">
@@ -167,7 +288,6 @@ export function InstallDialog({
               {report.site.client.name}
               {"  ·  "}
               {report.site.name}
-              {report.source ? `  ·  ${report.source.originalName}` : ""}
             </p>
           </div>
         </header>
@@ -185,7 +305,20 @@ export function InstallDialog({
                   key={option}
                   type="button"
                   className={`issue-pick ${report.phases === option ? "is-on" : ""}`}
-                  onClick={() => void save({ phases: option })}
+                  onClick={() => {
+                    if (option === report.phases) return;
+                    // The arrangements follow the supply unless they were set by hand.
+                    const arrangements = Object.fromEntries(
+                      SECTIONS.map((section) => {
+                        const held = report.arrangements[section];
+                        return [
+                          section,
+                          held.preset === "CUSTOM" ? held : presetArrangement(section, held.preset, option),
+                        ];
+                      }),
+                    );
+                    void save({ phases: option, arrangements });
+                  }}
                 >
                   <span className="issue-pick-mark is-one" aria-hidden />
                   <span className="issue-pick-body">
@@ -194,25 +327,21 @@ export function InstallDialog({
                 </button>
               ))}
             </div>
-            <p className="amp-hint is-standalone">
-              This decides how many insulation and RCD records the scope expects: one of each on a
-              single-phase installation, three RCD sequences on a three-phase one.
-            </p>
 
             <label className="dialog-field">
-              <span className="dialog-label">Installation</span>
+              <span className="dialog-label">Installation / circuit description</span>
               <input
                 className="dialog-input"
-                placeholder="e.g. Kitchen fit-out, ground floor"
+                placeholder="e.g. Workshop compressor supply"
                 defaultValue={report.installation ?? ""}
                 onBlur={(event) => void save({ installation: event.target.value })}
               />
             </label>
             <label className="dialog-field">
-              <span className="dialog-label">Circuit / device details</span>
+              <span className="dialog-label">Switchboard and circuit</span>
               <input
                 className="dialog-input"
-                placeholder="e.g. Final sub-circuit 4, 20 A RCBO"
+                placeholder="e.g. DB1, CB20"
                 defaultValue={report.circuitDetails ?? ""}
                 onBlur={(event) => void save({ circuitDetails: event.target.value })}
               />
@@ -220,7 +349,7 @@ export function InstallDialog({
 
             <div className="gate-pair">
               <label className="dialog-field">
-                <span className="dialog-label">Tested on</span>
+                <span className="dialog-label">Test date</span>
                 <input
                   type="date"
                   className="dialog-input"
@@ -247,7 +376,7 @@ export function InstallDialog({
             </div>
 
             <label className="dialog-field">
-              <span className="dialog-label">Prepared for</span>
+              <span className="dialog-label">Prepared for (site contact)</span>
               <select
                 className="dialog-input"
                 value={report.contactId ?? ""}
@@ -262,96 +391,380 @@ export function InstallDialog({
               </select>
             </label>
 
-            {/* --- anything needing a look --------------------------------- */}
-            {report.anomalies.length > 0 ? (
-              <>
-                <div className="board-section-head">
-                  <h3 className="board-section-title">Worth a second look</h3>
-                  <p className="board-section-note">
-                    Questions, not verdicts. Look at the original values below and decide; nothing
-                    has been changed or removed.
-                  </p>
-                </div>
-                <ul className="install-anomalies">
-                  {report.anomalies.map((anomaly) => (
-                    <li
-                      className={`install-anomaly ${anomaly.surplus ? "is-surplus" : ""}`}
-                      key={anomaly.title}
-                    >
-                      <p className="install-anomaly-title">{anomaly.title}</p>
-                      <p className="install-anomaly-detail">
-                        {anomaly.detail}
-                        {anomaly.rows.length > 0 ? `  (${anomaly.rows.join(", ")})` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-
-            {/* --- the points ---------------------------------------------- */}
+            {/* --- the checklist -------------------------------------------- */}
             <div className="board-section-head">
-              <h3 className="board-section-title">Tested points</h3>
+              <h3 className="board-section-title">Verification checklist</h3>
               <p className="board-section-note">
-                Each complete set of L-PE, L-N and N-PE is one point. Name every one of them —{" "}
-                {unnamed === 0
-                  ? "all named."
-                  : `${unnamed} still to name.`}
+                Visual inspection and the six tests of AS/NZS 3000 Section 8. Tick what this report
+                covers and give each a status. The report says verification is complete only when
+                every category is recorded, or not applicable with a reason.
               </p>
             </div>
 
-            {report.points.length === 0 ? (
-              <p className="issue-empty">No voltage readings were read from this file.</p>
-            ) : (
-              <ol className="install-points">
-                {report.points.map((point) => (
-                  <li className="install-point" key={point.ref}>
-                    <div className="install-point-head">
-                      <span className="amp-row-number">{point.ref}</span>
-                      <input
-                        className="dialog-input"
-                        placeholder="e.g. Powerpoint 1, GPO 1/2, Dishwasher"
-                        defaultValue={point.name}
-                        onBlur={(event) => namePoint(point.key, event.target.value)}
-                      />
+            <ul className="install-checklist">
+              {CATEGORIES.map((category) => {
+                const entry = report.verification[category.key];
+                const needsReason = entry.status === "NOT_APPLICABLE" || entry.status === "NOT_PERFORMED";
+                const tester = category.section ? analysis.sections[category.section].accepted.length : 0;
+                return (
+                  <li className={`install-check ${entry.selected ? "is-on" : ""}`} key={category.key}>
+                    <div className="install-check-head">
+                      <label className="install-check-pick">
+                        <input
+                          type="checkbox"
+                          checked={entry.selected}
+                          onChange={(event) => setCategory(category.key, { selected: event.target.checked })}
+                        />
+                        <span className="install-check-label">{category.label}</span>
+                        <span className="install-check-clause">{category.clause}</span>
+                      </label>
+                      <select
+                        className="dialog-input install-check-status"
+                        value={entry.status}
+                        disabled={!entry.selected}
+                        onChange={(event) => setCategory(category.key, { status: event.target.value as Status })}
+                      >
+                        {(Object.keys(STATUS_LABELS) as Status[]).map((status) => (
+                          <option key={status} value={status}>
+                            {STATUS_LABELS[status]}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div className="install-readings">
-                      {TERMINALS.map((terminal: Terminals) => {
-                        const reading = point.readings[terminal];
-                        return (
-                          <div
-                            className={`install-reading ${reading ? "" : "is-missing"}`}
-                            key={terminal}
-                          >
-                            <span className="install-reading-pair">{terminal}</span>
-                            <span className="install-reading-value">
-                              {reading ? voltsReads(reading, terminal) : "Not taken"}
-                            </span>
-                            {reading ? (
-                              <span className="install-reading-ref">{reading.name}</span>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {point.missing.length > 0 ? (
-                      <p className="amp-warning">
-                        No {point.missing.join(" or ")} reading at this point. Nothing has been
-                        carried over from another point to fill it.
-                      </p>
+                    {entry.selected ? (
+                      <>
+                        <p className="amp-hint is-standalone">
+                          {category.hint}
+                          {category.section
+                            ? ` ${tester} accepted tester ${tester === 1 ? "record" : "records"}.`
+                            : ""}
+                        </p>
+                        {needsReason ? (
+                          <input
+                            className="dialog-input"
+                            placeholder="Reason (printed on the report)"
+                            defaultValue={entry.reason ?? ""}
+                            onBlur={(event) => setCategory(category.key, { reason: event.target.value })}
+                          />
+                        ) : (
+                          <textarea
+                            className="dialog-input"
+                            rows={2}
+                            placeholder="Manual record or evidence, where no tester file carries it"
+                            defaultValue={entry.evidence ?? ""}
+                            onBlur={(event) => setCategory(category.key, { evidence: event.target.value })}
+                          />
+                        )}
+                      </>
                     ) : null}
                   </li>
-                ))}
-              </ol>
-            )}
+                );
+              })}
+            </ul>
 
-            {/* --- every record -------------------------------------------- */}
+            {/* --- the files and their groups, a section at a time ------------- */}
+            {SECTIONS.map((section) => {
+              const files = report.files.filter((file) => file.section === section);
+              const result = analysis.sections[section];
+              const arrangement = report.arrangements[section];
+              const groupCount = result.groups.length;
+              return (
+                <div className="install-section" key={section}>
+                  <div className="board-section-head">
+                    <h3 className="board-section-title">{SECTION_LABELS[section]}</h3>
+                    <p className="board-section-note">
+                      Expected function: {KNOWN_FUNCTIONS[section]}. Add every file the tester
+                      produced for this section — after a dropped connection the S numbers restart
+                      in a new file.
+                    </p>
+                  </div>
+
+                  {files.length === 0 ? (
+                    <p className="issue-empty">No files yet.</p>
+                  ) : (
+                    <ol className="install-files">
+                      {files.map((file, at) => {
+                        const meta = result.files.find((held) => held.file.fileId === file.fileId);
+                        const first = analysis.records.find(
+                          (record) => record.fileId === file.fileId && record.position === 1,
+                        );
+                        return (
+                          <li className="install-file" key={file.fileId}>
+                            <div className="install-file-head">
+                              <span className="amp-row-number">{at + 1}</span>
+                              <span className="install-file-name">{file.originalName}</span>
+                              <span className="install-file-count">
+                                {file.count} {file.count === 1 ? "test" : "tests"}
+                                {meta ? ` · ${meta.accepted} accepted` : ""}
+                              </span>
+                              <button
+                                type="button"
+                                className="install-file-tool"
+                                disabled={at === 0}
+                                aria-label="Move up"
+                                onClick={() => moveFile(file.fileId, -1)}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                className="install-file-tool"
+                                disabled={at === files.length - 1}
+                                aria-label="Move down"
+                                onClick={() => moveFile(file.fileId, 1)}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                className="install-file-tool"
+                                aria-label="Remove"
+                                onClick={() => removeFile(file)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <label className="install-file-dummy">
+                              <input
+                                type="checkbox"
+                                checked={file.excludeFirst}
+                                onChange={(event) =>
+                                  setFile(file.fileId, { excludeFirst: event.target.checked, dummyConfirmed: true })
+                                }
+                              />
+                              <span>
+                                First record is a deliberate dummy
+                                {first ? ` — ${first.name}: ${reads(first)}` : ""}
+                              </span>
+                            </label>
+                            {!file.dummyConfirmed ? (
+                              <p className="amp-warning">
+                                This file continues after a reconnect. Check whether its first record is
+                                a dummy, then{" "}
+                                <button
+                                  type="button"
+                                  className="install-link"
+                                  onClick={() => setFile(file.fileId, { dummyConfirmed: true })}
+                                >
+                                  confirm this setting
+                                </button>
+                                .
+                              </p>
+                            ) : null}
+                            {meta && meta.unexpected > 0 ? (
+                              <p className="amp-warning">
+                                {meta.unexpected} {meta.unexpected === 1 ? "record carries" : "records carry"}{" "}
+                                another function and {meta.unexpected === 1 ? "is" : "are"} held for review
+                                below, not reclassified.
+                              </p>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+
+                  <input
+                    ref={(element) => {
+                      pickers.current[section] = element;
+                    }}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                      const chosen = [...(event.target.files ?? [])];
+                      event.target.value = "";
+                      if (chosen.length > 0) void addFiles(section, chosen);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="issue-add"
+                    disabled={busy !== null}
+                    onClick={() => pickers.current[section]?.click()}
+                  >
+                    {busy === section ? "Reading…" : `Add ${SECTION_LABELS[section]} PDF`}
+                  </button>
+
+                  {files.length > 0 ? (
+                    <>
+                      {/* --- the arrangement ------------------------------------- */}
+                      <div className="install-arrangement">
+                        <label className="dialog-field">
+                          <span className="dialog-label">Test arrangement</span>
+                          <select
+                            className="dialog-input"
+                            value={arrangement.preset}
+                            onChange={(event) =>
+                              setArrangement(section, presetArrangement(section, event.target.value, report.phases))
+                            }
+                          >
+                            {PRESETS[section].map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <p className="amp-hint is-standalone">
+                          {PRESETS[section].find((preset) => preset.id === arrangement.preset)?.note}
+                        </p>
+                        <div className="gate-pair">
+                          <label className="dialog-field">
+                            <span className="dialog-label">Phase blocks (comma separated)</span>
+                            <input
+                              className="dialog-input"
+                              key={`p-${arrangement.phaseNames.join()}`}
+                              defaultValue={arrangement.phaseNames.join(", ")}
+                              onBlur={(event) =>
+                                setArrangement(section, {
+                                  ...arrangement,
+                                  preset: "CUSTOM",
+                                  phaseNames: list(event.target.value),
+                                  confirmed: false,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="dialog-field">
+                            <span className="dialog-label">Readings in each block</span>
+                            <input
+                              className="dialog-input"
+                              key={`l-${arrangement.labels.join()}`}
+                              defaultValue={arrangement.labels.join(", ")}
+                              onBlur={(event) =>
+                                setArrangement(section, {
+                                  ...arrangement,
+                                  preset: "CUSTOM",
+                                  labels: list(event.target.value),
+                                  confirmed: false,
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <label className="install-file-dummy">
+                          <input
+                            type="checkbox"
+                            checked={arrangement.confirmed}
+                            onChange={(event) =>
+                              setArrangement(section, { ...arrangement, confirmed: event.target.checked })
+                            }
+                          />
+                          <span>
+                            I have checked this arrangement — {arrangement.phaseNames.length} ×{" "}
+                            {arrangement.labels.length} ={" "}
+                            {arrangement.phaseNames.length * arrangement.labels.length} readings per group.
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* --- the groups ------------------------------------------ */}
+                      <ol className="install-points">
+                        {result.groups.map((group) => (
+                          <li className={`install-point ${group.complete ? "" : "is-open"}`} key={group.index}>
+                            <div className="install-point-head">
+                              <span className="amp-row-number">{group.index + 1}</span>
+                              <input
+                                className="dialog-input"
+                                key={`${section}-${group.index}-${group.name}`}
+                                placeholder={
+                                  section === "VOLTAGE"
+                                    ? "e.g. GPO 1, Dishwasher"
+                                    : section === "RCD"
+                                      ? "e.g. RCBO CB20"
+                                      : "e.g. DB1 CB20 submain"
+                                }
+                                defaultValue={group.name}
+                                onBlur={(event) => nameGroup(section, group.index, event.target.value)}
+                              />
+                            </div>
+                            <div className="install-slots">
+                              {group.slots.map((slot, at) => (
+                                <div
+                                  className={`install-reading ${slot.record ? "" : "is-missing"} ${slot.mismatch ? "is-flag" : ""}`}
+                                  key={at}
+                                >
+                                  <span className="install-reading-pair">
+                                    {slot.phase} · {slotLabel(slot.phase, slot.label)}
+                                  </span>
+                                  <span className="install-reading-value">
+                                    {slot.record ? reads(slot.record) : "Not recorded"}
+                                  </span>
+                                  {slot.record ? (
+                                    <span className="install-reading-ref">
+                                      {ref(slot.record)} · W{slot.record.seq}
+                                    </span>
+                                  ) : null}
+                                  {slot.record ? (
+                                    <MoveTo
+                                      record={slot.record}
+                                      section={section}
+                                      count={groupCount}
+                                      manual={report.assignments[slot.record.id]?.group ?? null}
+                                      onMove={assign}
+                                    />
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            {group.extras.map((extra) => (
+                              <div className="install-extra" key={extra.record.id}>
+                                <p className="amp-warning">
+                                  {ref(extra.record)} ({reads(extra.record)}): {extra.why}.
+                                </p>
+                                <MoveTo
+                                  record={extra.record}
+                                  section={section}
+                                  count={groupCount}
+                                  manual={report.assignments[extra.record.id]?.group ?? null}
+                                  onMove={assign}
+                                />
+                                <MarkPick record={extra.record} onMark={setMark} />
+                              </div>
+                            ))}
+                          </li>
+                        ))}
+                      </ol>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            {/* --- what needs a decision ----------------------------------- */}
             <div className="board-section-head">
-              <h3 className="board-section-title">Every record in the file</h3>
+              <h3 className="board-section-title">Needs attention</h3>
               <p className="board-section-note">
-                As the instrument wrote them. Set one aside and it leaves the results but stays in
-                the report, with its reference and the reason — and in the instrument&rsquo;s own
-                export at the back.
+                {blocking.length === 0
+                  ? "Nothing unresolved."
+                  : `${blocking.length} unresolved — these are printed on the report until settled.`}
+              </p>
+            </div>
+            {analysis.issues.length > 0 ? (
+              <ul className="install-anomalies">
+                {analysis.issues.map((issue, at) => (
+                  <li className={`install-anomaly ${issue.blocking ? "" : "is-surplus"}`} key={`${issue.title}-${at}`}>
+                    <p className="install-anomaly-title">{issue.title}</p>
+                    <p className="install-anomaly-detail">
+                      {issue.detail}
+                      {issue.records.length > 0
+                        ? `  (${issue.records.map((id) => (byId.get(id) ? ref(byId.get(id) as Rec) : id)).join(", ")})`
+                        : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {/* --- the records --------------------------------------------- */}
+            <div className="board-section-head">
+              <h3 className="board-section-title">Records</h3>
+              <p className="board-section-note">
+                As the instrument wrote them, with the file and S number they came from. Mark a record
+                accidental or repeated and it leaves the groups — and the groups re-form without it —
+                but it stays in the report&rsquo;s appendix with its reason.
               </p>
             </div>
 
@@ -360,76 +773,46 @@ export function InstallDialog({
               className="issue-add is-quiet"
               onClick={() => setShowAll((current) => !current)}
             >
-              {showAll
-                ? "Show only insulation, RCD and anything unrecognised"
-                : "Show every record, voltage readings included"}
+              {showAll ? "Show only set-aside, held, flagged and marked records" : "Show every record"}
             </button>
 
             <ul className="install-rows">
-              {(showAll ? report.rows : listed).map((row) => {
-                const out = isOut(row.name);
-                return (
-                  <li className={`install-row ${out ? "is-out" : ""}`} key={row.name}>
-                    <div className="install-row-head">
-                      <span className="amp-row-number">{row.name}</span>
-                      <span className="install-row-kind">{MEASUREMENT_LABELS[row.kind]}</span>
-                      <span className="install-row-value">
-                        {row.kind === "INSULATION"
-                          ? resistanceReads(row)
-                          : row.kind === "VOLTAGE_PHASE"
-                            ? voltsLine(row)
-                            : row.kind === "RCD"
-                              ? `${row.rcd?.ratingMa ?? "?"} mA`
-                              : "—"}
-                      </span>
-                    </div>
-                    <p className="install-row-raw">
-                      {[row.rawFunction, row.rawParameters, row.rawResult]
-                        .filter(Boolean)
-                        .join("  ·  ")}
+              {listed.map((record) => (
+                <li className={`install-row ${record.state === "ACCEPTED" ? "" : "is-out"}`} key={record.id}>
+                  <div className="install-row-head">
+                    <span className="amp-row-number">{record.name}</span>
+                    <span className="install-row-kind">
+                      File {record.fileNo} · #{record.position}
+                      {record.seq ? ` · W${record.seq}` : ""} · {MEASUREMENT_LABELS[record.kind]}
+                    </span>
+                    <span className="install-row-value">{reads(record)}</span>
+                  </div>
+                  <p className="install-row-raw">
+                    {[record.rawFunction, record.rawParameters, record.rawResult].filter(Boolean).join("  ·  ")}
+                  </p>
+                  {record.flags.map((flag) => (
+                    <p className={flag.failureLike ? "amp-warning" : "amp-hint is-standalone"} key={flag.text}>
+                      {flag.text}
                     </p>
-                    <div className="install-row-tools">
-                      <input
-                        className="dialog-input install-circuit"
-                        placeholder="Which circuit, if the file holds more than one"
-                        defaultValue={report.circuits[row.name] ?? ""}
-                        onBlur={(event) => setCircuit(row.name, event.target.value)}
-                      />
-                      {out ? (
-                        <button
-                          type="button"
-                          className="issue-add is-quiet"
-                          onClick={() => putBack(row.name)}
-                        >
-                          Put it back
-                        </button>
-                      ) : (
-                        <select
-                          className="dialog-input install-exclude"
-                          value=""
-                          onChange={(event) => {
-                            if (event.target.value) setAside(row.name, event.target.value);
-                          }}
-                        >
-                          <option value="">Set aside…</option>
-                          {EXCLUSION_REASONS.map((reason) => (
-                            <option key={reason} value={reason}>
-                              {reason}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    {out ? (
-                      <p className="amp-hint is-standalone">
-                        Set aside: {report.exclusions.find((e) => e.name === row.name)?.reason}. It
-                        is left out of the results, listed in its own section of the report, and
-                        still in the instrument&rsquo;s export at the back.
-                      </p>
-                    ) : null}
-                  </li>
-                );
-              })}
+                  ))}
+                  {record.why ? <p className="amp-hint is-standalone">{record.why}</p> : null}
+                  <div className="install-row-tools">
+                    <MarkPick record={record} onMark={setMark} />
+                    <input
+                      className="dialog-input install-circuit"
+                      placeholder="Reason or note"
+                      key={`${record.id}-${record.mark?.reason ?? ""}`}
+                      defaultValue={record.mark?.reason ?? ""}
+                      disabled={!record.mark}
+                      onBlur={(event) =>
+                        record.mark && event.target.value !== (record.mark.reason ?? "")
+                          ? setMark(record, record.mark.mark, event.target.value)
+                          : undefined
+                      }
+                    />
+                  </div>
+                </li>
+              ))}
             </ul>
 
             {/* --- who prepared it ------------------------------------------ */}
@@ -452,6 +835,7 @@ export function InstallDialog({
           <button
             type="button"
             className="issue-add is-quiet"
+            disabled={report.files.length === 0}
             onClick={() => window.open(`/api/install/${reportId}/report?preview=1`, "_blank")}
           >
             Preview
@@ -459,6 +843,7 @@ export function InstallDialog({
           <button
             type="button"
             className="dialog-confirm"
+            disabled={report.files.length === 0}
             onClick={() => window.open(`/api/install/${reportId}/report`, "_blank")}
           >
             Download the report
@@ -466,5 +851,58 @@ export function InstallDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function MarkPick({
+  record,
+  onMark,
+}: {
+  record: Rec;
+  onMark: (record: Rec, mark: Mark | "") => void;
+}) {
+  return (
+    <select
+      className="dialog-input install-exclude"
+      value={record.mark?.mark ?? ""}
+      onChange={(event) => onMark(record, event.target.value as Mark | "")}
+    >
+      <option value="">{record.state === "EXCLUDED" && !record.mark ? "Dummy (file setting)" : "Not marked"}</option>
+      {(Object.keys(MARK_LABELS) as Mark[]).map((mark) => (
+        <option key={mark} value={mark}>
+          {MARK_LABELS[mark]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function MoveTo({
+  record,
+  section,
+  count,
+  manual,
+  onMove,
+}: {
+  record: Rec;
+  section: Section;
+  count: number;
+  manual: number | null;
+  onMove: (record: Rec, section: Section, group: number | null) => void;
+}) {
+  return (
+    <select
+      className="install-move"
+      value={manual === null ? "" : String(manual)}
+      aria-label={`Move ${record.name} to another group`}
+      onChange={(event) => onMove(record, section, event.target.value === "" ? null : Number(event.target.value))}
+    >
+      <option value="">Grouped automatically</option>
+      {Array.from({ length: count + 1 }, (_, at) => (
+        <option key={at} value={at}>
+          {at < count ? `Move to group ${at + 1}` : "Move to a new group"}
+        </option>
+      ))}
+    </select>
   );
 }

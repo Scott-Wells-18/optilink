@@ -6,11 +6,11 @@ import { personName } from "@/lib/contacts";
 import { preparedByFor } from "@/lib/profiles.server";
 import { readUpload } from "@/lib/storage";
 import { safe } from "@/lib/report/theme";
-import { readCertificate, type Certificate } from "@/lib/report/certificate";
+import { readCertificate } from "@/lib/report/certificate";
 import { readInstrument } from "@/lib/report/instrument";
 import { buildInstallReport, installFileName, type InstallReport } from "@/lib/report/install";
-import type { InstallRow } from "@/lib/install/parse";
-import { anomaliesOf, groupPoints, kept, type Exclusion } from "@/lib/install/points";
+import { analyse } from "@/lib/install/session";
+import { inputOf } from "@/lib/install/stored";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -38,46 +38,31 @@ export async function GET(
     });
     if (!report) return notFound("That report could not be found.");
 
-    const allRows = Array.isArray(report.rows) ? (report.rows as unknown as InstallRow[]) : [];
-    if (allRows.length === 0) {
-      return badRequest("There are no test records on this report.");
+    const input = inputOf(report);
+    if (input.files.every((file) => file.rows.length === 0)) {
+      return badRequest("There are no tester records on this report yet.");
     }
-
-    const exclusions = Array.isArray(report.exclusions)
-      ? (report.exclusions as unknown as Exclusion[])
-      : [];
-    const names = (report.pointNames ?? {}) as Record<string, string>;
-    const circuits = (report.circuits ?? {}) as Record<string, string>;
-
-    const rows = kept(allRows, exclusions);
-    const grouping = groupPoints(rows, names);
+    const analysis = analyse(input);
 
     /*
-     * The instrument's export, reproduced on our pages and attached whole.
-     *
-     * Its page sizes are read here so the report can draw a gap of the right
-     * shape for each page before anything is stamped into it; a file that will
-     * not open hands back nothing and the report is built without it.
+     * Each tester file, reproduced on our pages in the confirmed order and
+     * attached whole. A file that will not open is left out of the
+     * reproduction; its records are still in the report.
      */
-    let original: { pages: Certificate; bytes: Buffer } | null = null;
-    if (report.source) {
-      try {
-        const bytes = await readUpload(report.source.storedName);
-        const pages = await readCertificate(bytes);
-        if (pages) original = { pages, bytes };
-      } catch {
-        // A report without the original is still a report.
-      }
-    }
-
-    const header = (report.header ?? {}) as {
-      title?: string | null;
-      siteName?: string | null;
-      boardNumber?: string | null;
-      circuitRange?: string | null;
-      createdAt?: string | null;
-      notes?: string[];
-    };
+    const ids = input.files.map((file) => file.fileId);
+    const stored = await prisma.uploadedFile.findMany({ where: { id: { in: ids } } });
+    const files = await Promise.all(
+      input.files.map(async (file) => {
+        const held = stored.find((candidate) => candidate.id === file.fileId);
+        if (!held) return { ...file, pages: null, bytes: null };
+        try {
+          const bytes = await readUpload(held.storedName);
+          return { ...file, pages: await readCertificate(bytes), bytes };
+        } catch {
+          return { ...file, pages: null, bytes: null };
+        }
+      }),
+    );
 
     const data: InstallReport = {
       clientName: safe(report.site.client.name),
@@ -103,25 +88,8 @@ export async function GET(
       // says it read true when it took these readings.
       instrument: await readInstrument(report.instrument),
 
-      allRows,
-      rows,
-      points: grouping.points,
-      stray: grouping.stray,
-      repeats: grouping.repeats,
-      exclusions,
-      anomalies: anomaliesOf(rows, grouping, report.phases),
-      circuits,
-
-      header: {
-        title: header.title ?? null,
-        siteName: header.siteName ?? null,
-        boardNumber: header.boardNumber ?? null,
-        circuitRange: header.circuitRange ?? null,
-        notes: header.notes ?? [],
-      },
-
-      original,
-      originalName: report.source?.originalName ?? null,
+      analysis,
+      files,
     };
 
     const pdf = await buildInstallReport(data);
